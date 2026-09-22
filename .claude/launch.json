@@ -5,7 +5,15 @@
       "name": "web-dev",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--dir", "apps/web", "exec", "vite"],
-      "port": 4200
+      "port": 4200,
+      "autoPort": true
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 4200,
+      "autoPort": true
     }
   ]
 }

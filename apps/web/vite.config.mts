@@ -89,7 +89,12 @@ export default defineConfig(({ command, mode }) => {
       conditions: ['@vertex-os/source', ...defaultClientConditions],
       alias: { '#design-lab': fileURLToPath(new URL(`./src/dev-ui/${labEntry}`, import.meta.url)) },
     },
-    server: { host: '127.0.0.1', port: 4200, strictPort: true, proxy },
+    server: {
+      host: '127.0.0.1',
+      port: Number(process.env['PORT']) || 4200,
+      strictPort: true,
+      proxy,
+    },
     preview: { host: '127.0.0.1', port: lab ? 4310 : 4300, strictPort: true, proxy },
     build: { outDir: lab ? 'dist-lab' : 'dist', emptyOutDir: true },
     test: {
