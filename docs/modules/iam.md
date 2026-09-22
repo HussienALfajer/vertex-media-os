@@ -4,7 +4,7 @@
 **Module:** MOD-IAM — Identity, Organization, and Access  
 **Repository:** HussienALfajer/vertex-media-os  
 **Baseline date:** 2026-09-22  
-**Depends on:** docs/PRODUCT.md, docs/ARCHITECTURE.md, docs/MODULES.md, docs/SECURITY.md, docs/ENGINEERING.md, docs/TESTING.md  
+**Depends on:** docs/PRODUCT.md, docs/ARCHITECTURE.md, docs/MODULES.md, docs/SECURITY.md, docs/ENGINEERING.md, docs/TESTING.md, docs/DESIGN_SYSTEM.md  
 **Supersedes:** No earlier IAM module specification
 
 ---
@@ -23,7 +23,8 @@ This document MUST be read together with the repository-wide canonical documents
 4. docs/SECURITY.md owns security policy.
 5. docs/ENGINEERING.md owns implementation rules.
 6. docs/TESTING.md owns verification strategy.
-7. this document owns IAM-specific behavior and implementation detail.
+7. docs/DESIGN_SYSTEM.md owns the UI and design-system contract.
+8. this document owns IAM-specific behavior and implementation detail.
 
 This specification intentionally does not turn IAM into an HR system, a generic policy engine, an identity provider, a client portal, or a multi-tenant platform.
 
@@ -234,7 +235,7 @@ Requirements:
 
 - service account enabled;
 - secret server-side only;
-- only the minimum realm-management permissions required to create, inspect, enable/disable, update, and revoke sessions for users;
+- only the minimum realm-management permissions required to query, create, inspect, enable/disable, and update users, revoke their sessions, and send them required-action email;
 - MUST NOT receive realm-admin unless a documented security review proves it necessary;
 - MUST NOT be exposed to the browser;
 - MUST NOT be reused as the interactive OIDC client.
@@ -268,14 +269,15 @@ Required properties:
 | Field | Meaning |
 |---|---|
 | id | Opaque Vertex user identifier |
-| email | Canonical normalized sign-in/contact email |
-| displayName | User-facing name |
-| accessState | Current Vertex access lifecycle state |
-| identitySubject | Keycloak subject identifier; nullable only while provisioning has not completed |
+| email | Canonical normalized sign-in/contact email; immutable after creation in V1 |
+| displayName | User-facing name; the only mutable profile field in V1 |
+| accessState | Current Vertex access lifecycle state (Section 10) |
+| identitySubject | Keycloak subject identifier; null until identity reconciliation binds it; immutable once bound |
 | identityIssuer | Expected Keycloak issuer identifier |
-| identitySyncState | Status of required Vertex-to-Keycloak synchronization |
-| invitationSentAt | Last successful invitation dispatch, nullable |
-| firstActivatedAt | First successful Vertex activation time, nullable |
+| identitySyncState | Whether Keycloak is confirmed to match what IAM requires (Section 11.1) |
+| invitationDeliveryState | Outcome of the latest invitation dispatch (Section 11.3) |
+| invitationSentAt | Time of the latest confirmed invitation dispatch, nullable |
+| firstActivatedAt | Time of first activation (Section 10); set once, never changed or cleared; nullable |
 | lastAccessStateChangedAt | Last access-state transition time |
 | createdAt | Creation time |
 | updatedAt | Last authoritative update time |
@@ -292,7 +294,17 @@ ApplicationUser MUST NOT contain:
 - Keycloak session records;
 - browser session identifiers.
 
-Email MUST be normalized before uniqueness comparison. The chosen normalization rule MUST be deterministic and documented. V1 SHOULD trim surrounding whitespace and compare the domain case-insensitively; the implementation MUST NOT invent provider-specific transformations such as removing dots or plus suffixes.
+Email MUST be normalized before storage and uniqueness comparison: trim surrounding whitespace and lowercase the entire address with a locale-independent ASCII rule. V1 accepts ASCII addresses only. The normalized value is therefore exactly what Keycloak stores as username and email: Keycloak lowercases both using its JVM default locale, which leaves an already-lowercase ASCII value unchanged, and a Vertex rule that preserved local-part case would let two Vertex users collide on one Keycloak username. The implementation MUST NOT invent provider-specific transformations such as removing dots or plus suffixes.
+
+Email and the identity mapping are immutable in V1:
+
+- email is set at creation and becomes the provisioned identity's Keycloak username and email; no Vertex operation changes it afterwards, and iam.users.update changes displayName only;
+- sign-in resolves users by issuer + subject only (Section 13); email is never a sign-in or linking key inside Vertex;
+- identityIssuer and identitySubject never change once bound; re-linking a user to a different Keycloak identity is not supported in V1;
+- displayName is Vertex presentation data and is not synchronized to Keycloak;
+- the Keycloak realm MUST prevent users from changing their username or email (Section 37), and operators MUST NOT change them directly in Keycloak.
+
+Consequently, no profile edit requires a Keycloak update, email re-verification, a sign-in identifier change, or session revocation. A mistyped address on an INVITED user is corrected by terminating that user and creating a new one; the terminated user's address remains reserved. Changing the address of an existing user is deferred (Section 57).
 
 ### 9.2 Department
 
@@ -433,25 +445,27 @@ UserAccessState is a closed set:
 - DISABLED
 - TERMINATED
 
-Provisioning progress is tracked separately from access state.
+Identity synchronization and invitation delivery are tracked separately from access state (Section 11); neither grants access.
+
+First activation is the INVITED → ACTIVE transition performed by the user's first successful eligible sign-in (Section 13). It is the only operation that sets firstActivatedAt, which is never changed or cleared afterwards. firstActivatedAt is therefore null exactly for users who have never completed first activation: every ACTIVE user has it, and no INVITED user has it.
 
 ### 10.1 INVITED
 
-The user record exists and may have a provisioned Keycloak identity, but the user has not yet completed first successful Vertex activation.
+The user record exists and may have a provisioned Keycloak identity, but the user has not yet completed first activation.
 
 INVITED users MUST NOT receive an authenticated Vertex application session until the Keycloak authentication flow succeeds and the identity mapping is validated.
 
-The first successful eligible sign-in transitions INVITED to ACTIVE atomically with application-session establishment or immediately before it.
+The first successful eligible sign-in transitions INVITED to ACTIVE atomically with application-session establishment or immediately before it. No administrative operation can move a user from INVITED to ACTIVE.
 
 ### 10.2 ACTIVE
 
-The user may receive application sessions, subject to authentication and authorization.
+The user may receive application sessions, subject to authentication and authorization. An ACTIVE user has completed first activation.
 
 ACTIVE alone grants no business permission.
 
 ### 10.3 SUSPENDED
 
-Temporary administrative suspension.
+Temporary administrative suspension. It applies to activated and never-activated users alike.
 
 Effects MUST occur immediately in Vertex:
 
@@ -459,7 +473,7 @@ Effects MUST occur immediately in Vertex:
 - all current Vertex application sessions revoked;
 - effective permissions empty for protected operations.
 
-The backend MUST then disable or otherwise block the identity in Keycloak through the approved synchronization flow.
+The backend MUST then disable the identity in Keycloak through identity reconciliation (Sections 11.2 and 31.1).
 
 ### 10.4 DISABLED
 
@@ -467,7 +481,7 @@ Security or administrative disablement.
 
 It has the same access-denial effect as SUSPENDED but represents a stronger administrative/security state.
 
-Reactivation requires an explicitly authorized operation and audit evidence.
+Leaving DISABLED requires the explicitly authorized reactivation operation (Section 10.7) and audit evidence.
 
 ### 10.5 TERMINATED
 
@@ -488,54 +502,88 @@ TERMINATED is terminal in V1. Rehire/reinstatement after termination is a future
 
 Allowed transitions are:
 
-- INVITED → ACTIVE
-- INVITED → SUSPENDED
-- INVITED → DISABLED
-- INVITED → TERMINATED
-- ACTIVE → SUSPENDED
-- ACTIVE → DISABLED
-- ACTIVE → TERMINATED
-- SUSPENDED → ACTIVE
-- SUSPENDED → DISABLED
-- SUSPENDED → TERMINATED
-- DISABLED → ACTIVE
-- DISABLED → TERMINATED
+| From | To | Operation | Guard |
+|---|---|---|---|
+| INVITED | ACTIVE | first activation at sign-in (Section 13) | sets firstActivatedAt |
+| INVITED | SUSPENDED, DISABLED, TERMINATED | administrative | — |
+| ACTIVE | SUSPENDED, DISABLED, TERMINATED | administrative | last-System-Administrator rule (Section 20) |
+| SUSPENDED | DISABLED, TERMINATED | administrative | — |
+| DISABLED | TERMINATED | administrative | — |
+| SUSPENDED, DISABLED | ACTIVE | reactivation (Section 10.7) | firstActivatedAt is set |
+| SUSPENDED, DISABLED | INVITED | reactivation (Section 10.7) | firstActivatedAt is null |
 
-Any other transition MUST be rejected with a stable conflict error.
+Any other transition, including DISABLED → SUSPENDED and any transition out of TERMINATED, MUST be rejected with IAM_INVALID_ACCESS_TRANSITION.
+
+### 10.7 Reactivation
+
+Reactivation is one administrative operation for SUSPENDED or DISABLED users. The backend, never the caller, derives its target:
+
+- firstActivatedAt set → ACTIVE;
+- firstActivatedAt null → INVITED.
+
+Reactivation restores sign-in eligibility only. It never creates an application session, never sets firstActivatedAt, never changes Keycloak credentials, required actions, or MFA enrollment, and never re-sends an invitation that was already attempted (Section 11.3). Every reactivated user must complete a full Keycloak authentication, including any pending required actions and MFA, before receiving a session; a user returned to INVITED becomes ACTIVE only through first activation.
+
+Reactivation follows the ordering in Section 31.2.
 
 ---
 
-## 11. Identity Provisioning State
+## 11. Identity Synchronization and Invitation Delivery
 
-Identity synchronization with Keycloak is external I/O and MUST NOT be hidden inside a database transaction.
+Keycloak identity synchronization and invitation delivery are external I/O and MUST NOT run inside a database transaction. They are different operations with different outcomes and are tracked by two separate states. Neither state grants or denies Vertex access; access is decided by accessState alone (Section 10).
 
-IdentitySyncState is:
+User creation starts with accessState = INVITED, identitySyncState = PENDING, invitationDeliveryState = NOT_SENT, and identitySubject = null. The application commits the Vertex user first, then performs Keycloak work outside the database transaction.
 
-- PENDING
-- SYNCED
-- FAILED
+### 11.1 Identity synchronization state
 
-User creation starts with:
+IdentitySyncState is a closed set:
 
-- accessState = INVITED;
-- identitySyncState = PENDING;
-- identitySubject = null.
+- PENDING — a committed local change requires Keycloak work that is not yet confirmed (in progress or interrupted);
+- SYNCED — Keycloak was last confirmed to match what IAM requires;
+- FAILED — the latest attempt failed, had an unknown outcome, or found a conflict; retry or administrative resolution is required.
 
-The application commits the Vertex user first, then performs Keycloak provisioning outside the database transaction.
+What IAM requires of Keycloak follows from accessState:
 
-On successful Keycloak creation:
+| accessState | Required Keycloak identity |
+|---|---|
+| INVITED, ACTIVE | exists, is linked to this user, and is enabled |
+| SUSPENDED, DISABLED, TERMINATED | none is created; an existing owned identity is disabled and its Keycloak sessions are terminated |
 
-- the returned Keycloak user subject is bound to ApplicationUser;
-- identitySyncState becomes SYNCED;
-- invitation required actions are sent.
+Every committed local change that alters this requirement sets identitySyncState = PENDING in the same transaction. SYNCED means only that the identity requirement above is met; it says nothing about invitation delivery or about the user completing required actions.
 
-On an ambiguous network failure after the remote request may have succeeded, retry MUST reconcile rather than blindly create a second identity.
+### 11.2 Identity reconciliation
 
-The Keycloak user SHOULD carry a non-secret custom attribute containing the Vertex user ID so reconciliation can prove ownership of a remotely created identity.
+Identity reconciliation is the single IAM capability that brings Keycloak to the required state. User creation, access changes, reactivation, the sync-identity endpoint (Section 25.3), and bootstrap (Section 21) all use it; no other code path creates, links, enables, or disables Keycloak identities. It reads the committed user and takes the requirement from its accessState; only reactivation substitutes the target state it is about to commit (Section 31.2). It is idempotent and safe to repeat at any time:
 
-A conflicting pre-existing Keycloak identity that is not already linked to the same Vertex user MUST fail closed and require administrative resolution.
+1. Locate the identity: by the bound identitySubject, otherwise by exact username equal to the normalized email.
+2. Prove ownership before any access-increasing step (link, create, enable): the identity's username equals the normalized email, its vertexUserId attribute equals the Vertex user ID, and, when a subject is bound, the subject matches. Access-reducing steps (disable, session termination) apply to a bound identity without further proof.
+3. An identity that cannot be proven owned MUST NOT be linked, modified, or deleted by Vertex; the result is FAILED with IAM_IDENTITY_CONFLICT, resolved by an operator in Keycloak. A bound identity that no longer exists in Keycloak is also a conflict; V1 never replaces or re-links it.
+4. If no identity exists, no subject is bound, and the required state is INVITED, create the identity enabled, with username and email equal to the normalized email and the vertexUserId attribute set in the same create request. A duplicate-user rejection (Keycloak 409) returns to step 1, so an identity created by a concurrent or previously lost request is found and linked rather than duplicated.
+5. Bind identityIssuer and identitySubject with a version-checked write if they are not yet bound.
+6. Apply the required enabled state and, for a denied state, terminate the identity's Keycloak sessions.
+7. Record SYNCED; on error or unknown outcome record FAILED without changing accessState.
 
-Invitation delivery failure MUST NOT roll back a successfully created identity. The UI MUST expose that invitation delivery failed and offer a safe resend action.
+The vertexUserId attribute is non-secret ownership evidence. The realm user profile MUST declare it with administrator-only view and edit permissions (Section 37): an attribute a user could edit would let that user claim another user's pending identity.
+
+### 11.3 Invitation delivery
+
+Invitation delivery asks Keycloak, through the Admin API execute-actions email capability, to send the required-action email for at least email verification, password establishment, and the MFA enrollment required by realm policy. Vertex never sees the link it contains.
+
+InvitationDeliveryState is a closed set recorded after every dispatch attempt:
+
+- NOT_SENT — no dispatch has been attempted (initial state);
+- SENT — Keycloak confirmed that it sent the email; invitationSentAt records when;
+- FAILED — the latest attempt failed or its outcome is unknown; invitationSentAt keeps the latest confirmed dispatch, if any.
+
+NOT_SENT means never attempted; FAILED without invitationSentAt means never delivered; FAILED with invitationSentAt means a resend failed after an earlier success. SENT confirms dispatch only, not receipt or completion; completion is observable only as first activation (Section 13).
+
+Rules:
+
+- dispatch requires accessState = INVITED and identitySyncState = SYNCED; Keycloak itself refuses email actions for disabled identities or identities without an email address;
+- the first dispatch is part of provisioning: whenever reconciliation leaves an INVITED user SYNCED with NOT_SENT, the invitation is dispatched next (creation, sync-identity, reactivation to INVITED, and bootstrap);
+- once an attempt has been made, further dispatches occur only through an explicit resend (Section 25.3) or a bootstrap resume (Section 21);
+- dispatch failure MUST NOT roll back the identity or change accessState; it changes identitySyncState only when Keycloak reports the identity missing or disabled, which is recorded as FAILED;
+- a resend is safe to repeat and never alters credentials or required actions;
+- after the user leaves INVITED, invitationDeliveryState is retained as history and MUST NOT be presented as an outstanding condition.
 
 ---
 
@@ -547,19 +595,16 @@ The canonical creation flow is:
 2. Backend validates permissions and input.
 3. Backend normalizes email and checks local uniqueness.
 4. Backend validates referenced departments and roles.
-5. Backend writes the new ApplicationUser, memberships, and role assignments in one database transaction with identitySyncState PENDING.
+5. Backend writes the new ApplicationUser, memberships, and role assignments in one database transaction with the initial states of Section 11.
 6. Transaction commits.
-7. Provisioning capability obtains a service-account token for vertex-provisioner.
-8. Keycloak user is created enabled, using the normalized email as the canonical username/email unless a future approved policy changes this.
-9. Vertex user ID is attached to the Keycloak identity as a reconciliation attribute.
-10. Keycloak subject is saved to ApplicationUser and identitySyncState becomes SYNCED.
-11. Keycloak required-action email is sent with at least email verification, password establishment, and the production MFA enrollment required by realm policy.
-12. IAM records security/audit evidence.
-13. API returns the user representation and invitation-delivery status.
+7. Provisioning capability obtains a service-account token for vertex-provisioner and runs identity reconciliation (Section 11.2): the Keycloak user is created enabled with the normalized email as username and email and the vertexUserId attribute, and the returned subject is bound; identitySyncState becomes SYNCED, or FAILED.
+8. If identitySyncState is SYNCED, the invitation is dispatched (Section 11.3) and invitationDeliveryState is recorded.
+9. IAM records security/audit evidence for the creation, reconciliation, and dispatch results.
+10. API returns the user representation, including accessState, identitySyncState, and invitationDeliveryState.
 
 Vertex OS MUST NOT generate, display, accept, transmit, or store the user's password.
 
-A retry of a partially completed creation MUST resume the existing PENDING/FAILED provisioning record when the normalized email identifies the same operation. It MUST NOT create duplicate Vertex users or duplicate Keycloak identities.
+Creation is never retried by re-submitting POST /api/iam/users: a request whose normalized email already exists fails with IAM_EMAIL_CONFLICT and creates neither a second Vertex user nor a second Keycloak identity. Incomplete provisioning of an existing user is resumed through identity reconciliation (sync-identity, Section 25.3), which also performs the first invitation dispatch if it has never been attempted.
 
 ---
 
@@ -576,9 +621,9 @@ The canonical flow is:
 5. Keycloak redirects to the exact Vertex callback URI.
 6. Backend verifies state, exchanges the code using PKCE, validates issuer, audience, signature, nonce, expiry, and protocol requirements.
 7. Backend extracts issuer and subject from the validated identity.
-8. IAM resolves exactly one ApplicationUser by identity issuer + subject.
-9. IAM denies unmapped, SUSPENDED, DISABLED, or TERMINATED users.
-10. If the user is INVITED and otherwise eligible, IAM transitions the user to ACTIVE and records firstActivatedAt.
+8. IAM resolves exactly one ApplicationUser by identity issuer + subject. It never resolves or links a user by email or any other claim.
+9. IAM denies unmapped, SUSPENDED, DISABLED, or TERMINATED users. A successful Keycloak authentication for a mapped user in a denied state shows that the Keycloak identity is not disabled; IAM MUST also record identitySyncState = FAILED so the mismatch is visible and can be reconciled.
+10. If the user is INVITED, IAM performs first activation (Section 10): a conditional update from INVITED at the expected version to ACTIVE that sets firstActivatedAt. If the update loses a race with a concurrent change, such as a suspension or a parallel first sign-in, IAM re-resolves the user and applies steps 9–10 to the current state; firstActivatedAt is never overwritten.
 11. Backend creates a server-side application session.
 12. Browser receives only the opaque secure HttpOnly application-session cookie.
 13. Browser is redirected to the application.
@@ -760,9 +805,9 @@ IAM implementation MUST register at least the following permissions:
 | Permission | Purpose |
 |---|---|
 | iam.users.read | View IAM user directory and user details |
-| iam.users.create | Create/provision invited users |
-| iam.users.update | Update non-security user profile fields |
-| iam.users.manage-access | Suspend, disable, reactivate, or terminate access |
+| iam.users.create | Create/provision invited users and resend invitations |
+| iam.users.update | Update displayName, the only mutable profile field in V1 |
+| iam.users.manage-access | Suspend, disable, reactivate, or terminate access; retry identity synchronization |
 | iam.users.manage-roles | Grant and remove user roles |
 | iam.users.manage-departments | Manage user department memberships |
 | iam.roles.read | View roles and their permission mappings |
@@ -789,19 +834,23 @@ Properties:
 - active by default;
 - receives every active permission registered in the permission catalog;
 - permission synchronization is code-controlled;
-- administrators MUST NOT remove individual permission mappings from this role through ordinary UI;
-- the role MUST NOT be deleted or renamed through ordinary UI.
+- administrators MUST NOT remove individual permission mappings from this role through ordinary UI or API;
+- the role MUST NOT be deleted, renamed, or deactivated through ordinary UI or API.
+
+Attempts to change the role in these ways fail with IAM_SYSTEM_ROLE_PROTECTED.
 
 The system MUST protect against administrative lockout.
 
-At least one ACTIVE user with the System Administrator role MUST remain after any operation that:
+An ACTIVE System Administrator is a user whose accessState is ACTIVE and who holds the system-administrator role. INVITED, SUSPENDED, and DISABLED holders do not count.
 
-- removes that role from a user;
-- suspends a system administrator;
-- disables a system administrator;
-- terminates a system administrator.
+Any operation that would reduce the number of ACTIVE System Administrators from one or more to zero MUST fail atomically with IAM_LAST_SYSTEM_ADMIN. Such operations are:
 
-An operation that would leave zero active System Administrators MUST fail atomically with a stable conflict error.
+- removing the role from an ACTIVE user;
+- suspending, disabling, or terminating an ACTIVE holder.
+
+Operations on holders that are not ACTIVE do not change the count and are not blocked by this rule.
+
+The count check and the mutation MUST commit in one transaction that is serialized against every other operation able to reduce the count and against bootstrap (Section 21), for example by locking the system-administrator role row or by SERIALIZABLE isolation with retry. Per-user optimistic versions alone are insufficient: two concurrent operations on different administrators could each observe a remaining administrator and together remove both.
 
 No default shared System Administrator user may exist.
 
@@ -809,20 +858,48 @@ No default shared System Administrator user may exist.
 
 ## 21. Bootstrap Administrator
 
-A fresh installation needs an explicit bootstrap path.
+A fresh installation needs an explicit path to its first System Administrator.
 
-IAM implementation MUST provide an intentional, non-default, idempotent administrative bootstrap command.
+IAM implementation MUST provide an intentional, non-default, idempotent, operator-run bootstrap command. It is not an HTTP endpoint.
+
+### 21.1 Command rules
 
 The bootstrap command MUST:
 
-- require explicit operator input for the initial user's identity data;
-- never use a committed default username or password;
-- provision through the same IAM/Keycloak integration used by normal user creation where practical;
-- assign the protected System Administrator role;
-- refuse to create a second bootstrap administrator if an active System Administrator already exists unless an explicit recovery procedure is being used;
+- require explicit operator input for the administrator's email and display name;
+- never use a committed default username, email, or password;
+- create the user only through the normal creation, identity reconciliation, and invitation capabilities (Sections 11–12), assigning the protected System Administrator role in the same transaction that creates the user;
+- never create or set credentials: the administrator establishes password and MFA through the Keycloak invitation;
+- never create an application session;
 - never print passwords, tokens, client secrets, or session identifiers;
-- create audit/security evidence;
+- record audit/security evidence attributed to the bootstrap system process, including the mode and the outcome;
 - be documented for local and production operation.
+
+### 21.2 Candidate detection
+
+A bootstrap candidate is any user holding the system-administrator role whose accessState is not TERMINATED. The command decides what to do only from committed IAM state, never from local files or earlier command output:
+
+| Committed state | Normal-mode result |
+|---|---|
+| No candidate | Create one candidate, then reconcile and invite |
+| Exactly one candidate, INVITED, with the operator-supplied normalized email | Resume: reconcile unless SYNCED; dispatch the invitation unless SENT, or re-dispatch a SENT invitation only on explicit operator request; otherwise report completion without change |
+| An ACTIVE System Administrator exists | Refuse; further administrators are managed through IAM administration |
+| Any other candidate set (different email, several candidates, or only SUSPENDED/DISABLED candidates) | Refuse; recovery mode is required |
+
+Resuming never changes the candidate's stored display name, roles, or memberships. Refusals report a stable, distinguishable reason.
+
+### 21.3 Recovery mode
+
+Recovery mode is an explicit command option that requires an operator-supplied reason and is audited as a distinct action. It is allowed only when no ACTIVE System Administrator exists. In one serialized transaction it terminates every INVITED candidate (Section 10.5; the records are kept and their identities are disabled by reconciliation) and creates exactly one new candidate. If the new candidate's normalized email already belongs to any user, including a terminated one, the transaction fails and nothing changes. SUSPENDED and DISABLED holders remain unchanged for review by the recovered administrator.
+
+An ACTIVE System Administrator who has lost credentials or MFA is recovered in Keycloak (Section 54), not through bootstrap.
+
+### 21.4 Concurrency and failure
+
+- Candidate evaluation and candidate creation or supersession run in one database transaction serialized against concurrent bootstrap invocations and against System Administrator count changes (Section 20). A concurrent invocation that loses re-evaluates and then resumes or refuses; at most one candidate is created.
+- Keycloak calls happen only after that transaction commits.
+- An ambiguous Keycloak failure leaves the candidate PENDING or FAILED. Re-running the command resumes through reconciliation, which finds and links an identity created by the lost request instead of creating another (Section 11.2); Keycloak's realm-unique username is the final backstop against a duplicate identity.
+- Concurrent resumes of the same candidate are safe because reconciliation is idempotent; a duplicate invitation email is harmless.
 
 Keycloak's bootstrap master-realm administrator is infrastructure administration and MUST NOT be treated as a Vertex application administrator.
 
@@ -905,16 +982,19 @@ Returns current user profile, active departments, and UI-useful effective permis
 
 ### 25.3 Users
 
-- GET /api/iam/users
-- POST /api/iam/users
-- GET /api/iam/users/{userId}
-- PATCH /api/iam/users/{userId}
-- POST /api/iam/users/{userId}/suspend
-- POST /api/iam/users/{userId}/disable
-- POST /api/iam/users/{userId}/reactivate
-- POST /api/iam/users/{userId}/terminate
-- POST /api/iam/users/{userId}/resend-invitation
-- POST /api/iam/users/{userId}/revoke-sessions
+| Endpoint | Permission | Semantics |
+|---|---|---|
+| GET /api/iam/users | iam.users.read | Directory (Section 42) |
+| POST /api/iam/users | iam.users.create | Create and provision (Section 12) |
+| GET /api/iam/users/{userId} | iam.users.read | User detail |
+| PATCH /api/iam/users/{userId} | iam.users.update | Accepts displayName and the expected version only; any other field, including email, is rejected as invalid input (Section 9.1) |
+| POST /api/iam/users/{userId}/suspend | iam.users.manage-access | Section 31.1 |
+| POST /api/iam/users/{userId}/disable | iam.users.manage-access | Section 31.1 |
+| POST /api/iam/users/{userId}/reactivate | iam.users.manage-access | Backend-derived target (Section 10.7); ordering in Section 31.2 |
+| POST /api/iam/users/{userId}/terminate | iam.users.manage-access | Section 31.1 |
+| POST /api/iam/users/{userId}/resend-invitation | iam.users.create | INVITED users only (Section 11.3) |
+| POST /api/iam/users/{userId}/sync-identity | iam.users.manage-access | Idempotent identity reconciliation (Section 11.2), allowed in any identitySyncState; never changes accessState |
+| POST /api/iam/users/{userId}/revoke-sessions | iam.sessions.revoke | Section 32 |
 
 ### 25.4 Department membership
 
@@ -991,15 +1071,21 @@ Recommended baseline:
 | 404 | IAM_ROLE_NOT_FOUND |
 | 409 | IAM_EMAIL_CONFLICT |
 | 409 | IAM_IDENTITY_CONFLICT |
+| 409 | IAM_IDENTITY_SYNC_INCOMPLETE |
 | 409 | IAM_INVALID_ACCESS_TRANSITION |
+| 409 | IAM_INVITATION_NOT_APPLICABLE |
 | 409 | IAM_LAST_SYSTEM_ADMIN |
+| 409 | IAM_SYSTEM_ROLE_PROTECTED |
 | 409 | IAM_ROLE_INACTIVE |
 | 409 | IAM_DEPARTMENT_INACTIVE |
 | 409 | IAM_DUPLICATE_ROLE_ASSIGNMENT |
 | 409 | IAM_DUPLICATE_DEPARTMENT_MEMBERSHIP |
 | 422 | IAM_PRIMARY_DEPARTMENT_CONFLICT |
 | 503 | IDENTITY_PROVIDER_UNAVAILABLE |
-| 503 | IAM_IDENTITY_SYNC_INCOMPLETE |
+
+IAM_IDENTITY_SYNC_INCOMPLETE means the operation requires a linked identity with identitySyncState = SYNCED (for example resend-invitation); sync-identity resolves it. IAM_INVITATION_NOT_APPLICABLE means an invitation was requested for a user who is not INVITED. IAM_IDENTITY_CONFLICT means reconciliation found an identity it cannot prove it owns (Section 11.2).
+
+Operations report outcomes by one rule. When the authoritative local change committed and only a follow-up Keycloak step failed (create, suspend, disable, terminate), the operation succeeds and returns the resulting identitySyncState and invitationDeliveryState. When remote success is a precondition of the change (reactivation) or is itself the requested effect (resend-invitation, sync-identity), failure returns IDENTITY_PROVIDER_UNAVAILABLE or IAM_IDENTITY_CONFLICT after recording the FAILED state.
 
 Exact naming SHOULD be finalized once in code and tests. Similar errors MUST NOT acquire multiple spellings across controllers.
 
@@ -1014,11 +1100,11 @@ The exact Prisma model names may differ from domain names, but the following con
 ### 28.1 User constraints
 
 - primary key on user ID;
-- unique normalized email;
+- unique normalized email across all users, including TERMINATED users;
 - unique identityIssuer + identitySubject when identitySubject is present;
-- accessState constrained to the closed enum;
-- identitySyncState constrained to the closed enum;
-- identitySubject required before ACTIVE session establishment;
+- accessState, identitySyncState, and invitationDeliveryState constrained to their closed enums;
+- check constraints: accessState = ACTIVE requires identitySubject and firstActivatedAt; accessState = INVITED requires firstActivatedAt to be null;
+- application code never updates email, a bound identityIssuer/identitySubject, or a set firstActivatedAt;
 - optimistic concurrency version incremented on protected updates.
 
 ### 28.2 Department constraints
@@ -1077,13 +1163,15 @@ Security-sensitive IAM mutations MUST be concurrency-safe.
 
 At minimum:
 
-- user access-state transitions;
+- user access-state transitions, including first activation and reactivation;
+- identity binding during reconciliation;
 - System Administrator removal/disablement;
+- bootstrap;
 - primary-department changes;
 - role-permission replacement;
 - user-role assignment changes.
 
-The implementation SHOULD use optimistic concurrency versions plus database transactions and constraints.
+The implementation SHOULD use optimistic concurrency versions plus database transactions and constraints. Rules that span several rows, such as the last-System-Administrator rule and bootstrap candidate detection, additionally require the serialization defined in Sections 20 and 21.
 
 A stale administrator screen MUST NOT silently overwrite newer role, permission, or access changes.
 
@@ -1101,21 +1189,25 @@ Operations that combine local security state and Keycloak state MUST be ordered 
 
 For suspend/disable/terminate:
 
-1. commit local access denial;
+1. commit local access denial together with identitySyncState = PENDING, applying the Section 20 rule where relevant;
 2. revoke local application sessions;
-3. synchronize Keycloak disablement/session termination;
-4. if Keycloak synchronization fails, keep local access denied and mark synchronization FAILED for retry.
+3. run identity reconciliation, which disables the Keycloak identity and terminates its Keycloak sessions;
+4. if reconciliation fails, keep local access denied and record identitySyncState = FAILED for retry through sync-identity.
 
-Local security MUST NOT be rolled back merely because the external provider is unavailable.
+Local security MUST NOT be rolled back merely because the external provider is unavailable. While synchronization is FAILED the Keycloak identity may still authenticate, but IAM denies every such sign-in and flags the mismatch (Section 13), so Vertex access cannot be re-established.
 
 ### 31.2 Restoring access
 
 For reactivation:
 
-1. validate authorization and local invariants;
-2. successfully synchronize the required Keycloak enabled state;
-3. commit local ACTIVE state;
-4. if local commit then fails, the identity remains enabled in Keycloak but still cannot obtain Vertex access because IAM remains inactive; reconcile explicitly.
+1. validate authorization, that the user is SUSPENDED or DISABLED, and derive the target state (Section 10.7);
+2. record identitySyncState = PENDING with a version-checked write;
+3. make Keycloak satisfy the target state's requirement through identity reconciliation: enable the owned identity or, for a never-provisioned user returning to INVITED, create and bind it;
+4. commit the target accessState with identitySyncState = SYNCED, conditional on the version written in step 2;
+5. if step 3 fails, accessState is unchanged, identitySyncState becomes FAILED, and the operation fails (Section 27);
+6. if step 4 fails, for example because of a concurrent change, the identity may be enabled while IAM still denies access; the operation MUST immediately reconcile against the committed state and leave identitySyncState = FAILED if that cannot complete.
+
+Vertex access is never granted before step 4 commits. A user returned to INVITED then receives the first invitation dispatch if invitationDeliveryState is NOT_SENT (Section 11.3).
 
 This ordering prevents an external synchronization failure from granting Vertex access prematurely.
 
@@ -1169,17 +1261,16 @@ IAM MUST record security events for at least:
 - logout/session revocation;
 - unmapped identity sign-in denial;
 - inactive-user sign-in denial;
-- user creation/provisioning result;
-- invitation resend;
-- suspension/reactivation/disablement/termination;
+- user creation, identity reconciliation, and invitation dispatch/resend results;
+- first activation, suspension, reactivation (with its derived target), disablement, and termination;
 - department membership changes;
 - role assignment/removal;
 - role permission changes;
 - role activation/deactivation;
 - department activation/deactivation;
 - authorization denials at a useful, non-noisy level;
-- Keycloak synchronization failures;
-- System Administrator changes.
+- Keycloak synchronization failures and sign-in mismatches (Section 13);
+- System Administrator changes, including bootstrap and recovery invocations.
 
 Logs are not sufficient audit evidence.
 
@@ -1199,7 +1290,7 @@ IAM MUST NOT be declared complete while privileged IAM mutations have no durable
 
 For security-sensitive IAM mutations, audit evidence SHOULD include:
 
-- actor Vertex user ID;
+- actor Vertex user ID, or the identified system process for bootstrap;
 - action code;
 - target type and target ID;
 - timestamp;
@@ -1264,6 +1355,9 @@ At minimum configuration must define:
 - user/admin event logging;
 - back-channel logout;
 - required actions;
+- username and email not changeable by users: "Edit username" disabled, the email attribute not user-editable in the user profile, and the Update Email action disabled (the feature is supported and enabled by default in Keycloak 26);
+- the vertexUserId attribute declared in the user profile with administrator-only view and edit permissions (undeclared attributes are ignored by default);
+- email (SMTP) settings for required-action email, with credentials supplied as secrets;
 - token/session settings compatible with Vertex application-session limits.
 
 Manual console-only configuration is not an acceptable production source of truth.
@@ -1278,7 +1372,7 @@ At minimum:
 
 - add a Keycloak 26.7.4 local service bound to loopback only;
 - use Keycloak development mode only for local development/test, never production;
-- create local bootstrap-admin credentials from ignored/generated environment values, never committed defaults;
+- create local Keycloak master-realm bootstrap-admin credentials from ignored/generated environment values, never committed defaults;
 - keep Vertex PostgreSQL behavior from Phase 0 intact;
 - make realm/client setup reproducible;
 - make startup health/readiness deterministic;
@@ -1334,7 +1428,7 @@ At minimum:
 - role-permission editor;
 - user role assignments;
 - user department memberships;
-- invitation delivery/provisioning status;
+- identity synchronization and invitation delivery status, with sync-identity and resend-invitation actions where authorized;
 - session revocation action where authorized;
 - clear loading, empty, success, conflict, and error states.
 
@@ -1347,8 +1441,18 @@ Frontend rules:
 - route visibility may reflect permissions for UX, but server authorization remains authoritative;
 - destructive/sensitive actions require explicit confirmation;
 - stale-write conflicts must be surfaced rather than silently overwritten;
-- Arabic/RTL support must remain compatible with the product direction when the broader UI foundation introduces it;
+- access state, identity synchronization, and invitation delivery are three separately labeled facts; invitation delivery is shown only while the user is INVITED;
+- the reactivation action and its result state the outcome the backend derives: restored to ACTIVE, or returned to INVITED pending first activation;
+- Arabic/RTL-first delivery follows docs/DESIGN_SYSTEM.md;
 - shadcn MUST NOT be introduced.
+
+Access-state and identity-synchronization labels follow docs/DESIGN_SYSTEM.md Section 33. InvitationDeliveryState extends that IAM mapping, using the tone icons of the same DESIGN_SYSTEM.md section:
+
+| State | Tone | Arabic / English label |
+|---|---|---|
+| NOT_SENT | neutral | لم تُرسل الدعوة / Invitation not sent |
+| SENT | success | أُرسلت الدعوة / Invitation sent, with invitationSentAt |
+| FAILED | danger | تعذّر تأكيد إرسال الدعوة / Invitation not confirmed, with the resend action |
 
 If shared UI primitives are missing, IAM work MAY add the minimum reusable primitives to the approved Vertex UI package rather than creating a private parallel component system.
 
@@ -1388,7 +1492,7 @@ V1 user list SHOULD expose only operational fields such as:
 - access state;
 - departments;
 - roles as administrative display information;
-- invitation/provisioning status when authorized.
+- identity synchronization and invitation delivery status when authorized.
 
 Sensitive security metadata MUST remain on more privileged detail endpoints or be omitted entirely.
 
@@ -1456,7 +1560,8 @@ IAM MAY publish meaningful post-commit facts when a real consumer exists.
 
 Potential facts include:
 
-- iam.user.activated;
+- iam.user.activated (first activation);
+- iam.user.reactivated (with the derived target state);
 - iam.user.suspended;
 - iam.user.disabled;
 - iam.user.terminated;
@@ -1482,25 +1587,31 @@ IAM is high-risk infrastructure and MUST receive explicit positive and negative 
 Cover at minimum:
 
 - allowed and forbidden access-state transitions;
-- last-System-Administrator invariant;
+- reactivation target derivation from firstActivatedAt, and no administrative path to ACTIVE for a never-activated user;
+- invitation delivery state transitions, including a failed resend after an earlier success;
+- last-System-Administrator invariant, counting only ACTIVE holders;
 - effective permission calculation;
 - inactive role behavior;
 - retired permission behavior;
 - active/inactive department behavior;
 - primary department invariant;
-- email normalization;
+- email normalization, including whole-address lowercasing and rejection of non-ASCII addresses;
 - permission-code validation;
-- system-role protection.
+- system-role protection, including deactivation of the System Administrator role;
+- bootstrap candidate classification (Section 21.2).
 
 ### 46.2 Application tests
 
 Cover:
 
 - create/provision orchestration;
+- identity reconciliation: ownership proof, conflict without modification, 409 re-lookup, and access-reducing steps on a bound identity;
 - reconciliation after ambiguous Keycloak failure;
-- invitation resend;
+- invitation dispatch and resend outcomes, and their independence from identitySyncState;
 - suspend/disable/terminate fail-closed ordering;
-- reactivation ordering;
+- reactivation ordering, including compensation when the final commit fails;
+- operation outcome reporting (Section 27);
+- bootstrap create, resume, refusal, and recovery modes;
 - role assignment/removal;
 - department membership changes;
 - role permission replacement;
@@ -1522,9 +1633,12 @@ Cover:
 - role-assignment uniqueness;
 - permission mapping uniqueness;
 - primary-department constraint;
+- access-state/firstActivatedAt/identitySubject check constraints;
 - optimistic concurrency;
 - transaction rollback;
-- last-admin concurrency;
+- last-admin concurrency with competing operations on different administrators;
+- first activation racing a suspension;
+- concurrent bootstrap invocations creating at most one candidate;
 - session revocation persistence where session infrastructure uses PostgreSQL.
 
 ### 46.4 Keycloak integration tests
@@ -1533,7 +1647,10 @@ Use a real Keycloak 26.7.4 test container/realm for integration coverage of:
 
 - user provisioning;
 - external subject binding;
-- required-action invitation;
+- recovery of a lost create response without a duplicate identity;
+- vertexUserId attribute present at creation and not user-editable;
+- username and email not user-editable;
+- required-action invitation, and Vertex's handling of Keycloak refusing it for a disabled identity;
 - enable/disable;
 - session termination;
 - OIDC discovery/JWKS validation;
@@ -1555,6 +1672,8 @@ For every meaningful protected operation test:
 4. invalid state/resource denial where relevant;
 5. stable response/error contract;
 6. audit/security side effect.
+
+PATCH /api/iam/users/{userId} MUST additionally prove that email and every other non-displayName field are rejected.
 
 ### 46.6 CSRF tests
 
@@ -1623,6 +1742,8 @@ IAM implementation MUST have deterministic seed/synchronization logic for:
 
 The implementation MUST NOT invent department names from memory or seed unapproved organizational data.
 
+No user, including a System Administrator, is ever seeded; the first administrator is created only by the bootstrap command (Section 21).
+
 Reference synchronization MUST be idempotent.
 
 Application startup SHOULD NOT perform uncontrolled schema/data mutation. Explicit migration/seed commands are preferred.
@@ -1641,7 +1762,7 @@ It MUST:
 - create application-session/auth infrastructure tables separately from IAM ownership where required;
 - create minimal Audit foundation tables only if the closure dependency in Section 34 requires them;
 - use explicit names for important indexes/constraints where practical;
-- include any custom PostgreSQL constraint needed for one-primary-department behavior;
+- include any custom PostgreSQL constraint needed for one-primary-department behavior and the Section 28.1 check constraints;
 - be reproducible from an empty database;
 - pass Prisma validate/generate and integration tests.
 
@@ -1656,8 +1777,10 @@ IAM/auth MUST fail closed.
 Examples:
 
 - Keycloak discovery/JWKS unavailable during a new login: no new session;
-- Keycloak Admin API unavailable during user creation: local record remains non-active and retryable;
-- Keycloak disable call fails after local disablement: local access remains denied;
+- Keycloak Admin API unavailable during user creation: the user remains INVITED with identitySyncState FAILED and invitationDeliveryState NOT_SENT; sync-identity resumes provisioning;
+- invitation dispatch fails, including SMTP failure: the identity is unaffected, invitationDeliveryState becomes FAILED, and resend remains available;
+- Keycloak disable call fails after local disablement: local access remains denied and identitySyncState becomes FAILED;
+- Keycloak enable call fails during reactivation: accessState is unchanged;
 - IAM database unavailable: protected access is denied rather than using stale cached privileges;
 - session store unavailable: request is not treated as authenticated;
 - audit write required for a privileged mutation fails: the privileged mutation MUST fail or use an explicitly approved atomic/outbox design; it MUST NOT silently succeed without required accountability;
@@ -1764,9 +1887,10 @@ Exit: schema/invariants proven against real PostgreSQL.
 - vertex-web client configuration;
 - vertex-provisioner service account;
 - Admin REST adapter;
-- provisioning/reconciliation;
-- invitation;
+- identity reconciliation (Section 11.2);
+- invitation dispatch and delivery state (Section 11.3);
 - enable/disable/session termination;
+- realm user-profile restrictions (Section 37);
 - real Keycloak integration tests.
 
 Exit: Vertex can safely provision an invited identity without handling passwords.
@@ -1796,8 +1920,9 @@ Exit: protected APIs deny correctly and current authorization state is authorita
 
 ### IAM-5 — Administration API
 
-- users;
-- access lifecycle;
+- users, including resend-invitation and sync-identity;
+- access lifecycle, including reactivation target derivation;
+- bootstrap command (Section 21);
 - departments;
 - memberships;
 - roles;
@@ -1847,8 +1972,9 @@ IAM V1 is complete only when all applicable statements below are true.
 - [ ] ApplicationUser, Department, membership, Role, Permission, mappings, and assignments are implemented.
 - [ ] Required database uniqueness/referential/concurrency constraints exist.
 - [ ] User access lifecycle is enforced exactly.
+- [ ] Only first activation moves a user from INVITED to ACTIVE; reactivation derives its target from firstActivatedAt, and the Section 28.1 check constraints exist.
 - [ ] No IAM security-critical entity is hard-deleted through ordinary workflows.
-- [ ] System Administrator lockout protection is concurrency-safe.
+- [ ] System Administrator lockout protection counts only ACTIVE holders, protects the role from deactivation, and is concurrency-safe.
 - [ ] Permission catalog synchronization is deterministic and idempotent.
 
 ### Identity provider
@@ -1856,7 +1982,10 @@ IAM V1 is complete only when all applicable statements below are true.
 - [ ] Keycloak version is pinned.
 - [ ] vertex-web and vertex-provisioner responsibilities are separated.
 - [ ] user provisioning is safe and retryable.
+- [ ] identity reconciliation proves ownership, never duplicates or re-links identities, and is the only path that changes Keycloak identities.
 - [ ] invitation uses Keycloak required actions.
+- [ ] identity synchronization and invitation delivery are tracked, reported, and displayed separately.
+- [ ] email and username are immutable in V1 and cannot be changed by users in Keycloak.
 - [ ] Vertex never handles passwords.
 - [ ] disable/reactivate synchronization fails closed.
 - [ ] production MFA policy satisfies this document.
@@ -1902,6 +2031,7 @@ IAM V1 is complete only when all applicable statements below are true.
 - [ ] security-negative tests exist.
 - [ ] dependency/security audit passes under repository policy.
 - [ ] no default/shared privileged production account exists.
+- [ ] bootstrap is idempotent, serialized, and non-duplicating, and its recovery mode is explicit and audited.
 
 ### Verification
 
@@ -1936,6 +2066,8 @@ The following decisions are intentionally not generalized in IAM V1:
 - client/external identities;
 - service accounts and API keys;
 - impersonation;
+- changing a user's email/sign-in identifier, reusing a terminated user's address, and re-linking a user to a different Keycloak identity;
+- internationalized (non-ASCII) email addresses;
 - SCIM;
 - directory/LDAP federation;
 - social identity providers;
@@ -1986,15 +2118,18 @@ The following invariants summarize IAM V1 and MUST remain true:
 9. Departments provide organizational context and do not grant capabilities by themselves.
 10. Privilege removal is promptly effective.
 11. Suspension, disablement, and termination revoke application sessions immediately.
-12. External Keycloak failure never causes Vertex to fail open.
-13. Remote Keycloak calls do not run inside database transactions.
-14. Security-sensitive IAM mutations have durable accountability evidence.
-15. IAM internals and Prisma models are not cross-module APIs.
-16. No public self-registration exists in V1.
-17. No shared/default privileged Vertex account exists.
-18. No wildcard permission exists in V1.
-19. No speculative tenant/HR/policy-engine infrastructure is introduced.
-20. IAM is not complete until domain, API, frontend, integration, E2E, security, and audit verification are all green.
+12. Only first successful sign-in activates an INVITED user; reactivation never bypasses first activation, Keycloak required actions, or MFA.
+13. Identity synchronization and invitation delivery are separate states, and neither grants Vertex access.
+14. Email and the bound Keycloak identity are immutable in V1; sign-in maps users by issuer and subject only.
+15. External Keycloak failure never causes Vertex to fail open.
+16. Remote Keycloak calls do not run inside database transactions.
+17. Security-sensitive IAM mutations have durable accountability evidence.
+18. IAM internals and Prisma models are not cross-module APIs.
+19. No public self-registration exists in V1.
+20. No shared/default privileged Vertex account exists, and bootstrap never creates a second live System Administrator candidate.
+21. No wildcard permission exists in V1.
+22. No speculative tenant/HR/policy-engine infrastructure is introduced.
+23. IAM is not complete until domain, API, frontend, integration, E2E, security, and audit verification are all green.
 
 ---
 
@@ -2003,6 +2138,8 @@ The following invariants summarize IAM V1 and MUST remain true:
 As of 2026-09-22, the reviewed external baseline is Keycloak 26.7.4.
 
 The official Keycloak documentation confirms the current Admin REST capability to create users and send required-action email flows, and documents the current bootstrap-admin environment-variable names. The implementation MUST still verify the exact API/configuration behavior against the pinned Keycloak release when code is written.
+
+The 26.7.4 sources and documentation were reviewed on 2026-09-22 for the behavior this specification relies on: user creation returns 201 with the new user's location, and a duplicate username or email returns 409; users can be searched by exact username and by attribute (q=key:value); execute-actions email is refused for users without an email address or that are disabled, and an email-sending failure returns an error; the user logout action terminates all of a user's sessions; usernames and emails are lowercased with the JVM default locale; unmanaged user attributes are ignored unless declared in the user profile or allowed by policy; Update Email is a supported feature enabled by default.
 
 Repository security policy remains authoritative if an external default differs from Vertex OS requirements.
 
