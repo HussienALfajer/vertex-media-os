@@ -1573,6 +1573,8 @@ Evidence: Initial `git status --short`; both SHA-256 hashes were `BB4A1B7EA08516
 Impact: The root copy is included by the repository-wide Prettier check, unlike `docs/`.  
 Action: Preserved both copies; formatted the root copy to satisfy the gate and updated this canonical plan with execution evidence.
 
+Follow-up: The pre-execution root copy was removed after the user chose this implemented canonical plan as the version to keep.
+
 ### S-002 — Project-relative ESLint glob
 
 Observed: The first raw-environment probe passed because an `apps/*/src` selector did not match when Nx launched ESLint inside `domains/iam`.  
@@ -1591,8 +1593,15 @@ Action: Ran the real repository scripts with those environment settings; left pa
 
 Observed: The Docker CLI could not connect to `//./pipe/docker_engine`; both existing Testcontainers integration suites failed before tests could run.  
 Evidence: `docker info` and `pnpm test:integration` reported `Could not find a working container runtime strategy`.  
-Impact: Integration and the Docker-dependent full verification gate cannot be proven locally. This phase changed no persistence or runtime behavior.  
-Action: Recorded the external blocker without weakening or skipping the suites.
+Impact at initial closeout: Integration and the Docker-dependent full verification gate could not be proven locally. This phase changed no persistence or runtime behavior.  
+Action: Recorded the external blocker without weakening or skipping the suites. Docker 29.2.1 was subsequently accessible; the integration suites passed during the follow-up `pnpm verify:full` run.
+
+### S-005 — One Firefox overlay E2E failure during full verification
+
+Observed: After Docker became available, `pnpm verify:full` passed format, lint, typecheck, unit tests, build, Prisma validation/generation and both PostgreSQL integration suites, then failed one design-system lab test in Firefox. Playwright reported 129 passed and one failure: the dialog focus-trap predicate exceeded its 1,000 ms timeout during the 12-step Tab/Shift+Tab loop.  
+Evidence: `apps/web-e2e/src/lab/shared/overlays.spec.ts:5` and its retained trace/screenshot under ignored `apps/web-e2e/test-output`; the same test passed three times in one focused Firefox run (`--repeat-each=3`).  
+Impact: The full verification gate is not green. The focus behavior under the full parallel suite remains uncertain; an isolated pass does not erase the failure.  
+Action: Preserved the failing test and its diagnostics, made no unrelated UI change, and recorded the residual finding for independent audit.
 
 ---
 
@@ -1606,7 +1615,7 @@ Action: Recorded the external blocker without weakening or skipping the suites.
 - [x] M5 Auth/IAM separation — source/dependency search confirms no auth or provider implementation in IAM.
 - [x] M6 Centralized environment access enforcement — IAM raw-read probe rejected; existing bootstrap and final lint pass.
 - [x] M7 Negative boundary verification — five independent violations and a relative-path variant failed for the intended rules; probes removed.
-- [x] M8 Regression verification — `pnpm verify`, `pnpm db:validate`, Nx sync/graph checks pass; existing Docker-dependent integration tests are externally blocked as documented in S-004.
+- [x] M8 Regression verification — the required fast gate, Prisma validation, Nx checks and later PostgreSQL integration suites pass. The additional full gate has one Firefox design-system E2E failure documented in S-005.
 - [x] M9 Documentation and closeout — status, decisions, discoveries, outcomes, Master Plan ledger and README reflect the resulting tree.
 
 ---
@@ -1631,19 +1640,20 @@ Web → IAM, IAM → database, package deep import, relative deep import, IAM �
 `pnpm test:integration` — BLOCKED by absent Docker engine; both existing Testcontainers suites fail before execution.  
 `pnpm install --lockfile-only --offline` — BLOCKED by absent pnpm release-age metadata; lockfile contains only the generated new importer.
 
+Follow-up after Docker recovery: `docker info` — PASS (server 29.2.1). `pnpm verify:full` — FAIL at Playwright only: 129 passed, one Firefox dialog focus-trap test failed; all preceding stages, including both PostgreSQL integration suites, passed. Focused Playwright Firefox run of that same test with `--repeat-each=3` — PASS (3/3). No test was skipped or weakened.
+
 ### Deviations
 
 The conditional `packages/iam` preference resolved to `domains/iam` because the accepted IAM specification and Master Plan explicitly name the domain path. Broad Master Plan IAM-0 preparation for typed auth/Keycloak configuration was narrowed to this executable plan's architecture-only scope and aligned in the Master Plan.
 
 ### Remaining risks
 
-Docker-dependent integration/E2E/full verification remains unproven locally until a container runtime is available. A frozen install with the pinned pnpm 12.5.1 has not been run in this environment; the lockfile change is limited to `domains/iam: {}`.
+The full gate is red due to the one Firefox overlay focus-trap failure under parallel E2E execution; the isolated three-run check passed, so reproducibility under full load remains unresolved. A frozen install with pinned pnpm 12.5.1 has not been run in this environment; the lockfile change is limited to `domains/iam: {}`.
 
 ### Final working tree
 
-`HEAD` remains `eef2b25abb1b140c52c28279611b5b6df56fe66a`; no commit, branch change or remote action was made. Intended tracked changes are the workspace/lockfile, TypeScript references, ESLint boundaries, README and Master Plan. `domains/iam/` and this canonical execution plan are untracked new work. The initially untracked repository-root duplicate plan remains present and was only formatted. No probe or generated source file remains in the working tree.
+At the initial IAM-00 implementation closeout, `HEAD` remained `eef2b25abb1b140c52c28279611b5b6df56fe66a`; no commit, branch change or remote action had been made. Those intended changes were later committed and pushed to `main` as `40c5aff39713b810af5e41a62a3c6ad0683130bc`. The initially untracked repository-root duplicate has now been removed; this canonical plan remains the sole IAM-00 execution plan. No probe or generated source file was committed.
 
-Do not invent hypothetical backlog items.
 
 ---
 
