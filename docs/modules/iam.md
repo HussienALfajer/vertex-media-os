@@ -850,6 +850,8 @@ Any operation that would reduce the number of ACTIVE System Administrators from 
 
 Operations on holders that are not ACTIVE do not change the count and are not blocked by this rule.
 
+Bootstrap recovery mode (Section 21.3) removes the System Administrator role assignment from SUSPENDED and DISABLED holders. It runs only when the ACTIVE count is already zero and never touches an ACTIVE holder, so it neither engages nor weakens this rule.
+
 The count check and the mutation MUST commit in one transaction that is serialized against every other operation able to reduce the count and against bootstrap (Section 21), for example by locking the system-administrator role row or by SERIALIZABLE isolation with retry. Per-user optimistic versions alone are insufficient: two concurrent operations on different administrators could each observe a remaining administrator and together remove both.
 
 No default shared System Administrator user may exist.
@@ -886,17 +888,28 @@ A bootstrap candidate is any user holding the system-administrator role whose ac
 | An ACTIVE System Administrator exists | Refuse; further administrators are managed through IAM administration |
 | Any other candidate set (different email, several candidates, or only SUSPENDED/DISABLED candidates) | Refuse; recovery mode is required |
 
-Resuming never changes the candidate's stored display name, roles, or memberships. Refusals report a stable, distinguishable reason.
+Resuming never changes the candidate's stored display name, roles, or memberships. Refusals report a stable, distinguishable reason. A user ceases to be a candidate only when it is terminated or its System Administrator role assignment is removed, and recovery mode (Section 21.3) is the only bootstrap path that does either.
 
 ### 21.3 Recovery mode
 
-Recovery mode is an explicit command option that requires an operator-supplied reason and is audited as a distinct action. It is allowed only when no ACTIVE System Administrator exists. In one serialized transaction it terminates every INVITED candidate (Section 10.5; the records are kept and their identities are disabled by reconciliation) and creates exactly one new candidate. If the new candidate's normalized email already belongs to any user, including a terminated one, the transaction fails and nothing changes. SUSPENDED and DISABLED holders remain unchanged for review by the recovered administrator.
+Recovery mode is an explicit command option that requires an operator-supplied reason and is audited as a distinct action. It is allowed only when no ACTIVE System Administrator exists. In one serialized transaction it supersedes every existing candidate and then creates exactly one new INVITED candidate, so the command always leaves exactly one live candidate:
+
+| Existing candidate | Recovery result |
+|---|---|
+| INVITED | TERMINATED (Section 10.5); the record, its identity mapping, and its role history are kept |
+| SUSPENDED or DISABLED | the ApplicationUser and its accessState are unchanged; only the protected System Administrator role assignment is removed |
+
+No user is deleted, and the INVITED to TERMINATED transition that supersession requires is the only access-state change recovery makes. Removing a role assignment neither restores access nor alters what IAM requires of Keycloak for that user (Section 11.1), so it leaves identitySyncState untouched: a superseded SUSPENDED or DISABLED holder stays denied, keeps its disabled Keycloak identity, and remains visible for review by the recovered administrator. Because recovery runs only when no ACTIVE System Administrator exists, every superseded candidate is non-ACTIVE and the last-System-Administrator rule (Section 20) is not engaged. Each supersession and the creation are audited individually inside the recovery action (Section 34).
+
+If the new candidate's normalized email already belongs to any user, including a terminated one, the transaction fails and nothing changes.
+
+Keycloak work runs only after that transaction commits: identity reconciliation disables the terminated candidates' identities and terminates their Keycloak sessions in the fail-closed order of Section 31.1, and the new candidate is reconciled and invited (Sections 11.2 and 11.3). A failure at that stage records identitySyncState = FAILED for the affected user and restores no access.
 
 An ACTIVE System Administrator who has lost credentials or MFA is recovered in Keycloak (Section 54), not through bootstrap.
 
 ### 21.4 Concurrency and failure
 
-- Candidate evaluation and candidate creation or supersession run in one database transaction serialized against concurrent bootstrap invocations and against System Administrator count changes (Section 20). A concurrent invocation that loses re-evaluates and then resumes or refuses; at most one candidate is created.
+- Candidate evaluation, the supersession of existing candidates including its role-assignment removals, and candidate creation run in one database transaction serialized against concurrent bootstrap invocations and against System Administrator count changes (Section 20). A concurrent invocation that loses re-evaluates and then resumes or refuses; at most one candidate is created.
 - Keycloak calls happen only after that transaction commits.
 - An ambiguous Keycloak failure leaves the candidate PENDING or FAILED. Re-running the command resumes through reconciliation, which finds and links an identity created by the lost request instead of creating another (Section 11.2); Keycloak's realm-unique username is the final backstop against a duplicate identity.
 - Concurrent resumes of the same candidate are safe because reconciliation is idempotent; a duplicate invitation email is harmless.
@@ -1270,7 +1283,7 @@ IAM MUST record security events for at least:
 - department activation/deactivation;
 - authorization denials at a useful, non-noisy level;
 - Keycloak synchronization failures and sign-in mismatches (Section 13);
-- System Administrator changes, including bootstrap and recovery invocations.
+- System Administrator changes, including bootstrap and recovery invocations and each candidate that recovery supersedes.
 
 Logs are not sufficient audit evidence.
 
@@ -1355,10 +1368,19 @@ At minimum configuration must define:
 - user/admin event logging;
 - back-channel logout;
 - required actions;
-- username and email not changeable by users: "Edit username" disabled, the email attribute not user-editable in the user profile, and the Update Email action disabled (the feature is supported and enabled by default in Keycloak 26);
+- username and email not changeable by users through any ordinary user-facing route: the realm's "Edit username" setting disabled, the user profile declaring `username` and `email` with `edit` permission for `admin` only, and the Update Email required action left disabled;
 - the vertexUserId attribute declared in the user profile with administrator-only view and edit permissions (undeclared attributes are ignored by default);
 - email (SMTP) settings for required-action email, with credentials supplied as secrets;
 - token/session settings compatible with Vertex application-session limits.
+
+The username and email restriction has four distinct layers, and only the user-profile permission closes it on its own. Verified against the pinned Keycloak 26.7.4 sources:
+
+1. **Server feature.** `update-email` is a supported feature that is on unless explicitly disabled (`Profile.Feature.UPDATE_EMAIL` is declared `Type.DEFAULT`). It was preview in 26.0.0, so this status MUST be read for the pinned patch release rather than for "Keycloak 26" as a whole.
+2. **Realm required action.** A realm registers the Update Email required action with `enabled = false` and not as a default action, and the action runs only when the server feature is on and that realm provider is enabled. A Vertex realm therefore starts with it off, and the configuration keeps it off explicitly rather than relying on that default.
+3. **User-profile permission.** The Keycloak default user profile grants `edit` on `username` and `email` to both `admin` and `user`. With the Update Email required action disabled and `registrationEmailAsUsername` off, the account route still lets a user edit `email` through the user profile, so disabling the required action is not sufficient by itself. The realm MUST therefore remove `user` from the `email` attribute's `edit` permission. Username has an equivalent realm-level gate in "Edit username", which is off by default; the user-profile restriction is stated for both attributes so that neither depends on a single default. A user profile that makes email read-only additionally causes the Update Email action to be skipped and cleared should it ever be enabled.
+4. **Vertex policy.** Email and username are immutable after creation in V1 (Section 9.1), so every ordinary user-facing route to change them is closed. These user-profile permissions deliberately do not restrict the Admin REST API, which is what lets vertex-provisioner set username and email at creation (Section 11.2); operators MUST NOT use that capability to change them afterwards.
+
+Changing a user's email remains a deferred decision (Section 57): V1 defines no email-change workflow in Vertex or in Keycloak.
 
 Manual console-only configuration is not an acceptable production source of truth.
 
@@ -1611,7 +1633,7 @@ Cover:
 - suspend/disable/terminate fail-closed ordering;
 - reactivation ordering, including compensation when the final commit fails;
 - operation outcome reporting (Section 27);
-- bootstrap create, resume, refusal, and recovery modes;
+- bootstrap create, resume, refusal, and recovery modes, including that recovery terminates INVITED candidates, removes the System Administrator role from SUSPENDED and DISABLED holders without changing their accessState or identitySyncState, and leaves exactly one live candidate;
 - role assignment/removal;
 - department membership changes;
 - role permission replacement;
@@ -1638,7 +1660,7 @@ Cover:
 - transaction rollback;
 - last-admin concurrency with competing operations on different administrators;
 - first activation racing a suspension;
-- concurrent bootstrap invocations creating at most one candidate;
+- concurrent bootstrap invocations leaving at most one live candidate;
 - session revocation persistence where session infrastructure uses PostgreSQL.
 
 ### 46.4 Keycloak integration tests
@@ -1649,7 +1671,7 @@ Use a real Keycloak 26.7.4 test container/realm for integration coverage of:
 - external subject binding;
 - recovery of a lost create response without a duplicate identity;
 - vertexUserId attribute present at creation and not user-editable;
-- username and email not user-editable;
+- username and email not user-editable through the account/user-profile route, with the Update Email required action disabled (Section 37);
 - required-action invitation, and Vertex's handling of Keycloak refusing it for a disabled identity;
 - enable/disable;
 - session termination;
@@ -2031,7 +2053,7 @@ IAM V1 is complete only when all applicable statements below are true.
 - [ ] security-negative tests exist.
 - [ ] dependency/security audit passes under repository policy.
 - [ ] no default/shared privileged production account exists.
-- [ ] bootstrap is idempotent, serialized, and non-duplicating, and its recovery mode is explicit and audited.
+- [ ] bootstrap is idempotent, serialized, and non-duplicating; its recovery mode is explicit, audited, and leaves exactly one live System Administrator candidate.
 
 ### Verification
 
@@ -2126,7 +2148,7 @@ The following invariants summarize IAM V1 and MUST remain true:
 17. Security-sensitive IAM mutations have durable accountability evidence.
 18. IAM internals and Prisma models are not cross-module APIs.
 19. No public self-registration exists in V1.
-20. No shared/default privileged Vertex account exists, and bootstrap never creates a second live System Administrator candidate.
+20. No shared/default privileged Vertex account exists, and bootstrap never leaves more than one live System Administrator candidate: recovery supersedes the existing candidates before creating the single new one.
 21. No wildcard permission exists in V1.
 22. No speculative tenant/HR/policy-engine infrastructure is introduced.
 23. IAM is not complete until domain, API, frontend, integration, E2E, security, and audit verification are all green.
@@ -2139,7 +2161,7 @@ As of 2026-09-22, the reviewed external baseline is Keycloak 26.7.4.
 
 The official Keycloak documentation confirms the current Admin REST capability to create users and send required-action email flows, and documents the current bootstrap-admin environment-variable names. The implementation MUST still verify the exact API/configuration behavior against the pinned Keycloak release when code is written.
 
-The 26.7.4 sources and documentation were reviewed on 2026-09-22 for the behavior this specification relies on: user creation returns 201 with the new user's location, and a duplicate username or email returns 409; users can be searched by exact username and by attribute (q=key:value); execute-actions email is refused for users without an email address or that are disabled, and an email-sending failure returns an error; the user logout action terminates all of a user's sessions; usernames and emails are lowercased with the JVM default locale; unmanaged user attributes are ignored unless declared in the user profile or allowed by policy; Update Email is a supported feature enabled by default.
+The 26.7.4 sources and documentation were reviewed on 2026-09-22 for the behavior this specification relies on: user creation returns 201 with the new user's location, and a duplicate username or email returns 409; users can be searched by exact username and by attribute (q=key:value); execute-actions email is refused for users without an email address or that are disabled, and an email-sending failure returns an error; the user logout action terminates all of a user's sessions; usernames and emails are lowercased with the JVM default locale; unmanaged user attributes are ignored unless declared in the user profile or allowed by policy. The Update Email layers recorded in Section 37 were verified in the same review: the server feature is declared `Type.DEFAULT` in 26.7.4 after being `Type.PREVIEW` in 26.0.0; a realm registers the Update Email required action with `enabled = false`; the action runs only when the feature and that realm provider are both enabled; the default user profile grants `email` edit to both `admin` and `user`; and the action is skipped and cleared when the user profile makes email read-only.
 
 Repository security policy remains authoritative if an external default differs from Vertex OS requirements.
 
