@@ -12,6 +12,8 @@ import nx from '@nx/eslint-plugin';
  *   - `scope:backend` backend/server-side code (may use Node, Nest, Prisma)
  *   - `scope:web`     browser code (must never import backend/database code)
  *   - `layer:infrastructure` technical infrastructure such as `packages/database`
+ *   - `layer:ui`      the business-neutral design system `packages/ui` (no router, query,
+ *                     application or domain dependencies)
  * Domain projects will add their own tags and constraints when they exist.
  */
 export default [
@@ -28,7 +30,31 @@ export default [
       'apps/api/generated',
       'packages/database/src/generated',
       'apps/web/src/routeTree.gen.ts',
+      '**/dist-lab',
     ],
+  },
+  {
+    // The design system's third-party primitives and internals stay behind its public API.
+    // packages/ui (the only permitted user) switches this off in its own config.
+    files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.mts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@base-ui/*', '@floating-ui/*'],
+              message:
+                'Import the Vertex component from @vertex-os/ui; primitives are internal to it.',
+            },
+            {
+              group: ['@vertex-os/ui/*', '!@vertex-os/ui/styles.css'],
+              message: 'Import from the @vertex-os/ui entry point only.',
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
@@ -39,6 +65,11 @@ export default [
           enforceBuildableLibDependency: true,
           allow: ['^.*/eslint(\.base)?\.config\.[cm]?[jt]s$'],
           depConstraints: [
+            {
+              sourceTag: 'layer:ui',
+              onlyDependOnLibsWithTags: ['layer:ui'],
+              bannedExternalImports: ['@tanstack/react-query', '@tanstack/react-router'],
+            },
             {
               sourceTag: 'type:app',
               onlyDependOnLibsWithTags: ['type:lib'],

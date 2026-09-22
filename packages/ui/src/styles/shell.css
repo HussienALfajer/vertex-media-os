@@ -1,0 +1,171 @@
+/* Application shell (docs/DESIGN_SYSTEM.md §5.2, §22.1, §23). */
+@layer components {
+  .vx-shell {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    min-block-size: 100dvh;
+    background-color: var(--vx-color-background-canvas);
+  }
+
+  .vx-shell[data-layout='narrow'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* First focus: visually hidden until focused, then above the shell. */
+  .vx-skip-link {
+    position: fixed;
+    inset-block-start: var(--vx-space-actions);
+    inset-inline-start: var(--vx-space-actions);
+    z-index: var(--vx-layer-toast);
+    padding-block: var(--vx-space-actions);
+    padding-inline: var(--vx-space-control-inline);
+    border: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    border-radius: var(--vx-radius-control);
+    background-color: var(--vx-color-background-raised);
+    color: var(--vx-color-text-primary);
+    font-weight: var(--vx-type-label-weight);
+    text-decoration: none;
+  }
+
+  .vx-skip-link:not(:focus) {
+    clip-path: inset(50%);
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    white-space: nowrap;
+  }
+
+  /* Quiet sidebar at inline-start; its own scroll only for long navigation. */
+  .vx-shell-sidebar {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--vx-layer-shell);
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-toolbar-groups);
+    inline-size: var(--vx-size-shell-sidebar);
+    block-size: 100dvh;
+    padding-inline: var(--vx-space-actions);
+    padding-block-end: var(--vx-space-toolbar-groups);
+    overflow-y: auto;
+    border-inline-end: var(--vx-border-width-default) solid var(--vx-color-border-subtle);
+    background-color: var(--vx-color-background-sidebar);
+  }
+
+  .vx-shell[data-layout='rail'] .vx-shell-sidebar {
+    inline-size: var(--vx-size-shell-rail);
+    align-items: center;
+  }
+
+  .vx-shell-sidebar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--vx-space-actions);
+    min-block-size: var(--vx-size-shell-header);
+    padding-inline-start: var(--vx-space-field-gap);
+  }
+
+  .vx-shell[data-layout='rail'] .vx-shell-sidebar-top {
+    padding-inline-start: 0;
+  }
+
+  .vx-shell-sidebar .vx-sidebar-nav {
+    flex: 1;
+  }
+
+  .vx-shell-sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+    padding-block-start: var(--vx-space-toolbar-groups);
+    border-block-start: var(--vx-border-width-default) solid var(--vx-color-border-subtle);
+  }
+
+  /* Typographic identity until an approved vector lockup exists (§5.2). */
+  .vx-brand {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--vx-size-control-block);
+    padding-inline: var(--vx-space-actions);
+    border-radius: var(--vx-radius-control);
+    color: var(--vx-color-brand-mark);
+    font-family: var(--vx-font-family-latin);
+    font-size: var(--vx-type-subheading-size);
+    line-height: var(--vx-type-subheading-line-height);
+    font-weight: var(--vx-type-subheading-weight);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .vx-shell-body {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  /* 56px minimum; grows with its text instead of clipping (§22.1, §23). */
+  .vx-shell-header {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--vx-layer-shell);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vx-space-actions);
+    min-block-size: var(--vx-size-shell-header);
+    padding-inline: var(--vx-space-page-gutter);
+    border-block-end: var(--vx-border-width-default) solid var(--vx-color-border-subtle);
+    background-color: var(--vx-color-background-canvas);
+  }
+
+  .vx-shell-header-context {
+    flex: 1;
+    min-inline-size: 0;
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-shell-header-utilities {
+    display: flex;
+    align-items: center;
+    gap: var(--vx-space-actions);
+  }
+
+  .vx-shell-main {
+    flex: 1;
+    padding-inline: var(--vx-space-page-gutter);
+    padding-block: var(--vx-space-section) var(--vx-space-form-sections);
+  }
+
+  .vx-shell-main:focus {
+    outline: none;
+  }
+
+  .vx-shell-main:focus-visible {
+    outline: var(--vx-focus-ring-width) solid var(--vx-color-focus-ring);
+    outline-offset: calc(-1 * var(--vx-focus-ring-width));
+    box-shadow: none;
+  }
+
+  @media (pointer: coarse) {
+    .vx-brand {
+      min-block-size: var(--vx-size-target-touch);
+    }
+  }
+
+  @media (width < theme(--breakpoint-medium)) {
+    .vx-shell-header,
+    .vx-shell-main {
+      padding-inline: var(--vx-space-page-gutter-narrow);
+    }
+  }
+
+  @media (width >= theme(--breakpoint-xwide)) {
+    .vx-shell-header,
+    .vx-shell-main {
+      padding-inline: var(--vx-space-page-gutter-wide);
+    }
+  }
+}

@@ -1,7 +1,7 @@
 # Remote enforcement of the repository's own verification commands (README, "Verification").
 # No secrets are needed: integration tests start ephemeral PostgreSQL containers through
-# Testcontainers, and the end-to-end smoke test gives the API a synthetic, never-connected
-# database URL (apps/web-e2e/playwright.config.mts). Nx runs locally only (Nx Cloud is disabled).
+# Testcontainers, and the end-to-end tests give the API a synthetic, never-connected database
+# URL (apps/web-e2e/playwright.config.mts). Nx runs locally only (Nx Cloud is disabled).
 name: CI
 
 on:
@@ -43,8 +43,11 @@ jobs:
       - name: Install dependencies (committed lockfile, frozen)
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright Chromium and its system dependencies
-        run: pnpm exec playwright install --with-deps chromium
+      # Chromium, Firefox and WebKit: the design-system overlay, form and bidi behaviour is
+      # verified in all three engines. Visual baselines render in the digest-pinned Playwright
+      # Linux image, which the e2e run starts itself through Docker (already required).
+      - name: Install Playwright browsers and their system dependencies
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: pnpm verify:full
         id: verify

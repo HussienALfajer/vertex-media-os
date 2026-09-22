@@ -1,0 +1,557 @@
+/*
+ * Actions, fields and choices (docs/DESIGN_SYSTEM.md §9.2, §14, §19, §26–§28).
+ * Block padding subtracts the 1px border so a single-line control is exactly its token size
+ * (40/36px) while multi-line content can still grow.
+ */
+@layer components {
+  /* ------------------------------------------------------------------ Button */
+  .vx-button {
+    --_background: var(--vx-color-action-secondary-background);
+    --_foreground: var(--vx-color-action-secondary-foreground);
+    --_border: var(--vx-color-action-secondary-border);
+    --_hover: var(--vx-color-action-quiet-hover);
+    --_pressed: var(--vx-color-action-quiet-pressed);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: var(--vx-size-control-block);
+    min-inline-size: var(--vx-size-control-block);
+    padding-block: calc(var(--vx-space-control-block) - var(--vx-border-width-default));
+    padding-inline: calc(var(--vx-space-control-inline) - var(--vx-border-width-default));
+    border: var(--vx-border-width-default) solid var(--_border);
+    border-radius: var(--vx-radius-control);
+    background-color: var(--_background);
+    color: var(--_foreground);
+    font-size: var(--vx-type-label-size);
+    line-height: var(--vx-type-label-line-height);
+    font-weight: var(--vx-type-label-weight);
+    text-align: center;
+    cursor: pointer;
+    transition-property: background-color, border-color, color;
+    transition-duration: var(--vx-motion-duration-fast);
+    transition-timing-function: var(--vx-motion-ease-standard);
+  }
+
+  .vx-button[data-variant='primary'] {
+    --_background: var(--vx-color-action-primary-background);
+    --_foreground: var(--vx-color-action-primary-foreground);
+    --_border: var(--vx-color-action-primary-background);
+    --_hover: var(--vx-color-action-primary-hover);
+    --_pressed: var(--vx-color-action-primary-pressed);
+  }
+
+  .vx-button[data-variant='primary'][data-intent='danger'] {
+    --_background: var(--vx-color-action-danger-background);
+    --_foreground: var(--vx-color-action-danger-foreground);
+    --_border: var(--vx-color-action-danger-background);
+    --_hover: var(--vx-color-action-danger-hover);
+    --_pressed: var(--vx-color-action-danger-pressed);
+  }
+
+  .vx-button[data-variant='ghost'] {
+    --_background: transparent;
+    --_border: transparent;
+  }
+
+  .vx-button[data-variant='ghost'][data-intent='danger'] {
+    --_foreground: var(--vx-color-status-danger-foreground);
+    --_hover: var(--vx-color-status-danger-background);
+    --_pressed: var(--vx-color-status-danger-background);
+  }
+
+  .vx-button[data-size='small'] {
+    min-block-size: var(--vx-size-control-small);
+    min-inline-size: var(--vx-size-control-small);
+    padding-block: 0;
+  }
+
+  .vx-button[data-size='large'] {
+    min-block-size: var(--vx-size-control-large);
+    min-inline-size: var(--vx-size-control-large);
+  }
+
+  .vx-button[data-icon-only] {
+    inline-size: var(--vx-size-control-block);
+    padding: 0;
+  }
+
+  .vx-button[data-icon-only][data-size='small'] {
+    inline-size: var(--vx-size-control-small);
+  }
+
+  /* Hover changes colour only, on hover-capable pointers (§18–§19). */
+  @media (hover: hover) {
+    .vx-button:hover:not(:disabled, [aria-disabled='true']) {
+      --_background: var(--_hover);
+    }
+  }
+
+  /* Press never scales or moves the control. */
+  .vx-button:active:not(:disabled, [aria-disabled='true']) {
+    --_background: var(--_pressed);
+  }
+
+  .vx-button[data-intent='danger']:active:not(:disabled, [aria-disabled='true']) {
+    box-shadow: inset 0 0 0 var(--vx-border-width-default) var(--vx-color-status-danger-foreground);
+  }
+
+  /* Disabled replaces every variant and intent (§19); the attribute selectors outrank them. */
+  .vx-button[data-variant][data-intent]:disabled {
+    --_background: var(--vx-color-action-disabled-background);
+    --_foreground: var(--vx-color-action-disabled-foreground);
+    --_border: var(--vx-color-action-disabled-background);
+    cursor: not-allowed;
+  }
+
+  .vx-button[data-variant='ghost'][data-intent]:disabled {
+    --_background: transparent;
+    --_border: transparent;
+  }
+
+  .vx-button[data-pending] {
+    cursor: progress;
+  }
+
+  .vx-button[aria-disabled='true']:not([data-pending]) {
+    cursor: not-allowed;
+  }
+
+  /* Resting and pending layers share one cell: the label width never jumps (§28.4). */
+  .vx-button-layers {
+    display: inline-grid;
+  }
+
+  .vx-button-layer {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--vx-space-icon-label);
+  }
+
+  .vx-button-layer[data-inactive] {
+    visibility: hidden;
+  }
+
+  .vx-button-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--vx-space-actions);
+  }
+
+  /* ------------------------------------------------------------------ Field structure */
+  .vx-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+    min-inline-size: 0;
+  }
+
+  .vx-label {
+    font-size: var(--vx-type-label-size);
+    line-height: var(--vx-type-label-line-height);
+    font-weight: var(--vx-type-label-weight);
+    color: var(--vx-color-text-primary);
+  }
+
+  .vx-field-mark {
+    margin-inline-start: var(--vx-space-field-gap);
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-field-optional {
+    color: var(--vx-color-text-secondary);
+    font-weight: var(--vx-font-weight-regular);
+  }
+
+  .vx-field-description,
+  .vx-choice-description {
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-field-error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vx-space-field-gap);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+    color: var(--vx-color-status-danger-foreground);
+  }
+
+  .vx-field-error > .vx-icon {
+    /* Centre the 16px icon on the 20px first line. */
+    margin-block: calc(
+      (
+          var(--vx-type-secondary-size) * var(--vx-type-secondary-line-height) -
+            var(--vx-size-icon-small)
+        ) /
+        2
+    );
+  }
+
+  .vx-fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .vx-fieldset > legend {
+    padding: 0;
+    margin-block-end: var(--vx-space-field-gap);
+  }
+
+  .vx-fieldset-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+  }
+
+  /* ------------------------------------------------------------------ Text entry */
+  .vx-input {
+    inline-size: 100%;
+    min-inline-size: 0;
+    min-block-size: var(--vx-size-control-block);
+    padding-block: calc(var(--vx-space-control-block) - var(--vx-border-width-default));
+    padding-inline: calc(var(--vx-space-control-inline) - var(--vx-border-width-default));
+    border: var(--vx-border-width-default) solid var(--vx-color-field-border);
+    border-radius: var(--vx-radius-control);
+    background-color: var(--vx-color-field-background);
+    color: var(--vx-color-text-primary);
+    font-size: var(--vx-type-body-size);
+    line-height: var(--vx-type-body-line-height);
+  }
+
+  .vx-input::placeholder {
+    color: var(--vx-color-field-placeholder);
+    opacity: 1;
+  }
+
+  /* Field focus stays visible during pointer editing, not only for keyboard focus (§20). */
+  .vx-input:focus {
+    outline: var(--vx-focus-ring-width) solid var(--vx-color-focus-ring);
+    outline-offset: var(--vx-focus-ring-offset);
+    box-shadow: 0 0 0 var(--vx-focus-ring-offset) var(--vx-color-focus-gap);
+  }
+
+  /* Invalid replaces the boundary without growing; focus keeps the normal ring (§16, §19). */
+  .vx-input[aria-invalid='true'] {
+    border-color: var(--vx-color-status-danger-border);
+  }
+
+  /* Read-only stays readable and selectable; it is not disabled (§19). */
+  .vx-input:read-only:not(select, :disabled) {
+    background-color: var(--vx-color-field-readonly-background);
+  }
+
+  .vx-input:disabled {
+    background-color: var(--vx-color-action-disabled-background);
+    border-color: var(--vx-color-border-default);
+    color: var(--vx-color-text-disabled);
+    cursor: not-allowed;
+  }
+
+  /* LTR data fields align with the page's inline-start edge in RTL forms (§24.3). */
+  .vx-input[dir='ltr']:where(:root[dir='rtl'] *) {
+    text-align: right;
+  }
+
+  textarea.vx-input[data-multiline] {
+    min-block-size: var(--vx-size-textarea-min-block);
+    resize: block;
+  }
+
+  /* Prevents small-input zoom on narrow and touch screens (§12.2). */
+  @media (width < theme(--breakpoint-medium)), (pointer: coarse) {
+    .vx-input {
+      font-size: var(--vx-type-control-touch-size);
+      line-height: var(--vx-type-control-touch-line-height);
+      font-weight: var(--vx-type-control-touch-weight);
+    }
+  }
+
+  .vx-select {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-inline-size: 0;
+  }
+
+  .vx-select > select {
+    appearance: none;
+    padding-inline-end: calc(
+      var(--vx-space-control-inline) + var(--vx-size-icon-default) + var(--vx-space-field-gap)
+    );
+    cursor: pointer;
+  }
+
+  .vx-select > .vx-icon {
+    position: absolute;
+    inset-inline-end: var(--vx-space-control-inline);
+    color: var(--vx-color-icon-default);
+    pointer-events: none;
+  }
+
+  .vx-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    inline-size: var(--vx-size-search-preferred);
+    min-inline-size: var(--vx-size-search-min);
+    max-inline-size: 100%;
+  }
+
+  .vx-search > .vx-icon {
+    position: absolute;
+    inset-inline-start: var(--vx-space-control-inline);
+    color: var(--vx-color-icon-default);
+    pointer-events: none;
+  }
+
+  .vx-search > .vx-input {
+    padding-inline-start: calc(
+      var(--vx-space-control-inline) + var(--vx-size-icon-default) + var(--vx-space-icon-label)
+    );
+    padding-inline-end: calc(var(--vx-size-control-small) + var(--vx-space-field-gap));
+  }
+
+  .vx-search > .vx-input::-webkit-search-cancel-button {
+    appearance: none;
+  }
+
+  .vx-search > .vx-button {
+    position: absolute;
+    inset-inline-end: var(--vx-space-field-gap);
+  }
+
+  @media (width < theme(--breakpoint-medium)) {
+    .vx-search {
+      inline-size: 100%;
+    }
+  }
+
+  /* ------------------------------------------------------------------ Choices */
+  /* [control][label] with the description under the label; label + control are the hit area. */
+  .vx-choice {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--vx-space-icon-label);
+    min-inline-size: 0;
+  }
+
+  .vx-choice-label,
+  .vx-choice-input {
+    cursor: pointer;
+  }
+
+  .vx-choice:has(.vx-choice-input:disabled) :is(.vx-choice-label, .vx-choice-input),
+  .vx-choice[data-pending] :is(.vx-choice-label, .vx-choice-input) {
+    cursor: not-allowed;
+  }
+
+  .vx-choice-description {
+    grid-column: 2;
+  }
+
+  .vx-choice-control {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    /* Align the 20px box with the 24px first text line. */
+    block-size: calc(var(--vx-type-label-size) * var(--vx-type-label-line-height));
+  }
+
+  .vx-choice-input {
+    grid-area: 1 / 1;
+    appearance: none;
+    inline-size: var(--vx-size-choice-visual);
+    block-size: var(--vx-size-choice-visual);
+    margin: 0;
+    border: var(--vx-border-width-default) solid var(--vx-color-field-border);
+    border-radius: var(--vx-radius-small);
+    background-color: var(--vx-color-field-background);
+    transition-property: background-color, border-color;
+    transition-duration: var(--vx-motion-duration-fast);
+    transition-timing-function: var(--vx-motion-ease-standard);
+  }
+
+  .vx-choice[data-kind='radio'] .vx-choice-input {
+    border-radius: var(--vx-radius-round);
+  }
+
+  @media (hover: hover) {
+    .vx-choice:hover .vx-choice-input:not(:disabled, :checked, :indeterminate) {
+      border-color: var(--vx-color-focus-ring);
+    }
+  }
+
+  .vx-choice-input:checked,
+  .vx-choice-input:indeterminate {
+    border-color: var(--vx-color-action-primary-background);
+    background-color: var(--vx-color-action-primary-background);
+  }
+
+  .vx-choice-input:disabled {
+    border-color: var(--vx-color-border-default);
+    background-color: var(--vx-color-action-disabled-background);
+  }
+
+  .vx-choice-input:disabled:is(:checked, :indeterminate) {
+    border-color: var(--vx-color-action-disabled-foreground);
+    background-color: var(--vx-color-action-disabled-foreground);
+  }
+
+  .vx-choice-glyph {
+    grid-area: 1 / 1;
+    display: grid;
+    place-items: center;
+    color: var(--vx-color-action-primary-foreground);
+    pointer-events: none;
+  }
+
+  .vx-choice-glyph > [data-glyph] {
+    display: none;
+    grid-area: 1 / 1;
+  }
+
+  .vx-choice-input:checked:not(:indeterminate) + .vx-choice-glyph > [data-glyph='check'],
+  .vx-choice-input:indeterminate + .vx-choice-glyph > [data-glyph='dash'] {
+    display: grid;
+  }
+
+  .vx-choice-input:checked + .vx-choice-glyph > [data-glyph='dot'] {
+    display: block;
+    inline-size: calc(var(--vx-size-choice-visual) * 0.4);
+    block-size: calc(var(--vx-size-choice-visual) * 0.4);
+    border-radius: var(--vx-radius-round);
+    background-color: currentcolor;
+  }
+
+  .vx-choice-label {
+    font-size: var(--vx-type-label-size);
+    line-height: var(--vx-type-label-line-height);
+    font-weight: var(--vx-type-body-weight);
+  }
+
+  .vx-choice:has(.vx-choice-input:disabled) .vx-choice-label {
+    color: var(--vx-color-text-disabled);
+  }
+
+  /* Switch: off thumb at inline-start, on at inline-end, 2px inset (§9.2, §14, §24.1). */
+  .vx-choice[data-kind='switch'] .vx-choice-control {
+    inline-size: var(--vx-component-switch-track-inline);
+  }
+
+  .vx-choice[data-kind='switch'] .vx-choice-input {
+    inline-size: var(--vx-component-switch-track-inline);
+    block-size: var(--vx-component-switch-track-block);
+    border-color: var(--vx-color-border-strong);
+    border-radius: var(--vx-radius-round);
+    background-color: var(--vx-color-background-subtle);
+  }
+
+  .vx-switch-thumb {
+    position: absolute;
+    inset-inline-start: var(--vx-component-switch-inset);
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    inline-size: var(--vx-component-switch-thumb);
+    block-size: var(--vx-component-switch-thumb);
+    border-radius: var(--vx-radius-round);
+    background-color: var(--vx-color-text-secondary);
+    color: var(--vx-color-background-surface);
+    pointer-events: none;
+    transition: inset-inline-start var(--vx-motion-duration-fast) var(--vx-motion-ease-standard);
+  }
+
+  .vx-switch-thumb > .vx-spinner > .vx-icon {
+    inline-size: var(--vx-size-icon-small);
+    block-size: var(--vx-size-icon-small);
+  }
+
+  .vx-choice[data-kind='switch'] .vx-choice-input:checked {
+    border-color: var(--vx-color-action-primary-background);
+    background-color: var(--vx-color-action-primary-background);
+  }
+
+  .vx-choice[data-kind='switch'] .vx-choice-input:checked + .vx-switch-thumb {
+    inset-inline-start: calc(
+      var(--vx-component-switch-track-inline) - var(--vx-component-switch-thumb) -
+        var(--vx-component-switch-inset)
+    );
+    background-color: var(--vx-color-action-primary-foreground);
+    color: var(--vx-color-action-primary-background);
+  }
+
+  .vx-choice[data-kind='switch'] .vx-choice-input:disabled + .vx-switch-thumb {
+    background-color: var(--vx-color-action-disabled-foreground);
+  }
+
+  /* ------------------------------------------------------------------ Touch targets (§14) */
+  /* `[data-size]` matches every button and outranks the small/large size rules above. */
+  @media (pointer: coarse) {
+    .vx-button[data-size],
+    .vx-input {
+      min-block-size: var(--vx-size-target-touch);
+    }
+
+    .vx-button[data-size] {
+      min-inline-size: var(--vx-size-target-touch);
+    }
+
+    .vx-button[data-icon-only][data-size] {
+      inline-size: var(--vx-size-target-touch);
+    }
+
+    .vx-search > .vx-input {
+      padding-inline-end: calc(var(--vx-size-target-touch) + var(--vx-space-field-gap));
+    }
+
+    .vx-choice {
+      align-items: center;
+      min-block-size: var(--vx-size-target-touch);
+    }
+  }
+
+  /* ------------------------------------------------------------------ Forced colours (§20) */
+  @media (forced-colors: active) {
+    .vx-button {
+      border-color: ButtonText;
+    }
+
+    .vx-button:disabled {
+      border-color: GrayText;
+      color: GrayText;
+    }
+
+    .vx-choice-input {
+      border-color: ButtonText;
+    }
+
+    .vx-choice-input:is(:checked, :indeterminate),
+    .vx-choice[data-kind='switch'] .vx-choice-input:checked {
+      background-color: Highlight;
+      border-color: Highlight;
+    }
+
+    .vx-choice-glyph {
+      color: HighlightText;
+    }
+
+    .vx-switch-thumb {
+      background-color: ButtonText;
+    }
+
+    .vx-choice[data-kind='switch'] .vx-choice-input:checked + .vx-switch-thumb {
+      background-color: HighlightText;
+    }
+  }
+}

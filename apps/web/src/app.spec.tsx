@@ -4,9 +4,9 @@ import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAppRouter } from './router';
 
-function renderShell() {
+function renderShell(path = '/') {
   const queryClient = new QueryClient();
-  const router = createAppRouter(createMemoryHistory({ initialEntries: ['/'] }));
+  const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -14,8 +14,8 @@ function renderShell() {
   );
 }
 
-async function findApiStatus() {
-  const region = await screen.findByRole('region', { name: 'System status' });
+async function findApiStatus(regionName = 'حالة النظام') {
+  const region = await screen.findByRole('region', { name: regionName });
   return within(region).getByRole('status');
 }
 
@@ -29,17 +29,36 @@ describe('Vertex OS technical shell', () => {
     vi.unstubAllGlobals();
   });
 
-  it('identifies the product and shows the API as available when liveness succeeds', async () => {
+  it('starts in Arabic RTL and shows the API as available when liveness succeeds', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { status: 'ok' }));
     vi.stubGlobal('fetch', fetchMock);
 
     renderShell();
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Vertex OS' })).toBeTruthy();
+    expect(document.documentElement.lang).toBe('ar');
+    expect(document.documentElement.dir).toBe('rtl');
     const status = await findApiStatus();
-    await vi.waitFor(() => expect(status.textContent).toBe('API connection available'));
+    await vi.waitFor(() => expect(status.textContent).toBe('الاتصال بالواجهة البرمجية متاح'));
     // Same-origin contract: the browser calls the relative /api path, never an API origin.
     expect(fetchMock).toHaveBeenCalledWith('/api/health/live', expect.anything());
+  });
+
+  it('provides one main landmark, named navigation and a skip link to the main content', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+
+    renderShell();
+
+    const main = await screen.findByRole('main');
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'الانتقال إلى المحتوى' }).getAttribute('href')).toBe(
+      `#${main.id}`,
+    );
+    // Narrow layout in jsdom: navigation is offered through a named control, not a fake route.
+    expect(screen.getByRole('button', { name: 'فتح التنقل' })).toBeTruthy();
   });
 
   it('shows a pending state while the liveness check is in flight', async () => {
@@ -50,7 +69,7 @@ describe('Vertex OS technical shell', () => {
 
     renderShell();
 
-    expect((await findApiStatus()).textContent).toBe('Checking API connection…');
+    expect((await findApiStatus()).textContent).toBe('جارٍ التحقق من الاتصال بالواجهة البرمجية…');
   });
 
   it('stays usable and shows the API as unavailable when the request fails', async () => {
@@ -59,7 +78,7 @@ describe('Vertex OS technical shell', () => {
     renderShell();
 
     const status = await findApiStatus();
-    await vi.waitFor(() => expect(status.textContent).toBe('API connection unavailable'));
+    await vi.waitFor(() => expect(status.textContent).toBe('الاتصال بالواجهة البرمجية غير متاح'));
     expect(screen.getByRole('heading', { level: 1, name: 'Vertex OS' })).toBeTruthy();
   });
 
@@ -76,9 +95,9 @@ describe('Vertex OS technical shell', () => {
     renderShell();
 
     const status = await findApiStatus();
-    await vi.waitFor(() => expect(status.textContent).toBe('API connection unavailable'));
+    await vi.waitFor(() => expect(status.textContent).toBe('الاتصال بالواجهة البرمجية غير متاح'));
     await vi.advanceTimersByTimeAsync(15_000);
-    await vi.waitFor(() => expect(status.textContent).toBe('API connection available'));
+    await vi.waitFor(() => expect(status.textContent).toBe('الاتصال بالواجهة البرمجية متاح'));
   });
 
   it('shows the API as unavailable when it answers with a problem response', async () => {
@@ -94,6 +113,31 @@ describe('Vertex OS technical shell', () => {
     renderShell();
 
     const status = await findApiStatus();
-    await vi.waitFor(() => expect(status.textContent).toBe('API connection unavailable'));
+    await vi.waitFor(() => expect(status.textContent).toBe('الاتصال بالواجهة البرمجية غير متاح'));
+  });
+
+  it('renders the same status behaviour in English when that preference is stored', async () => {
+    localStorage.setItem('vertex.ui.preferences', JSON.stringify({ version: 1, language: 'en' }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { status: 'ok' })));
+
+    renderShell();
+
+    const status = await findApiStatus('System status');
+    await vi.waitFor(() => expect(status.textContent).toBe('API connection available'));
+    expect(document.documentElement.dir).toBe('ltr');
+  });
+
+  it('answers unknown addresses with a not-found page instead of an empty screen', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+
+    renderShell('/no-such-page');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'الصفحة غير موجودة' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'العودة إلى الرئيسية' })).toBeTruthy();
   });
 });

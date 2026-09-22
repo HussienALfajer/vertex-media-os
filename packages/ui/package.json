@@ -1,0 +1,55 @@
+{
+  "name": "@vertex-os/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vertex OS design system: business-neutral tokens, foundations, components and patterns",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@vertex-os/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./src/styles/index.css",
+    "./bootstrap": "./src/runtime/settings.ts",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "dependencies": {
+    "@base-ui/react": "1.8.0"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "nx": {
+    "tags": [
+      "type:lib",
+      "scope:web",
+      "layer:ui"
+    ],
+    "targets": {
+      "tokens": {
+        "command": "node scripts/generate-tokens.mjs",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": false
+      },
+      "test": {}
+    }
+  }
+}

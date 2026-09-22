@@ -3,6 +3,7 @@ node_modules/
 
 # Build and tool output
 dist/
+dist-lab/
 out-tsc/
 *.tsbuildinfo
 test-output/

@@ -1,4 +1,6 @@
 import { queryOptions, useQuery } from '@tanstack/react-query';
+import { StatusIndicator, Surface, type IconName, type Tone } from '@vertex-os/ui';
+import { useAppMessages, type AppMessages } from '../../app-messages';
 import { getJson } from '../../lib/http';
 
 const LIVENESS_REFRESH_MS = 15_000;
@@ -25,34 +27,37 @@ export const livenessQuery = queryOptions({
   refetchInterval: LIVENESS_REFRESH_MS,
 });
 
-const PRESENTATION = {
-  pending: { label: 'Checking API connection…', indicator: 'bg-slate-400' },
-  success: { label: 'API connection available', indicator: 'bg-emerald-500' },
-  error: { label: 'API connection unavailable', indicator: 'bg-red-500' },
-} as const;
+/** Maps the technical query state onto the shared tones (the feature owns this mapping, §33). */
+const PRESENTATION: Record<
+  'pending' | 'success' | 'error',
+  { tone: Tone; icon: IconName; label: keyof AppMessages }
+> = {
+  pending: { tone: 'info', icon: 'clock', label: 'apiPending' },
+  success: { tone: 'success', icon: 'check-circle', label: 'apiAvailable' },
+  error: { tone: 'danger', icon: 'alert-circle', label: 'apiUnavailable' },
+};
 
 /** Technical status of the browser -> web -> API path. Contains no business information. */
 export function ApiStatus() {
+  const messages = useAppMessages();
   const { status } = useQuery(livenessQuery);
-  const { label, indicator } = PRESENTATION[status];
+  const { tone, icon, label } = PRESENTATION[status];
 
   return (
-    <section
-      aria-labelledby="api-status-heading"
-      className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-    >
-      <h2 id="api-status-heading" className="text-sm font-medium text-slate-500">
-        System status
-      </h2>
-      <p role="status" className="mt-2 flex items-center gap-2 text-base font-medium">
-        <span aria-hidden="true" className={`inline-block size-2.5 rounded-full ${indicator}`} />
-        {label}
-      </p>
-      {status === 'error' ? (
-        <p className="mt-2 text-sm text-slate-600">
-          The Vertex OS API could not be reached. The connection is re-checked automatically.
-        </p>
-      ) : null}
+    <section aria-labelledby="api-status-heading">
+      <Surface>
+        <div className="flex flex-col gap-actions">
+          <h2 id="api-status-heading" className="type-subheading">
+            {messages.systemStatus}
+          </h2>
+          <p role="status">
+            <StatusIndicator tone={tone} icon={icon} label={messages[label]} />
+          </p>
+          {status === 'error' ? (
+            <p className="text-secondary">{messages.apiUnavailableDetail}</p>
+          ) : null}
+        </div>
+      </Surface>
     </section>
   );
 }

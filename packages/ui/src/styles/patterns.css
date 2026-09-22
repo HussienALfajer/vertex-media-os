@@ -1,0 +1,265 @@
+/* Product patterns: page grammar, forms, record detail, inspector (docs/DESIGN_SYSTEM.md §22, §28). */
+@layer components {
+  .vx-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-section);
+    inline-size: 100%;
+    min-inline-size: 0;
+    margin-inline: auto;
+  }
+
+  .vx-page[data-width='detail'] {
+    max-inline-size: var(--vx-size-content-detail);
+  }
+
+  .vx-page[data-width='form'] {
+    max-inline-size: var(--vx-size-content-form);
+  }
+
+  .vx-page[data-width='reading'] {
+    max-inline-size: var(--vx-size-content-reading);
+  }
+
+  /* 8px title→subtitle, 16px within the heading region, 24px before content (§22.2). */
+  .vx-page-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-component-page-header-region-gap);
+  }
+
+  .vx-page-header-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--vx-component-page-header-region-gap);
+  }
+
+  .vx-page-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-component-page-header-title-gap);
+    min-inline-size: 0;
+  }
+
+  .vx-page-title {
+    font-size: var(--vx-type-page-title-size);
+    line-height: var(--vx-type-page-title-line-height);
+    font-weight: var(--vx-type-page-title-weight);
+    overflow-wrap: anywhere;
+  }
+
+  .vx-page-title:focus {
+    outline: none;
+  }
+
+  .vx-page-title:focus-visible {
+    outline: var(--vx-focus-ring-width) solid var(--vx-color-focus-ring);
+  }
+
+  .vx-page-description {
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vx-space-actions);
+  }
+
+  @media (width < theme(--breakpoint-medium)) {
+    .vx-page-title {
+      font-size: var(--vx-type-page-title-narrow-size);
+      line-height: var(--vx-type-page-title-narrow-line-height);
+      font-weight: var(--vx-type-page-title-narrow-weight);
+    }
+  }
+
+  .vx-record-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-component-page-header-region-gap);
+  }
+
+  .vx-record-header-facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vx-space-actions);
+  }
+
+  .vx-form-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-form-fields);
+  }
+
+  .vx-form-section-heading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+  }
+
+  .vx-form-section-title {
+    font-size: var(--vx-type-section-title-size);
+    line-height: var(--vx-type-section-title-line-height);
+    font-weight: var(--vx-type-section-title-weight);
+  }
+
+  .vx-form-section-description,
+  .vx-required-note {
+    color: var(--vx-color-text-secondary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  .vx-form-section-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-form-fields);
+  }
+
+  /* Secondary precedes primary in DOM: the commit stays at inline-end / block-end (§23). */
+  .vx-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--vx-space-actions);
+  }
+
+  .vx-error-summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-actions);
+    padding: var(--vx-space-toolbar-groups);
+    border: var(--vx-border-width-default) solid var(--vx-color-status-danger-border);
+    border-radius: var(--vx-radius-surface);
+    background-color: var(--vx-color-status-danger-background);
+    color: var(--vx-color-text-primary);
+  }
+
+  /* Programmatic focus after a failed submission is always shown (§28.3). */
+  .vx-error-summary:focus {
+    outline: var(--vx-focus-ring-width) solid var(--vx-color-focus-ring);
+    outline-offset: var(--vx-focus-ring-offset);
+  }
+
+  .vx-error-summary-title {
+    color: var(--vx-color-status-danger-foreground);
+    font-weight: var(--vx-font-weight-semibold);
+  }
+
+  .vx-error-summary ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+    margin: 0;
+    padding-inline-start: var(--vx-space-toolbar-groups);
+  }
+
+  .vx-error-summary a {
+    color: var(--vx-color-text-primary);
+  }
+
+  .vx-description-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-toolbar-groups);
+    margin: 0;
+  }
+
+  .vx-description-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+    min-inline-size: 0;
+  }
+
+  .vx-description-item > dt {
+    color: var(--vx-color-text-secondary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  .vx-description-item > dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* Nonmodal: a separator and no shadow; 360px, 320–480px (§17.1, §22.2). */
+  .vx-inspector {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-toolbar-groups);
+    inline-size: var(--vx-component-inspector-inline);
+    min-inline-size: var(--vx-component-inspector-min-inline);
+    max-inline-size: var(--vx-component-inspector-max-inline);
+    padding-inline-start: var(--vx-space-section);
+    border-inline-start: var(--vx-border-width-default) solid var(--vx-color-border-default);
+  }
+
+  .vx-inspector-header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vx-space-actions);
+  }
+
+  .vx-inspector-title {
+    flex: 1;
+    min-inline-size: 0;
+    font-size: var(--vx-type-subheading-size);
+    line-height: var(--vx-type-subheading-line-height);
+    font-weight: var(--vx-type-subheading-weight);
+    overflow-wrap: anywhere;
+  }
+
+  .vx-inspector-layout {
+    container: vx-inspector-layout / inline-size;
+  }
+
+  .vx-inspector-layout-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-section);
+  }
+
+  .vx-inspector-layout-main {
+    min-inline-size: 0;
+  }
+
+  /*
+   * Side by side only while the primary column keeps 560px next to a 320px inspector and
+   * the 24px section gap (35rem + 20rem + 1.5rem); container queries cannot read tokens.
+   */
+  @container vx-inspector-layout (inline-size >= 56.5rem) {
+    .vx-inspector-layout-content[data-open] {
+      flex-direction: row;
+      align-items: flex-start;
+    }
+
+    .vx-inspector-layout-content[data-open] .vx-inspector-layout-main {
+      flex: 1;
+    }
+  }
+
+  @container vx-inspector-layout (inline-size < 56.5rem) {
+    .vx-inspector {
+      inline-size: auto;
+      min-inline-size: 0;
+      max-inline-size: none;
+      padding-inline-start: 0;
+      padding-block-start: var(--vx-space-section);
+      border-inline-start: 0;
+      border-block-start: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    }
+  }
+
+  .vx-preferences {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-form-fields);
+  }
+}

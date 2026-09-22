@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-test('the web shell loads and observes the live API through its own origin', async ({ page }) => {
+test('the web shell loads in Arabic and observes the live API through its own origin', async ({
+  page,
+}) => {
   const pageErrors: Error[] = [];
   page.on('pageerror', (error) => pageErrors.push(error));
   const liveness = page.waitForResponse(
@@ -9,13 +11,26 @@ test('the web shell loads and observes the live API through its own origin', asy
 
   await page.goto('/');
 
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.getByRole('heading', { level: 1, name: 'Vertex OS' })).toBeVisible();
   const livenessResponse = await liveness;
   expect(livenessResponse.status()).toBe(200);
   // The browser calls the web origin's /api path (Vite proxy), not a cross-origin API URL.
   expect(new URL(livenessResponse.url()).origin).toBe(new URL(page.url()).origin);
+  await expect(page.getByRole('region', { name: 'حالة النظام' }).getByRole('status')).toHaveText(
+    'الاتصال بالواجهة البرمجية متاح',
+  );
+  expect(pageErrors).toEqual([]);
+});
+
+test('the same liveness journey works in English', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('vertex.ui.preferences', JSON.stringify({ version: 1, language: 'en' })),
+  );
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('region', { name: 'System status' }).getByRole('status')).toHaveText(
     'API connection available',
   );
-  expect(pageErrors).toEqual([]);
 });

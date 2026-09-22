@@ -1,7 +1,7 @@
 # Vertex OS — Design System
 
-**Status:** Canonical design specification; implementation pending  
-**Version:** 1.0.0  
+**Status:** Canonical design specification; Foundation v1 implemented in `packages/ui` ([plan](plans/DESIGN_SYSTEM_PLAN.md))  
+**Version:** 1.0.1  
 **Scope:** Vertex OS application UI, Arabic/RTL and English/LTR, Light and Dark  
 **Design baseline:** 22 September 2026
 
@@ -13,7 +13,7 @@ MUST and MUST NOT are mandatory. SHOULD and SHOULD NOT establish strong defaults
 
 Product scope remains in [PRODUCT.md](PRODUCT.md); domain ownership in [MODULES.md](MODULES.md); technical boundaries in [ARCHITECTURE.md](ARCHITECTURE.md); implementation rules in [ENGINEERING.md](ENGINEERING.md); security in [SECURITY.md](SECURITY.md); verification policy in [TESTING.md](TESTING.md). [IAM](modules/iam.md) owns access states and sensitive administrative operations. This document MUST NOT redefine those contracts.
 
-The current web application is a technical status shell using React, Vite, TanStack Router/Query, and Tailwind. Its English text and ad hoc slate classes are implementation gaps against this target, not design precedents. No application source, dependency, UI package, or CSS implementation is introduced by this specification. The existing IAM specification anticipates this shared foundation; its provisional RTL wording is resolved here to require Arabic-first delivery.
+The shared foundation is implemented by the business-neutral `@vertex-os/ui` package (`packages/ui`): one machine-readable token source, themes, typography, components, and patterns, verified in the development-only `/dev/ui` lab. The web application's technical status shell consumes it; this specification itself introduces no source, dependency, or asset. Where the executable foundation and this document disagree, the mismatch is a defect to reconcile deliberately (Section 40.2). The existing IAM specification anticipates this shared foundation; its provisional RTL wording is resolved here to require Arabic-first delivery.
 
 ### Reading map
 
@@ -667,7 +667,7 @@ Operational content follows the same system:
 
 Labels sit above controls, aligned inline-start. Help follows the control; error follows help or replaces only help that is no longer useful. Placeholder text is optional example content. Group related fields under a section title and concise explanation. Use Fieldset/Legend for choice groups. Most forms use one column; closely related short fields may share two columns when each retains 240px minimum width.
 
-Required fields have a visible `*` and a form-level localized explanation; the symbol is decorative to screen readers because required is programmatically exposed. Optional fields use `اختياري` only where mixed requirements would be unclear. Do not duplicate “required” text on every required field. Name, purpose, autocomplete, and input mode MUST match the value type. Browser autofill and paste remain available.
+Required fields have a visible `*` and a form-level localized explanation; the symbol is decorative to screen readers because required is programmatically exposed. A choice group has no native required state and its group role does not support `aria-required`, so a required Fieldset states the requirement once in its legend's accessible name instead. Optional fields use `اختياري` only where mixed requirements would be unclear. Do not duplicate “required” text on every required field. Name, purpose, autocomplete, and input mode MUST match the value type. Browser autofill and paste remain available.
 
 Use native text/email/url/tel controls where appropriate. For money, identifiers, and precision-sensitive numbers, prefer text input with an appropriate input mode and shared parser over browser spinbuttons that may alter values or impose floating-point conversion. A genuine bounded numeric stepper must expose min/max/step and accessible increment/decrement actions. Scrolling the page MUST NOT silently change a financial value.
 
@@ -704,7 +704,7 @@ A network timeout after submission may mean the operation succeeded. Present “
 
 ### 29.1 Structure and layout
 
-DataTable composes a semantic HTML Table with sorting/filtering/selection state. TanStack Table is the architectural direction; it does not automatically supply accessible rendering. The current web dependencies do not yet contain it. Ordinary record lists MUST NOT use `role="grid"` merely because cells contain controls. Reserve an interactive grid for a demonstrated spreadsheet-like editing need with a complete keyboard model.
+DataTable composes a semantic HTML Table with sorting/filtering/selection state. TanStack Table is the architectural direction; it does not automatically supply accessible rendering. Foundation v1's DataTable is server-driven (controlled sort, stable-ID selection, server pagination) and does not yet need it; its column contract allows internal adoption without a public API change once a client-side workspace need such as resizing, column visibility, or multi-sort is demonstrated. Ordinary record lists MUST NOT use `role="grid"` merely because cells contain controls. Reserve an interactive grid for a demonstrated spreadsheet-like editing need with a complete keyboard model.
 
 Use `type.body` for values, `type.table-heading` for headings, and Section 14 geometry. Headers use subtle background and secondary text, with sentence-case labels. Cells align to inline-start; numeric measure cells align to inline-end. Dates are consistent within their column. Use a record name/link as the row's primary identity. Full values that determine an action—amount, currency, target identity, access state—MUST NOT be hidden by ellipsis.
 
@@ -971,7 +971,7 @@ Avoid runtime color mixing to invent hover/status values. Opaque approved values
 
 ## 41. Testing Strategy
 
-This section defines future design-system acceptance in addition to [TESTING.md](TESTING.md). Existing tests verify the technical shell, not this design system. Documentation-only delivery does not establish component accessibility or visual regression coverage.
+This section defines design-system acceptance in addition to [TESTING.md](TESTING.md). The foundation's evidence—unit, browser-engine, accessibility-scan, and visual-baseline tests plus manual review—is recorded in the [execution plan](plans/DESIGN_SYSTEM_PLAN.md). Documentation-only delivery does not establish component accessibility or visual regression coverage.
 
 ### 41.1 Verification matrix
 
@@ -1058,8 +1058,8 @@ The foundational design decisions are fixed by this version: palette and semanti
 1. Establish the single token source, theme/direction/density root, licensed font delivery, and semantic Tailwind bridge. Verify aliases and contrast before feature styling.
 2. Deliver actions, field structure, text/choice inputs, status, focus, and feedback with accessible behavior.
 3. Deliver shell/page grammar, overlays/navigation, and the standard table/filter/selection pattern.
-4. Compose the first real IAM workflow using those primitives; prove Arabic/English and both themes, including sensitive confirmation and stale-write behavior.
-5. Extend only for the next actual module's needs. Migrate the technical shell to the shared foundations as part of implementation, preserving its system-status behavior.
+4. Prove the implemented foundation with the synthetic cross-module scenarios in Section 44.3, including the Arabic IAM directory and role-permission form. These are design-system fixtures only; they MUST NOT implement IAM business behavior.
+5. Migrate the technical shell to the shared foundations, preserving its system-status behavior, and complete Design System Foundation verification and release acceptance. Close the Design System Foundation before beginning the first real IAM workflow from `docs/modules/iam.md`. Extend the system only when a real IAM or later module workflow demonstrates a justified need.
 
 This sequence is not authorization to create every catalog component now. No application package, dependency, component, font asset, or token file is delivered with this document.
 

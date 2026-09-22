@@ -7,6 +7,7 @@ CLAUDE.md
 node_modules/
 pnpm-lock.yaml
 dist/
+dist-lab/
 out-tsc/
 test-output/
 coverage/
@@ -15,3 +16,4 @@ coverage/
 apps/api/generated/
 packages/database/src/generated/
 apps/web/src/routeTree.gen.ts
+packages/ui/src/generated/

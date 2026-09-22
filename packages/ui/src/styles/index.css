@@ -1,0 +1,17 @@
+/*
+ * @vertex-os/ui stylesheet. Import once from the application's Tailwind entry, immediately
+ * after `@import 'tailwindcss';`. Component internals live in Tailwind's base/components
+ * layers so feature utilities can place components but never restyle them (DS-D022).
+ */
+@import '../generated/tokens.css';
+@import '../generated/tailwind.css';
+@import './fonts.css';
+@import './base.css';
+@import './controls.css';
+@import './feedback.css';
+@import './overlays.css';
+@import './navigation.css';
+@import './table.css';
+@import './patterns.css';
+@import './shell.css';
+@import './print.css';

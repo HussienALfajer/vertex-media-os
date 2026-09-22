@@ -1,0 +1,321 @@
+/* Tables and data-dense workflows (docs/DESIGN_SYSTEM.md §14, §29). */
+@layer components {
+  .vx-data-table {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-actions);
+    min-inline-size: 0;
+  }
+
+  .vx-data-table-status {
+    color: var(--vx-color-text-secondary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  .vx-data-table-status:empty {
+    display: none;
+  }
+
+  .vx-data-table-cue {
+    display: flex;
+    align-items: center;
+    gap: var(--vx-space-field-gap);
+    color: var(--vx-color-text-secondary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  /* Two-dimensional overflow stays inside this named, keyboard-scrollable region (§23, §29.4). */
+  .vx-table-region {
+    max-inline-size: 100%;
+    overflow: auto;
+    border: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    border-radius: var(--vx-radius-surface);
+    background-color: var(--vx-color-background-surface);
+  }
+
+  .vx-table {
+    inline-size: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--vx-type-body-size);
+    line-height: var(--vx-type-body-line-height);
+  }
+
+  .vx-table caption {
+    padding-block: var(--vx-space-control-inline);
+    padding-inline: var(--vx-component-table-cell-padding-inline);
+    text-align: start;
+    font-size: var(--vx-type-label-size);
+    line-height: var(--vx-type-label-line-height);
+    font-weight: var(--vx-font-weight-semibold);
+  }
+
+  /* Headings: subtle plane, secondary text, sticky inside the region (§29.1, §29.4). */
+  .vx-table th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--vx-layer-sticky);
+    block-size: var(--vx-component-table-header-min-block);
+    padding-block: 0;
+    padding-inline: var(--vx-component-table-cell-padding-inline);
+    border-block-end: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    background-color: var(--vx-color-background-subtle);
+    color: var(--vx-color-text-secondary);
+    text-align: start;
+    vertical-align: middle;
+    font-size: var(--vx-type-table-heading-size);
+    line-height: var(--vx-type-table-heading-line-height);
+    font-weight: var(--vx-type-table-heading-weight);
+    white-space: nowrap;
+  }
+
+  .vx-table td {
+    block-size: var(--vx-component-table-row-min-block);
+    padding-block: var(--vx-component-table-cell-padding-block);
+    padding-inline: var(--vx-component-table-cell-padding-inline);
+    border-block-end: var(--vx-border-width-default) solid var(--vx-color-border-subtle);
+    background-color: var(--vx-color-background-surface);
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  .vx-table tbody tr:last-child td {
+    border-block-end: 0;
+  }
+
+  .vx-table tr:has(.vx-cell-two-line) td {
+    block-size: var(--vx-component-table-row-secondary-min-block);
+  }
+
+  .vx-cell-two-line {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .vx-cell-secondary {
+    color: var(--vx-color-text-secondary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  /* Minimum widths are not truncation permissions (§29.4). */
+  .vx-table [data-kind='selection'] {
+    inline-size: var(--vx-component-table-column-selection);
+    min-inline-size: var(--vx-component-table-column-selection);
+  }
+
+  .vx-table [data-kind='identity'] {
+    min-inline-size: var(--vx-component-table-column-identity);
+  }
+
+  .vx-table :is([data-kind='text'], [data-kind='date']) {
+    min-inline-size: var(--vx-component-table-column-text);
+  }
+
+  .vx-table [data-kind='status'] {
+    min-inline-size: var(--vx-component-table-column-status);
+  }
+
+  /* Numeric measures and exact amounts align to inline-end and never wrap (§24.4, §29.1). */
+  .vx-table :is([data-kind='number'], [data-kind='amount']) {
+    min-inline-size: var(--vx-component-table-column-amount);
+    text-align: end;
+    white-space: nowrap;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  .vx-table [data-kind='actions'] {
+    inline-size: var(--vx-component-table-column-actions);
+    min-inline-size: var(--vx-component-table-column-actions);
+    text-align: end;
+  }
+
+  .vx-table [data-kind='selection'] .vx-choice,
+  .vx-table [data-kind='actions'] > * {
+    vertical-align: middle;
+  }
+
+  /* Row hover only where the row holds interactive content; selection persists (§29.1). */
+  @media (hover: hover) {
+    .vx-table tbody tr:has(a, button, input):hover td {
+      background-color: var(--vx-color-action-quiet-hover);
+    }
+
+    .vx-table tbody tr[data-selected]:hover td {
+      background-color: var(--vx-color-state-selected-hover);
+    }
+  }
+
+  .vx-table tbody tr[data-selected] td {
+    background-color: var(--vx-color-state-selected-background);
+  }
+
+  .vx-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--vx-space-field-gap);
+    min-block-size: var(--vx-size-control-small);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  @media (hover: hover) {
+    .vx-sort:hover {
+      color: var(--vx-color-text-primary);
+    }
+  }
+
+  .vx-table th[aria-sort] {
+    color: var(--vx-color-text-primary);
+  }
+
+  /* Optional sticky selection + identity at inline-start; opaque backgrounds (§29.4). */
+  .vx-table [data-sticky] {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: calc(var(--vx-layer-base) + 1);
+  }
+
+  .vx-table th[data-sticky] {
+    z-index: calc(var(--vx-layer-sticky) + 1);
+  }
+
+  .vx-table [data-sticky][data-offset] {
+    inset-inline-start: var(--vx-component-table-column-selection);
+  }
+
+  .vx-table [data-sticky]:not([data-kind='selection']) {
+    border-inline-end: var(--vx-border-width-default) solid var(--vx-color-border-subtle);
+  }
+
+  /* Narrow viewports remove sticky columns rather than consuming the screen (§29.4). */
+  @media (width < theme(--breakpoint-medium)) {
+    .vx-table [data-sticky] {
+      position: static;
+    }
+  }
+
+  .vx-data-table-message {
+    border-block-start: var(--vx-border-width-default) solid var(--vx-color-border-subtle);
+  }
+
+  .vx-table-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--vx-space-toolbar-groups);
+  }
+
+  .vx-table-toolbar-search {
+    flex: 0 1 var(--vx-size-search-preferred);
+    min-inline-size: var(--vx-size-search-min);
+  }
+
+  .vx-table-toolbar-filters {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  /* The actions region keeps its block size when the bulk bar replaces it (§29.3). */
+  .vx-table-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vx-space-actions);
+    min-block-size: var(--vx-size-control-block);
+    margin-inline-start: auto;
+  }
+
+  .vx-filter-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-actions);
+    min-inline-size: 0;
+  }
+
+  .vx-filter-bar-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--vx-space-toolbar-groups);
+  }
+
+  .vx-filter-bar-active {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vx-space-actions);
+  }
+
+  .vx-filter-bar-active ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--vx-space-actions);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .vx-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--vx-space-field-gap);
+    min-block-size: var(--vx-size-control-small);
+    padding-inline: var(--vx-space-control-inline) var(--vx-space-actions);
+    border: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    border-radius: var(--vx-radius-control);
+    background-color: var(--vx-color-background-subtle);
+    color: var(--vx-color-text-primary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+    cursor: pointer;
+  }
+
+  @media (hover: hover) {
+    .vx-filter-chip:hover {
+      background-color: var(--vx-color-action-quiet-pressed);
+    }
+  }
+
+  .vx-bulk-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vx-space-actions);
+  }
+
+  .vx-bulk-bar-summary {
+    font-weight: var(--vx-type-label-weight);
+  }
+
+  .vx-bulk-bar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--vx-space-actions);
+  }
+
+  @media (pointer: coarse) {
+    .vx-table td {
+      block-size: var(--vx-component-table-row-touch-min-block);
+    }
+
+    .vx-sort,
+    .vx-filter-chip {
+      min-block-size: var(--vx-size-target-touch);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .vx-table tbody tr[data-selected] td {
+      outline: var(--vx-border-width-default) solid Highlight;
+      outline-offset: calc(-1 * var(--vx-border-width-default));
+    }
+  }
+}

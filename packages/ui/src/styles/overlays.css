@@ -1,0 +1,356 @@
+/*
+ * Overlays (docs/DESIGN_SYSTEM.md §17, §18, §31). Layer order comes only from the shared
+ * layer tokens; owned popups inside a modal use the modal-popup layer.
+ */
+@layer components {
+  .vx-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: var(--vx-layer-modal-scrim);
+    background-color: var(--vx-color-overlay-scrim);
+    transition: opacity var(--vx-motion-duration-enter) var(--vx-motion-ease-enter);
+  }
+
+  .vx-scrim:is([data-starting-style], [data-ending-style]) {
+    opacity: 0;
+  }
+
+  .vx-scrim[data-ending-style] {
+    transition-duration: var(--vx-motion-duration-base);
+    transition-timing-function: var(--vx-motion-ease-exit);
+  }
+
+  /* Centred without transforms so owned popups position against a stable box. */
+  .vx-modal {
+    --_inline-sign: 1;
+    --_padding: var(--vx-space-overlay-padding);
+    position: fixed;
+    inset: 0;
+    z-index: var(--vx-layer-modal);
+    display: flex;
+    flex-direction: column;
+    inline-size: min(
+      var(--vx-component-dialog-inline),
+      calc(100% - var(--vx-component-dialog-viewport-margin))
+    );
+    block-size: fit-content;
+    max-block-size: calc(100dvh - var(--vx-component-dialog-viewport-margin));
+    margin: auto;
+    border: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    border-radius: var(--vx-radius-overlay);
+    background-color: var(--vx-color-background-raised);
+    color: var(--vx-color-text-primary);
+    box-shadow: var(--vx-shadow-modal);
+    outline: none;
+    transition-property: opacity, translate;
+    transition-duration: var(--vx-motion-duration-enter);
+    transition-timing-function: var(--vx-motion-ease-enter);
+  }
+
+  .vx-modal:dir(rtl) {
+    --_inline-sign: -1;
+  }
+
+  .vx-modal[data-size='wide'] {
+    inline-size: min(
+      var(--vx-component-dialog-wide-inline),
+      calc(100% - var(--vx-component-dialog-viewport-margin))
+    );
+  }
+
+  /* Opacity plus at most 8px block displacement; exit is a 160ms fade (§18). */
+  .vx-modal:is([data-starting-style], [data-ending-style]) {
+    opacity: 0;
+    translate: 0 var(--vx-motion-offset-dialog);
+  }
+
+  .vx-modal[data-ending-style] {
+    translate: none;
+    transition-duration: var(--vx-motion-duration-base);
+    transition-timing-function: var(--vx-motion-ease-exit);
+  }
+
+  /* Full-height drawers attach flush to a logical edge with square corners (§15, §31.1). */
+  .vx-modal[data-kind='drawer'] {
+    inset-block: 0;
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    inline-size: min(var(--vx-component-drawer-inline), 100%);
+    block-size: 100dvh;
+    max-block-size: 100dvh;
+    margin: 0;
+    border-block: 0;
+    border-inline-end: 0;
+    border-radius: var(--vx-radius-none);
+    transition-duration: var(--vx-motion-duration-panel);
+  }
+
+  .vx-modal[data-kind='drawer'][data-size='wide'] {
+    inline-size: min(var(--vx-component-drawer-max-inline), 100%);
+  }
+
+  .vx-modal[data-kind='drawer'][data-side='start'] {
+    --_inline-sign: -1;
+    inset-inline-start: 0;
+    inset-inline-end: auto;
+    border-inline-start: 0;
+    border-inline-end: var(--vx-border-width-default) solid var(--vx-color-border-default);
+  }
+
+  .vx-modal[data-kind='drawer'][data-side='start']:dir(rtl) {
+    --_inline-sign: 1;
+  }
+
+  /* Enters up to 24px from its logical attachment edge while fading (§18). */
+  .vx-modal[data-kind='drawer']:is([data-starting-style], [data-ending-style]) {
+    translate: calc(var(--vx-motion-offset-drawer) * var(--_inline-sign)) 0;
+  }
+
+  .vx-modal[data-kind='drawer'][data-ending-style] {
+    translate: none;
+  }
+
+  .vx-modal-header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vx-space-actions);
+    padding: var(--_padding);
+    padding-block-end: 0;
+  }
+
+  .vx-modal-title {
+    flex: 1;
+    min-inline-size: 0;
+    font-size: var(--vx-type-subheading-size);
+    line-height: var(--vx-type-subheading-line-height);
+    font-weight: var(--vx-type-subheading-weight);
+    /* Keeps the heading aligned with the 40px close control. */
+    padding-block: calc(
+      (
+          var(--vx-size-control-block) - var(--vx-type-subheading-size) *
+            var(--vx-type-subheading-line-height)
+        ) /
+        2
+    );
+  }
+
+  .vx-modal-description {
+    padding-inline: var(--_padding);
+    padding-block-start: var(--vx-space-field-gap);
+    color: var(--vx-color-text-secondary);
+  }
+
+  /* The body scrolls; title and actions stay reachable (§31.1). */
+  .vx-modal-body {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--_padding);
+  }
+
+  .vx-modal-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--vx-space-actions);
+    padding: var(--_padding);
+    padding-block-start: 0;
+  }
+
+  .vx-modal-pending {
+    flex-basis: 100%;
+    color: var(--vx-color-text-secondary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  .vx-modal-confirmation {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-actions);
+    padding: var(--_padding);
+  }
+
+  .vx-modal-confirmation-title {
+    font-weight: var(--vx-font-weight-semibold);
+  }
+
+  @media (width < theme(--breakpoint-medium)) {
+    .vx-modal {
+      --_padding: var(--vx-space-overlay-padding-narrow);
+    }
+
+    .vx-modal[data-kind='drawer'] {
+      inline-size: 100%;
+    }
+  }
+
+  /* ------------------------------------------------------------------ Popups */
+  .vx-popup-positioner {
+    z-index: var(--vx-layer-popup);
+  }
+
+  .vx-popup-positioner[data-owned] {
+    z-index: var(--vx-layer-modal-popup);
+  }
+
+  .vx-tooltip-positioner {
+    z-index: var(--vx-layer-tooltip);
+  }
+
+  .vx-menu,
+  .vx-popover,
+  .vx-tooltip {
+    border: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    background-color: var(--vx-color-background-raised);
+    color: var(--vx-color-text-primary);
+    box-shadow: var(--vx-shadow-floating);
+    transition-property: opacity, translate;
+    transition-duration: var(--vx-motion-duration-base);
+    transition-timing-function: var(--vx-motion-ease-enter);
+  }
+
+  /* Fade with at most 4px block displacement; exit is a 100ms fade (§18). */
+  :is(.vx-menu, .vx-popover, .vx-tooltip):is([data-starting-style], [data-ending-style]) {
+    opacity: 0;
+    translate: 0 calc(-1 * var(--vx-motion-offset-popup));
+  }
+
+  :is(.vx-menu, .vx-popover, .vx-tooltip)[data-ending-style] {
+    translate: none;
+    transition-duration: var(--vx-motion-duration-fast);
+    transition-timing-function: var(--vx-motion-ease-exit);
+  }
+
+  .vx-menu {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: min(var(--vx-component-menu-inline), var(--available-width));
+    max-inline-size: min(var(--vx-component-menu-max-inline), var(--available-width));
+    max-block-size: var(--available-height);
+    overflow-y: auto;
+    padding: var(--vx-space-menu-padding);
+    border-radius: var(--vx-radius-surface);
+    outline: none;
+  }
+
+  .vx-menu-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vx-space-icon-label);
+    min-block-size: var(--vx-size-menu-item);
+    padding-block: calc(
+      (var(--vx-size-menu-item) - var(--vx-type-label-size) * var(--vx-type-label-line-height)) / 2
+    );
+    padding-inline: var(--vx-space-control-inline);
+    border-radius: var(--vx-radius-control);
+    color: var(--vx-color-text-primary);
+    font-size: var(--vx-type-label-size);
+    line-height: var(--vx-type-label-line-height);
+    text-decoration: none;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+  }
+
+  .vx-menu-item[data-highlighted] {
+    background-color: var(--vx-color-action-quiet-hover);
+    outline: none;
+  }
+
+  .vx-menu-item[data-intent='danger'] {
+    color: var(--vx-color-status-danger-foreground);
+  }
+
+  .vx-menu-item[data-intent='danger'][data-highlighted] {
+    background-color: var(--vx-color-status-danger-background);
+  }
+
+  /* Disabled items stay discoverable; their explanation keeps normal contrast (§19). */
+  .vx-menu-item[data-disabled] {
+    color: var(--vx-color-text-disabled);
+    cursor: not-allowed;
+  }
+
+  .vx-menu-item-text {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .vx-menu-item-description {
+    color: var(--vx-color-text-secondary);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+    font-weight: var(--vx-type-secondary-weight);
+  }
+
+  .vx-menu-separator {
+    block-size: var(--vx-border-width-default);
+    margin-block: var(--vx-space-menu-padding);
+    background-color: var(--vx-color-border-subtle);
+  }
+
+  .vx-popover {
+    inline-size: min(var(--vx-component-popover-inline), var(--available-width));
+    max-inline-size: var(--vx-component-popover-max-inline);
+    max-block-size: var(--available-height);
+    overflow-y: auto;
+    border-radius: var(--vx-radius-surface);
+    outline: none;
+  }
+
+  .vx-popover-header {
+    display: flex;
+    align-items: center;
+    gap: var(--vx-space-actions);
+    padding: var(--vx-space-toolbar-groups);
+    padding-block-end: 0;
+  }
+
+  .vx-popover-title {
+    flex: 1;
+    font-size: var(--vx-type-subheading-size);
+    line-height: var(--vx-type-subheading-line-height);
+    font-weight: var(--vx-type-subheading-weight);
+  }
+
+  .vx-popover-body {
+    padding: var(--vx-space-toolbar-groups);
+  }
+
+  .vx-tooltip {
+    max-inline-size: var(--vx-component-tooltip-max-inline);
+    padding-block: var(--vx-component-tooltip-padding-block);
+    padding-inline: var(--vx-component-tooltip-padding-inline);
+    border-radius: var(--vx-radius-control);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  @media (pointer: coarse) {
+    .vx-menu-item {
+      min-block-size: var(--vx-size-target-touch);
+      padding-block: calc(
+        (
+            var(--vx-size-target-touch) - var(--vx-type-label-size) *
+              var(--vx-type-label-line-height)
+          ) /
+          2
+      );
+    }
+  }
+
+  @media (forced-colors: active) {
+    .vx-scrim {
+      background-color: Canvas;
+      opacity: 0.7;
+    }
+
+    .vx-menu-item[data-highlighted] {
+      outline: var(--vx-focus-ring-width) solid Highlight;
+      outline-offset: calc(-1 * var(--vx-focus-ring-width));
+    }
+  }
+}

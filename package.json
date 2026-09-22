@@ -31,6 +31,7 @@
     "verify:full": "pnpm verify && pnpm db:validate && pnpm db:generate && pnpm test:integration && pnpm test:e2e"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "^9.39.5",
     "@nx/devkit": "23.2.1",
     "@nx/eslint": "23.2.1",

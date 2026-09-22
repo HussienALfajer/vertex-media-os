@@ -8,8 +8,16 @@
     "lib": ["es2024", "dom", "dom.iterable"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "#design-lab": ["./src/dev-ui/index.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["src/**/*.spec.ts", "src/**/*.spec.tsx", "src/test-setup.ts"]
+  "exclude": ["src/**/*.spec.ts", "src/**/*.spec.tsx", "src/test-setup.ts"],
+  "references": [
+    {
+      "path": "../../packages/ui/tsconfig.lib.json"
+    }
+  ]
 }

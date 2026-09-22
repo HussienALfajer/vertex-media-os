@@ -1,0 +1,123 @@
+/* Generated from src/tokens/tokens.json by scripts/generate-tokens.mjs. Do not edit by hand. */
+
+/* Only semantic feature roles exist; every default Tailwind scale is removed (DS-D021). */
+
+@theme inline {
+  --*: initial;
+  --background-color-canvas: var(--vx-color-background-canvas);
+  --background-color-raised: var(--vx-color-background-raised);
+  --background-color-subtle: var(--vx-color-background-subtle);
+  --background-color-surface: var(--vx-color-background-surface);
+  --border-color-default: var(--vx-color-border-default);
+  --border-color-strong: var(--vx-color-border-strong);
+  --border-color-subtle: var(--vx-color-border-subtle);
+  --text-color-brand-accent: var(--vx-color-brand-accent);
+  --text-color-brand-mark: var(--vx-color-brand-mark);
+  --text-color-icon: var(--vx-color-icon-default);
+  --background-color-status-danger: var(--vx-color-status-danger-background);
+  --border-color-status-danger: var(--vx-color-status-danger-border);
+  --text-color-status-danger: var(--vx-color-status-danger-foreground);
+  --background-color-status-info: var(--vx-color-status-info-background);
+  --border-color-status-info: var(--vx-color-status-info-border);
+  --text-color-status-info: var(--vx-color-status-info-foreground);
+  --background-color-status-neutral: var(--vx-color-status-neutral-background);
+  --border-color-status-neutral: var(--vx-color-status-neutral-border);
+  --text-color-status-neutral: var(--vx-color-status-neutral-foreground);
+  --background-color-status-success: var(--vx-color-status-success-background);
+  --border-color-status-success: var(--vx-color-status-success-border);
+  --text-color-status-success: var(--vx-color-status-success-foreground);
+  --background-color-status-warning: var(--vx-color-status-warning-background);
+  --border-color-status-warning: var(--vx-color-status-warning-border);
+  --text-color-status-warning: var(--vx-color-status-warning-foreground);
+  --text-color-link: var(--vx-color-text-link);
+  --text-color-muted: var(--vx-color-text-muted);
+  --text-color-primary: var(--vx-color-text-primary);
+  --text-color-secondary: var(--vx-color-text-secondary);
+  --font-mono: var(--vx-font-family-mono);
+  --default-mono-font-family: var(--vx-font-family-mono);
+  --default-font-family: var(--vx-font-family-ui);
+  --breakpoint-medium: 48rem;
+  --breakpoint-wide: 75rem;
+  --breakpoint-xwide: 100rem;
+  --container-dashboard: var(--vx-size-content-dashboard);
+  --container-detail: var(--vx-size-content-detail);
+  --container-field: var(--vx-size-content-field);
+  --container-form: var(--vx-size-content-form);
+  --container-primary-min: var(--vx-size-content-primary-min);
+  --container-reading: var(--vx-size-content-reading);
+  --container-secondary: var(--vx-size-content-secondary);
+  --spacing-actions: var(--vx-space-actions);
+  --spacing-field-gap: var(--vx-space-field-gap);
+  --spacing-form-fields: var(--vx-space-form-fields);
+  --spacing-form-sections: var(--vx-space-form-sections);
+  --spacing-icon-label: var(--vx-space-icon-label);
+  --spacing-menu-padding: var(--vx-space-menu-padding);
+  --spacing-overlay-padding: var(--vx-space-overlay-padding);
+  --spacing-overlay-padding-narrow: var(--vx-space-overlay-padding-narrow);
+  --spacing-page-gutter: var(--vx-space-page-gutter);
+  --spacing-page-gutter-narrow: var(--vx-space-page-gutter-narrow);
+  --spacing-page-gutter-wide: var(--vx-space-page-gutter-wide);
+  --spacing-section: var(--vx-space-section);
+  --spacing-surface-padding: var(--vx-space-surface-padding);
+  --spacing-toolbar-groups: var(--vx-space-toolbar-groups);
+}
+
+@utility type-body-long {
+  font-size: var(--vx-type-body-long-size);
+  line-height: var(--vx-type-body-long-line-height);
+  font-weight: var(--vx-type-body-long-weight);
+}
+
+@utility type-body {
+  font-size: var(--vx-type-body-size);
+  line-height: var(--vx-type-body-line-height);
+  font-weight: var(--vx-type-body-weight);
+}
+
+@utility type-code {
+  font-size: var(--vx-type-code-size);
+  line-height: var(--vx-type-code-line-height);
+  font-weight: var(--vx-type-code-weight);
+}
+
+@utility type-label {
+  font-size: var(--vx-type-label-size);
+  line-height: var(--vx-type-label-line-height);
+  font-weight: var(--vx-type-label-weight);
+}
+
+@utility type-metric {
+  font-size: var(--vx-type-metric-size);
+  line-height: var(--vx-type-metric-line-height);
+  font-weight: var(--vx-type-metric-weight);
+}
+
+@utility type-page-title {
+  font-size: var(--vx-type-page-title-size);
+  line-height: var(--vx-type-page-title-line-height);
+  font-weight: var(--vx-type-page-title-weight);
+}
+
+@utility type-secondary {
+  font-size: var(--vx-type-secondary-size);
+  line-height: var(--vx-type-secondary-line-height);
+  font-weight: var(--vx-type-secondary-weight);
+}
+
+@utility type-section-title {
+  font-size: var(--vx-type-section-title-size);
+  line-height: var(--vx-type-section-title-line-height);
+  font-weight: var(--vx-type-section-title-weight);
+}
+
+@utility type-subheading {
+  font-size: var(--vx-type-subheading-size);
+  line-height: var(--vx-type-subheading-line-height);
+  font-weight: var(--vx-type-subheading-weight);
+}
+
+@utility type-table-heading {
+  font-size: var(--vx-type-table-heading-size);
+  line-height: var(--vx-type-table-heading-line-height);
+  font-weight: var(--vx-type-table-heading-weight);
+}

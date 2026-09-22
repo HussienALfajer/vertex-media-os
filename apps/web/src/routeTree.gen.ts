@@ -10,33 +10,60 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DevUiRouteRouteImport } from './routes/dev/ui/route'
+import { Route as DevUiIndexRouteImport } from './routes/dev/ui/index'
+import { Route as DevUiSectionRouteImport } from './routes/dev/ui/$section'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DevUiRouteRoute = DevUiRouteRouteImport.update({
+  id: '/dev/ui',
+  path: '/dev/ui',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevUiIndexRoute = DevUiIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DevUiRouteRoute,
+} as any)
+const DevUiSectionRoute = DevUiSectionRouteImport.update({
+  id: '/$section',
+  path: '/$section',
+  getParentRoute: () => DevUiRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dev/ui': typeof DevUiRouteRouteWithChildren
+  '/dev/ui/$section': typeof DevUiSectionRoute
+  '/dev/ui/': typeof DevUiIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dev/ui/$section': typeof DevUiSectionRoute
+  '/dev/ui': typeof DevUiIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dev/ui': typeof DevUiRouteRouteWithChildren
+  '/dev/ui/$section': typeof DevUiSectionRoute
+  '/dev/ui/': typeof DevUiIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/dev/ui' | '/dev/ui/$section' | '/dev/ui/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/dev/ui/$section' | '/dev/ui'
+  id: '__root__' | '/' | '/dev/ui' | '/dev/ui/$section' | '/dev/ui/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DevUiRouteRoute: typeof DevUiRouteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +75,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dev/ui': {
+      id: '/dev/ui'
+      path: '/dev/ui'
+      fullPath: '/dev/ui'
+      preLoaderRoute: typeof DevUiRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev/ui/': {
+      id: '/dev/ui/'
+      path: '/'
+      fullPath: '/dev/ui/'
+      preLoaderRoute: typeof DevUiIndexRouteImport
+      parentRoute: typeof DevUiRouteRoute
+    }
+    '/dev/ui/$section': {
+      id: '/dev/ui/$section'
+      path: '/$section'
+      fullPath: '/dev/ui/$section'
+      preLoaderRoute: typeof DevUiSectionRouteImport
+      parentRoute: typeof DevUiRouteRoute
+    }
   }
 }
 
+interface DevUiRouteRouteChildren {
+  DevUiSectionRoute: typeof DevUiSectionRoute
+  DevUiIndexRoute: typeof DevUiIndexRoute
+}
+
+const DevUiRouteRouteChildren: DevUiRouteRouteChildren = {
+  DevUiSectionRoute: DevUiSectionRoute,
+  DevUiIndexRoute: DevUiIndexRoute,
+}
+
+const DevUiRouteRouteWithChildren = DevUiRouteRoute._addFileChildren(
+  DevUiRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DevUiRouteRoute: DevUiRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,0 +1,95 @@
+{
+  "note": "Unmodified upstream WOFF2 files, vendored instead of installing the npm packages (which run an IBM telemetry postinstall). Verified by scripts/font-assets.spec.mjs.",
+  "fonts": [
+    {
+      "file": "IBMPlexMono-Medium.woff2",
+      "family": "IBM Plex Mono",
+      "weight": 500,
+      "style": "normal",
+      "source": "@ibm/plex-mono@2.5.0 fonts/complete/woff2/IBMPlexMono-Medium.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexMono-OFL.txt",
+      "sha256": "33faf307fa6031fb4062276d7320a6d632de890cbb347576fd80cfa01077bc25"
+    },
+    {
+      "file": "IBMPlexMono-Regular.woff2",
+      "family": "IBM Plex Mono",
+      "weight": 400,
+      "style": "normal",
+      "source": "@ibm/plex-mono@2.5.0 fonts/complete/woff2/IBMPlexMono-Regular.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexMono-OFL.txt",
+      "sha256": "ba204497f16b6d334cee9d1e963a831b73e3a56e1d6300a8489d18df7214b350"
+    },
+    {
+      "file": "IBMPlexMono-SemiBold.woff2",
+      "family": "IBM Plex Mono",
+      "weight": 600,
+      "style": "normal",
+      "source": "@ibm/plex-mono@2.5.0 fonts/complete/woff2/IBMPlexMono-SemiBold.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexMono-OFL.txt",
+      "sha256": "6a825b4824c01cbb401e829e5a066a1818411bcb3538b5a5792c5ca9b82343c3"
+    },
+    {
+      "file": "IBMPlexSans-Medium.woff2",
+      "family": "IBM Plex Sans",
+      "weight": 500,
+      "style": "normal",
+      "source": "@ibm/plex-sans@1.1.0 fonts/complete/woff2/IBMPlexSans-Medium.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexSans-OFL.txt",
+      "sha256": "5660f8a658f8bb50dbc005232f885eadffd2bc1c235c4f6fbb63469d1f9cde6d"
+    },
+    {
+      "file": "IBMPlexSans-Regular.woff2",
+      "family": "IBM Plex Sans",
+      "weight": 400,
+      "style": "normal",
+      "source": "@ibm/plex-sans@1.1.0 fonts/complete/woff2/IBMPlexSans-Regular.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexSans-OFL.txt",
+      "sha256": "ba711a3085ff9f27440b6b9c4550cfc47c97bf36591d5da958b975bb3add8c1a"
+    },
+    {
+      "file": "IBMPlexSans-SemiBold.woff2",
+      "family": "IBM Plex Sans",
+      "weight": 600,
+      "style": "normal",
+      "source": "@ibm/plex-sans@1.1.0 fonts/complete/woff2/IBMPlexSans-SemiBold.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexSans-OFL.txt",
+      "sha256": "f78048030eab62e860efa39a0df79e2e5581bf122eb95b9bc42c0b8a4988d205"
+    },
+    {
+      "file": "IBMPlexSansArabic-Medium.woff2",
+      "family": "IBM Plex Sans Arabic",
+      "weight": 500,
+      "style": "normal",
+      "source": "@ibm/plex-sans-arabic@1.1.0 fonts/complete/woff2/IBMPlexSansArabic-Medium.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexSansArabic-OFL.txt",
+      "sha256": "c72f6986f50ded745d06e71e508096209c52a55a6b3a81029954e33c52ba1dd2"
+    },
+    {
+      "file": "IBMPlexSansArabic-Regular.woff2",
+      "family": "IBM Plex Sans Arabic",
+      "weight": 400,
+      "style": "normal",
+      "source": "@ibm/plex-sans-arabic@1.1.0 fonts/complete/woff2/IBMPlexSansArabic-Regular.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexSansArabic-OFL.txt",
+      "sha256": "74112e1b7bf2e2c547989a4e947a60cba6cd1f9156e0065670134636e717199d"
+    },
+    {
+      "file": "IBMPlexSansArabic-SemiBold.woff2",
+      "family": "IBM Plex Sans Arabic",
+      "weight": 600,
+      "style": "normal",
+      "source": "@ibm/plex-sans-arabic@1.1.0 fonts/complete/woff2/IBMPlexSansArabic-SemiBold.woff2",
+      "license": "OFL-1.1",
+      "licenseFile": "LICENSES/IBMPlexSansArabic-OFL.txt",
+      "sha256": "869b2acd0a9660607a2025f0fe1c640110bf23d33417509328f07722922b8063"
+    }
+  ]
+}

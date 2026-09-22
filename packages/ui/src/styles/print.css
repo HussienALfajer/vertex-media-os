@@ -1,0 +1,72 @@
+/*
+ * Print/export presentation (docs/DESIGN_SYSTEM.md §40.2): the token CSS switches every
+ * theme to explicit Light; this layer removes interactive chrome while keeping labels,
+ * units, currency, status text and repeated table headings. It is UI presentation only,
+ * never an official financial document.
+ */
+@layer components {
+  @media print {
+    .vx-shell-sidebar,
+    .vx-shell-header,
+    .vx-skip-link,
+    .vx-toast-region,
+    .vx-scrim,
+    .vx-table-toolbar,
+    .vx-pagination,
+    .vx-bulk-bar,
+    .vx-filter-bar-controls,
+    .vx-data-table-cue,
+    .vx-button,
+    .vx-sort > .vx-icon,
+    .vx-filter-chip > .vx-icon,
+    .vx-table [data-kind='selection'],
+    .vx-table [data-kind='actions'],
+    [data-vx-print='omit'] {
+      display: none !important;
+    }
+
+    .vx-shell {
+      display: block;
+    }
+
+    .vx-shell-main {
+      padding: 0;
+    }
+
+    .vx-page {
+      max-inline-size: none;
+    }
+
+    .vx-table-region {
+      overflow: visible;
+    }
+
+    .vx-table th,
+    .vx-table [data-sticky] {
+      position: static;
+    }
+
+    .vx-table thead {
+      display: table-header-group;
+    }
+
+    .vx-table tr {
+      break-inside: avoid;
+    }
+
+    .vx-sort {
+      min-block-size: 0;
+    }
+
+    .vx-filter-chip {
+      border: 0;
+      padding: 0;
+      background: none;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+  }
+}

@@ -1,0 +1,151 @@
+/* Global foundations (docs/DESIGN_SYSTEM.md §12, §18–§21). Tailwind preflight runs first. */
+@layer base {
+  html {
+    background-color: var(--vx-color-background-canvas);
+    color: var(--vx-color-text-primary);
+    font-family: var(--vx-font-family-ui);
+    /* Real weights only; never synthesize Arabic bold or italics (§12.1). */
+    font-synthesis: none;
+    /* Keep focused content clear of the sticky shell header (§20). */
+    scroll-padding-block-start: calc(var(--vx-size-shell-header) + var(--vx-space-actions));
+    scroll-padding-block-end: var(--vx-space-actions);
+  }
+
+  body {
+    min-block-size: 100dvh;
+    font-size: var(--vx-type-body-size);
+    line-height: var(--vx-type-body-line-height);
+    font-weight: var(--vx-type-body-weight);
+    /* Zero tracking in both scripts (§12.2). */
+    letter-spacing: 0;
+  }
+
+  ::selection {
+    background-color: var(--vx-color-selection-text-background);
+    color: var(--vx-color-selection-text-foreground);
+  }
+
+  /* 2px ring with a 2px painted gap, following the element's radius (§20). */
+  :focus-visible {
+    outline: var(--vx-focus-ring-width) solid var(--vx-color-focus-ring);
+    outline-offset: var(--vx-focus-ring-offset);
+    box-shadow: 0 0 0 var(--vx-focus-ring-offset) var(--vx-color-focus-gap);
+  }
+
+  a {
+    color: var(--vx-color-text-link);
+    text-decoration-line: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  @media (hover: hover) {
+    a:hover {
+      color: var(--vx-color-text-link-hover);
+    }
+  }
+
+  code,
+  kbd,
+  samp {
+    font-size: var(--vx-type-code-size);
+    line-height: var(--vx-type-code-line-height);
+  }
+
+  /* Reduced motion: no structural animation, displacement, shimmer or smooth scroll (§18). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: var(--vx-motion-duration-instant) !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: var(--vx-motion-duration-instant) !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}
+
+@layer components {
+  .vx-visually-hidden {
+    position: absolute !important;
+    inline-size: 1px !important;
+    block-size: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+
+  /* Aligned numbers: IBM Plex default figures are tabular and lining (verified in tests). */
+  .vx-numeric {
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  .vx-code {
+    font-family: var(--vx-font-family-mono);
+    font-size: var(--vx-type-code-size);
+    line-height: var(--vx-type-code-line-height);
+  }
+
+  .vx-missing {
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-filename {
+    display: inline-flex;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    vertical-align: bottom;
+  }
+
+  .vx-filename-base {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vx-icon {
+    inline-size: var(--vx-size-icon-default);
+    block-size: var(--vx-size-icon-default);
+    flex: none;
+  }
+
+  .vx-icon[data-size='small'] {
+    inline-size: var(--vx-size-icon-small);
+    block-size: var(--vx-size-icon-small);
+  }
+
+  .vx-icon[data-size='large'] {
+    inline-size: var(--vx-size-icon-large);
+    block-size: var(--vx-size-icon-large);
+  }
+
+  .vx-icon[data-size='empty'] {
+    inline-size: var(--vx-size-icon-empty);
+    block-size: var(--vx-size-icon-empty);
+  }
+
+  /* Only icons registered as directional mirror; there is no blanket RTL transform (§21). */
+  .vx-icon[data-directional]:dir(rtl) {
+    transform: scaleX(-1);
+  }
+
+  .vx-spinner {
+    display: inline-flex;
+    flex: none;
+    animation: vx-rotate var(--vx-component-spinner-rotation) linear infinite;
+  }
+
+  @keyframes vx-rotate {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+}

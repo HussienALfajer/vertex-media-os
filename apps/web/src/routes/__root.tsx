@@ -1,4 +1,9 @@
-import { createRootRoute, Outlet } from '@tanstack/react-router';
+import { createRootRoute, Outlet, useRouter } from '@tanstack/react-router';
+import { Button, focusPageHeading, Page, PageHeader, UiRoot } from '@vertex-os/ui';
+import { useEffect } from 'react';
+import { useAppMessages } from '../app-messages';
+import { ApplicationShell } from '../app-shell';
+import { RouterLink } from '../lib/router-link';
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -7,16 +12,43 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+    <UiRoot linkComponent={RouterLink}>
+      <RouteFocus />
       <Outlet />
-    </div>
+    </UiRoot>
   );
 }
 
+/** After client-side navigation, focus and thereby announce the new page heading (§20). */
+function RouteFocus() {
+  const router = useRouter();
+  useEffect(
+    () =>
+      router.subscribe('onResolved', (event) => {
+        if (event.pathChanged && event.fromLocation !== undefined)
+          requestAnimationFrame(focusPageHeading);
+      }),
+    [router],
+  );
+  return null;
+}
+
 function NotFound() {
+  const messages = useAppMessages();
+  const router = useRouter();
   return (
-    <main className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="text-2xl font-semibold">Page not found</h1>
-    </main>
+    <ApplicationShell>
+      <Page width="reading">
+        <PageHeader
+          title={messages.notFoundTitle}
+          description={messages.notFoundDescription}
+          actions={
+            <Button variant="primary" icon="home" onClick={() => void router.navigate({ to: '/' })}>
+              {messages.backHome}
+            </Button>
+          }
+        />
+      </Page>
+    </ApplicationShell>
   );
 }

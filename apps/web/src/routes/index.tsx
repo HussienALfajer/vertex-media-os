@@ -1,4 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { Page, PageHeader } from '@vertex-os/ui';
+import { useAppMessages } from '../app-messages';
+import { ApplicationShell } from '../app-shell';
 import { ApiStatus } from '../features/system-status/api-status';
 
 export const Route = createFileRoute('/')({
@@ -6,13 +9,13 @@ export const Route = createFileRoute('/')({
 });
 
 function HomePage() {
+  const messages = useAppMessages();
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 px-6 py-16">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Vertex OS</h1>
-        <p className="mt-2 text-slate-600">Internal operating platform of Vertex Media.</p>
-      </header>
-      <ApiStatus />
-    </main>
+    <ApplicationShell>
+      <Page width="detail">
+        <PageHeader title="Vertex OS" description={messages.productDescription} />
+        <ApiStatus />
+      </Page>
+    </ApplicationShell>
   );
 }

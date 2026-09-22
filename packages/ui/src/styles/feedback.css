@@ -1,0 +1,296 @@
+/* Status, containment and feedback (docs/DESIGN_SYSTEM.md §9.3, §27, §32–§34). */
+@layer components {
+  /* Matching tone pairs only; never mixed (§9.3). */
+  [data-tone='neutral'] {
+    --_tone-background: var(--vx-color-status-neutral-background);
+    --_tone-foreground: var(--vx-color-status-neutral-foreground);
+    --_tone-border: var(--vx-color-status-neutral-border);
+  }
+
+  [data-tone='info'] {
+    --_tone-background: var(--vx-color-status-info-background);
+    --_tone-foreground: var(--vx-color-status-info-foreground);
+    --_tone-border: var(--vx-color-status-info-border);
+  }
+
+  [data-tone='success'] {
+    --_tone-background: var(--vx-color-status-success-background);
+    --_tone-foreground: var(--vx-color-status-success-foreground);
+    --_tone-border: var(--vx-color-status-success-border);
+  }
+
+  [data-tone='warning'] {
+    --_tone-background: var(--vx-color-status-warning-background);
+    --_tone-foreground: var(--vx-color-status-warning-foreground);
+    --_tone-border: var(--vx-color-status-warning-border);
+  }
+
+  [data-tone='danger'] {
+    --_tone-background: var(--vx-color-status-danger-background);
+    --_tone-foreground: var(--vx-color-status-danger-foreground);
+    --_tone-border: var(--vx-color-status-danger-border);
+  }
+
+  .vx-badge,
+  .vx-status {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--vx-space-icon-label) / 2);
+    min-block-size: var(--vx-component-badge-min-block);
+    padding-block: var(--vx-component-badge-padding-block);
+    padding-inline: var(--vx-component-badge-padding-inline);
+    border-radius: var(--vx-radius-small);
+    background-color: var(--_tone-background);
+    color: var(--_tone-foreground);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+    font-weight: var(--vx-font-weight-medium);
+    vertical-align: middle;
+  }
+
+  .vx-surface {
+    min-inline-size: 0;
+    padding: var(--vx-space-surface-padding);
+    border: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    border-radius: var(--vx-radius-surface);
+    background-color: var(--vx-color-background-surface);
+    box-shadow: var(--vx-shadow-none);
+  }
+
+  .vx-surface[data-padding='none'] {
+    padding: 0;
+  }
+
+  .vx-alert {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: flex-start;
+    gap: var(--vx-space-icon-label);
+    padding: var(--vx-space-toolbar-groups);
+    border: var(--vx-border-width-default) solid var(--_tone-border);
+    border-radius: var(--vx-radius-surface);
+    background-color: var(--_tone-background);
+    color: var(--vx-color-text-primary);
+  }
+
+  .vx-alert > .vx-icon {
+    color: var(--_tone-foreground);
+    margin-block: calc(
+      (var(--vx-type-label-size) * var(--vx-type-label-line-height) - var(--vx-size-icon-default)) /
+        2
+    );
+  }
+
+  .vx-alert[data-placement='page'] {
+    border-inline: 0;
+    border-radius: var(--vx-radius-none);
+  }
+
+  .vx-alert-content {
+    display: grid;
+    gap: var(--vx-space-field-gap);
+    min-inline-size: 0;
+  }
+
+  .vx-alert-title {
+    color: var(--_tone-foreground);
+    font-size: var(--vx-type-label-size);
+    line-height: var(--vx-type-label-line-height);
+    font-weight: var(--vx-font-weight-semibold);
+  }
+
+  .vx-alert-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--vx-space-actions);
+    margin-block-start: var(--vx-space-field-gap);
+  }
+
+  .vx-inline-message {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vx-space-field-gap);
+    color: var(--_tone-foreground);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  .vx-inline-message > .vx-icon {
+    margin-block: calc(
+      (
+          var(--vx-type-secondary-size) * var(--vx-type-secondary-line-height) -
+            var(--vx-size-icon-small)
+        ) /
+        2
+    );
+  }
+
+  .vx-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-field-gap);
+    min-inline-size: 0;
+  }
+
+  .vx-progress:not([data-determinate]) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vx-space-icon-label);
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-progress-note {
+    flex-basis: 100%;
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+  }
+
+  .vx-progress-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--vx-space-actions);
+    font-size: var(--vx-type-secondary-size);
+    line-height: var(--vx-type-secondary-line-height);
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-progress-track {
+    block-size: var(--vx-component-progress-track-block);
+    border-radius: var(--vx-radius-round);
+    background-color: var(--vx-color-background-subtle);
+    overflow: hidden;
+  }
+
+  /* Width is a logical size: the value fills from inline-start in both directions (§24.1). */
+  .vx-progress-value {
+    block-size: 100%;
+    border-radius: inherit;
+    background-color: var(--vx-color-action-primary-background);
+    transition: inline-size var(--vx-motion-duration-base) var(--vx-motion-ease-standard);
+  }
+
+  .vx-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-actions);
+  }
+
+  .vx-skeleton > span,
+  .vx-skeleton-cell {
+    display: block;
+    border-radius: var(--vx-radius-small);
+    background-color: var(--vx-color-skeleton-base);
+    /* Three 1600ms pulses stop within five seconds, leaving a static shape (§18). */
+    animation: vx-pulse var(--vx-component-skeleton-pulse) var(--vx-motion-ease-standard) 3;
+  }
+
+  .vx-skeleton > span {
+    block-size: var(--vx-size-control-block);
+  }
+
+  .vx-skeleton[data-shape='text'] > span {
+    block-size: var(--vx-type-body-size);
+  }
+
+  .vx-skeleton-cell {
+    block-size: var(--vx-type-body-size);
+    inline-size: 60%;
+  }
+
+  @keyframes vx-pulse {
+    50% {
+      background-color: var(--vx-color-skeleton-highlight);
+    }
+  }
+
+  .vx-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--vx-space-actions);
+    padding-block: var(--vx-space-form-sections);
+    padding-inline: var(--vx-space-surface-padding);
+    text-align: center;
+    color: var(--vx-color-text-primary);
+  }
+
+  .vx-empty > .vx-icon {
+    color: var(--vx-color-icon-default);
+  }
+
+  .vx-empty[data-tone='danger'] > .vx-icon {
+    color: var(--_tone-foreground);
+  }
+
+  .vx-empty-title {
+    font-size: var(--vx-type-subheading-size);
+    line-height: var(--vx-type-subheading-line-height);
+    font-weight: var(--vx-type-subheading-weight);
+  }
+
+  .vx-empty-description {
+    max-inline-size: var(--vx-size-content-reading);
+    color: var(--vx-color-text-secondary);
+  }
+
+  .vx-empty-action {
+    margin-block-start: var(--vx-space-actions);
+  }
+
+  /* Toasts: block-end, inline-end, 24px inset (16px narrow), 360px maximum (§32). */
+  .vx-toast-region {
+    position: fixed;
+    inset-block-end: var(--vx-component-toast-inset);
+    inset-inline-end: var(--vx-component-toast-inset);
+    z-index: var(--vx-layer-toast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--vx-space-actions);
+    inline-size: min(
+      var(--vx-component-toast-max-inline),
+      calc(100vw - 2 * var(--vx-component-toast-inset))
+    );
+    pointer-events: none;
+  }
+
+  .vx-toast {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--vx-space-icon-label);
+    padding-block: var(--vx-space-actions);
+    padding-inline: var(--vx-space-control-inline) var(--vx-space-actions);
+    border: var(--vx-border-width-default) solid var(--vx-color-border-default);
+    border-radius: var(--vx-radius-surface);
+    background-color: var(--vx-color-background-raised);
+    color: var(--vx-color-text-primary);
+    box-shadow: var(--vx-shadow-floating);
+    pointer-events: auto;
+  }
+
+  .vx-toast > .vx-icon {
+    color: var(--_tone-foreground);
+  }
+
+  .vx-toast-message {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  @media (width < theme(--breakpoint-medium)) {
+    .vx-toast-region {
+      inset-block-end: var(--vx-component-toast-inset-narrow);
+      inset-inline-end: var(--vx-component-toast-inset-narrow);
+      inline-size: calc(100vw - 2 * var(--vx-component-toast-inset-narrow));
+    }
+  }
+
+  @media (forced-colors: active) {
+    .vx-badge,
+    .vx-status,
+    .vx-toast {
+      border: var(--vx-border-width-default) solid CanvasText;
+    }
+  }
+}
