@@ -14,7 +14,8 @@ import nx from '@nx/eslint-plugin';
  *   - `layer:infrastructure` technical infrastructure such as `packages/database`
  *   - `layer:ui`      the business-neutral design system `packages/ui` (no router, query,
  *                     application or domain dependencies)
- * Domain projects will add their own tags and constraints when they exist.
+ *   - `layer:domain` backend business core (no infrastructure/framework imports)
+ *   - `domain:iam`   the IAM ownership boundary
  */
 export default [
   ...nx.configs['flat/base'],
@@ -50,6 +51,10 @@ export default [
             {
               group: ['@vertex-os/ui/*', '!@vertex-os/ui/styles.css'],
               message: 'Import from the @vertex-os/ui entry point only.',
+            },
+            {
+              group: ['@vertex-os/iam/*', '**/domains/iam/src/**'],
+              message: 'Import IAM through the @vertex-os/iam public entry point only.',
             },
           ],
         },
@@ -106,7 +111,46 @@ export default [
               sourceTag: 'layer:infrastructure',
               onlyDependOnLibsWithTags: ['layer:infrastructure'],
             },
+            {
+              sourceTag: 'layer:domain',
+              onlyDependOnLibsWithTags: ['layer:domain', 'layer:shared'],
+              bannedExternalImports: [
+                '@nestjs/*',
+                '@prisma/*',
+                'prisma',
+                'fastify',
+                '@fastify/*',
+                'react',
+                'react-dom',
+                '@tanstack/*',
+                'vite',
+                '@vitejs/*',
+                '@keycloak/*',
+                'keycloak-*',
+              ],
+            },
           ],
+        },
+      ],
+    },
+  },
+  {
+    // Production source receives typed configuration from the API bootstrap.
+    // Test setup, CLI tooling and the one bootstrap read are outside this selector.
+    files: ['**/src/**/*.{ts,tsx,js,jsx}'],
+    ignores: ['**/*.{spec,test}.{ts,tsx,js,jsx}', '**/src/test-setup.{ts,tsx,js,jsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name='process'][property.name='env']",
+          message:
+            'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.value='env']",
+          message:
+            'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
         },
       ],
     },

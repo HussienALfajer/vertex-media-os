@@ -26,4 +26,10 @@ export default [
   {
     ignores: ['**/out-tsc', 'generated'],
   },
+  {
+    // The API bootstrap is the sole production bridge from raw environment
+    // variables into the validated AppConfig object.
+    files: ['src/main.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
 ];

@@ -3,10 +3,10 @@
 Internal operating platform of Vertex Media: a TypeScript modular monolith (pnpm + Nx) with a
 NestJS-on-Fastify API, a React/Vite web application and PostgreSQL through Prisma ORM 7.
 
-This repository currently contains the **Phase 0 technical foundation** and the **Vertex Design
-System Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)): no
-business module, no business data and no authentication yet. What the product is and how it is
-built is defined in the canonical documents: [product](docs/PRODUCT.md),
+This repository contains the **Phase 0 technical foundation**, the **Vertex Design System
+Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)), and the
+IAM architecture package (`domains/iam`). IAM has no business behavior, data or authentication yet.
+The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
 [design system](docs/DESIGN_SYSTEM.md). Coding agents start with [AGENTS.md](AGENTS.md).
@@ -107,6 +107,7 @@ traces, screenshots and report are kept as a run artifact for 7 days.
 apps/api          NestJS on Fastify: configuration, health endpoints, errors, logging, OpenAPI
 apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and the /dev/ui lab
 apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab and visual baselines
+domains/iam       @vertex-os/iam: backend domain core boundary, with no IAM behavior yet
 packages/database Backend-only PostgreSQL/Prisma 7 client boundary
 packages/ui       @vertex-os/ui: business-neutral design system (tokens, fonts, components)
 infra/compose.yaml Local PostgreSQL for development
@@ -117,7 +118,7 @@ docs/             Canonical documentation and execution plans
 ## Current limitations
 
 - **No authentication or authorization yet.** The approved design (Keycloak over OIDC with the API as
-  a backend-for-frontend holding the session) is specified in `docs/modules/iam.md`, the next module
-  to be implemented. The only endpoints are the public technical health endpoints.
-- No business modules, tables, migrations or seed data. The `/dev/ui` proof scenarios (IAM, CRM,
+  a backend-for-frontend holding the session) is specified in `docs/modules/iam.md`. The only
+  endpoints are the public technical health endpoints.
+- No business behavior, tables, migrations or seed data. The `/dev/ui` proof scenarios (IAM, CRM,
   Projects, Finance) are static design fixtures, not module implementations.

@@ -17,6 +17,9 @@
     },
     {
       "path": "./packages/ui"
+    },
+    {
+      "path": "./domains/iam"
     }
   ]
 }

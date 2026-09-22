@@ -338,6 +338,8 @@ importers:
 
   apps/web-e2e: {}
 
+  domains/iam: {}
+
   packages/database:
     dependencies:
       '@prisma/adapter-pg':

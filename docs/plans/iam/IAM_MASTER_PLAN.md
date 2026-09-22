@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-00` — `READY` (the execution gate in Section 3 is closed)  
+**Next executable stage:** `IAM-MP-00` — `AUDIT_REQUIRED` (implementation complete; independent audit pending)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -544,7 +544,7 @@ The mapping back to the parent specification is recorded in Section 13.
 
 ## IAM-MP-00 — Architecture & Domain Boundary Foundation
 
-**Status:** READY  
+**Status:** AUDIT_REQUIRED  
 **Parent specification area:** IAM-0  
 **Depends on:** execution gate in Section 3 (closed)
 
@@ -558,14 +558,14 @@ Establish the first real business-domain package boundary and the platform integ
 - workspace support for `domains/*`;
 - explicit IAM public surface convention;
 - Nx/ESLint constraints that prevent cross-domain deep imports and preserve backend/domain direction;
-- typed configuration expansion points for IAM/auth/Keycloak without scattering raw environment reads;
+- static enforcement of centralized environment access; typed IAM/auth/Keycloak settings remain with the stages that consume them;
 - architecture-level separation between:
   - IAM domain,
   - backend authentication/session infrastructure,
   - database infrastructure,
   - Keycloak infrastructure,
   - minimal Audit dependency;
-- local Keycloak configuration area prepared at architecture/configuration level;
+- Keycloak remains outside IAM core; local Keycloak configuration is introduced with `IAM-MP-03`;
 - architecture tests or deterministic boundary checks where practical.
 
 ### Entry criteria
@@ -717,7 +717,7 @@ Create a reproducible, version-pinned local/test Keycloak environment and prove 
 
 ### Entry criteria
 
-- typed configuration seams exist;
+- the centralized API configuration loader and raw-environment lint boundary exist; this stage adds typed Keycloak configuration when its actual values are defined;
 - no material Keycloak dependency choice conflicts with architecture/security;
 - local infrastructure behavior is understood.
 
@@ -1421,6 +1421,8 @@ The parent specification intentionally describes eight broad implementation phas
 
 This decomposition exists to satisfy `docs/PLANNING.md`: each executable plan should remain small enough for one professional implementation conversation and one confident audit.
 
+The broad IAM-0 specification also mentions typed auth/IAM configuration and a local Keycloak baseline. The approved IAM-MP-00 executable plan limits that first stage to package and static boundaries; the configuration shapes and Keycloak files are delivered by the later stages that consume them. This is sequencing within the accepted IAM architecture, not a change of ownership or topology.
+
 ---
 
 ## 14. Master Risk Register
@@ -1448,13 +1450,13 @@ This decomposition exists to satisfy `docs/PLANNING.md`: each executable plan sh
 
 ## 15. Stage Status Ledger
 
-The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. No IAM implementation stage has started.
+The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 implementation is complete and awaits independent audit; no later IAM stage has started.
 
-The next stage eligible for detailed planning is `IAM-MP-00`, which is `READY`: its executable plan may be written, but it has not yet been created or implemented.
+No later stage is eligible for detailed planning until IAM-MP-00 has an accepted audit baseline.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
-| IAM-MP-00 Architecture & Domain Boundary Foundation | READY | IAM spec execution gate (closed) |
+| IAM-MP-00 Architecture & Domain Boundary Foundation | AUDIT_REQUIRED | IAM spec execution gate (closed) |
 | IAM-MP-01 IAM Persistence & First Migration | PLANNED | MP-00 COMPLETE |
 | IAM-MP-02 Reference Data & Minimal Audit Foundation | PLANNED | MP-01 COMPLETE |
 | IAM-MP-03 Keycloak Environment & Realm Contract | PLANNED | MP-02 COMPLETE |

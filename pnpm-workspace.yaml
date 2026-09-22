@@ -1,5 +1,6 @@
 packages:
   - apps/*
+  - domains/*
   - packages/*
 
 # Dependency install/build scripts are opt-in (pnpm `strictDepBuilds` stays at its
