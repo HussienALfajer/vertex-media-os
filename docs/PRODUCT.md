@@ -1176,7 +1176,7 @@ Other concerns belong to separate authoritative documents.
 * `docs/ENGINEERING.md` — engineering conventions and implementation standards.
 * `docs/SECURITY.md` — security model and security requirements.
 * `docs/TESTING.md` — testing strategy and verification standards.
-* `docs/PLANS.md` — execution-planning rules for substantial implementation work (canonical once created).
+* `docs/PLANNING.md` — mandatory planning, implementation, audit and delivery method for modules.
 * `docs/adr/` — architecture decision records.
 
 When another document requires product scope, terminology, or product-level behavior, it SHOULD reference this document rather than duplicate it.

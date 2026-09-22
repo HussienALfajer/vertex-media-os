@@ -1448,7 +1448,7 @@ Related sources of truth:
 * `docs/ENGINEERING.md` — implementation and coding conventions.
 * `docs/SECURITY.md` — security and authorization architecture in depth.
 * `docs/TESTING.md` — verification strategy.
-* `docs/PLANS.md` — execution planning for substantial changes (canonical once created).
+* `docs/PLANNING.md` — mandatory planning, implementation, audit and delivery method for modules.
 * `docs/adr/` — architecture decision history and rationale (canonical once accepted records exist).
 
 Do not duplicate detailed content owned by those documents.

@@ -40,7 +40,7 @@ When deciding how to act, apply in order:
 
 If a conflict could affect architecture, data integrity, security, public contracts, or irreversible changes, identify it before making the conflicting change.
 
-`docs/PLANS.md`, `docs/adr/`, and `docs/modules/*.md` are canonical only once they exist; do not assume or invent their content.
+`docs/adr/` and `docs/modules/*.md` are canonical only once they exist; do not assume or invent their content.
 
 ---
 
@@ -106,7 +106,7 @@ Detailed rules: `docs/ENGINEERING.md` and `docs/SECURITY.md`. Non-negotiable for
 2. Determine which repository instructions apply.
 3. Inspect the relevant implementation, contracts, tests, configuration, and documentation.
 4. Identify affected domain and architectural boundaries.
-5. Plan proportionally to scope and risk; use the repository's execution-planning process when one exists.
+5. Plan proportionally to scope and risk. Creating or executing a module plan requires reading `docs/PLANNING.md` first and following the delivery method it defines.
 6. Implement the smallest coherent change that fully solves the task, following established local patterns and fixing root causes.
 7. Keep implementation, contracts, tests, schemas, and documentation synchronized.
 8. Validate the affected behavior.
@@ -147,7 +147,7 @@ Read only the documentation relevant to the task.
 * `docs/TESTING.md` — verification policy, test layers, migration/concurrency/idempotency/security testing, CI gates.
 * `docs/DESIGN_SYSTEM.md` — visual, interaction, content and accessibility language of the application UI; implemented by `packages/ui` (`@vertex-os/ui`).
 * `docs/modules/*.md` — module-specific behavior, created when a module approaches implementation.
-* `docs/PLANS.md` — execution-plan format for substantial work (canonical once created).
+* `docs/PLANNING.md` — mandatory planning, implementation, audit and delivery method: specification, master plan, one executable plan at a time, independent audit, accepted baseline. Required reading before creating or executing any module plan.
 * `docs/adr/` — accepted architectural decisions and their rationale (canonical once accepted records exist).
 * `README.md` — local setup, commands, and URLs that currently work.
 
