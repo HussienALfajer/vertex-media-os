@@ -1,0 +1,8 @@
+# Line endings: the repository stores LF and every checkout gets LF, whatever the local
+# `core.autocrlf` setting. Prettier enforces `endOfLine: lf` for the sources it checks, so a
+# CRLF checkout (the Git for Windows default) would otherwise fail `pnpm format:check`.
+* text=auto eol=lf
+
+# Markdown uses two trailing spaces as a hard line break (see .editorconfig), so trailing
+# whitespace is content there rather than a `git diff --check` error.
+*.md whitespace=-blank-at-eol

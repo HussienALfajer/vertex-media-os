@@ -1,0 +1,17 @@
+{
+  "name": "@vertex-os/web-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser smoke test of the Vertex OS web -> API path (Playwright)",
+  "type": "module",
+  "nx": {
+    "tags": [
+      "type:e2e",
+      "scope:web"
+    ],
+    "implicitDependencies": [
+      "@vertex-os/web",
+      "@vertex-os/api"
+    ]
+  }
+}

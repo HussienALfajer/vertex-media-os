@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build and tool output
+dist/
+out-tsc/
+*.tsbuildinfo
+test-output/
+coverage/
+.vitest/
+.vite/
+playwright-report/
+apps/api/generated/
+
+# Generated Prisma client (regenerate with `pnpm db:generate`)
+packages/database/src/generated/
+
+# Nx
+.nx/cache
+.nx/workspace-data
+.nx/polygraph
+.nx/self-healing
+.nx/migrate-runs
+
+# Local environment (secrets never committed; `.env.example` is tracked)
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.log

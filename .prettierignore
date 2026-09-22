@@ -1,0 +1,17 @@
+# Canonical documentation and agent contracts are maintained by hand (mixed line endings, prose layout)
+docs/
+AGENTS.md
+CLAUDE.md
+
+# Dependencies, generated and build output
+node_modules/
+pnpm-lock.yaml
+dist/
+out-tsc/
+test-output/
+coverage/
+.vitest/
+.nx/
+apps/api/generated/
+packages/database/src/generated/
+apps/web/src/routeTree.gen.ts

@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "out-tsc/playwright",
+    "tsBuildInfoFile": "out-tsc/playwright/tsconfig.tsbuildinfo",
+    "lib": ["es2024", "dom"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "playwright.config.mts"]
+}

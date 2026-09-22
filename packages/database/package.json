@@ -1,0 +1,90 @@
+{
+  "name": "@vertex-os/database",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Backend-only PostgreSQL/Prisma infrastructure boundary for Vertex OS",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "@vertex-os/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0"
+  },
+  "devDependencies": {
+    "prisma": "7.10.0"
+  },
+  "nx": {
+    "tags": [
+      "type:lib",
+      "scope:backend",
+      "layer:infrastructure"
+    ],
+    "targets": {
+      "prisma-validate": {
+        "command": "prisma validate",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": true,
+        "inputs": [
+          "{projectRoot}/prisma/**/*",
+          "{projectRoot}/prisma.config.ts"
+        ],
+        "outputs": []
+      },
+      "prisma-generate": {
+        "command": "prisma generate",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": true,
+        "inputs": [
+          "{projectRoot}/prisma/**/*",
+          "{projectRoot}/prisma.config.ts",
+          {
+            "externalDependencies": [
+              "prisma",
+              "@prisma/client"
+            ]
+          }
+        ],
+        "outputs": [
+          "{projectRoot}/src/generated"
+        ]
+      },
+      "typecheck": {
+        "dependsOn": [
+          "prisma-generate",
+          "build",
+          "^typecheck"
+        ]
+      },
+      "build": {
+        "dependsOn": [
+          "prisma-generate",
+          "^build"
+        ]
+      },
+      "lint": {
+        "dependsOn": [
+          "prisma-generate"
+        ]
+      },
+      "test:integration": {
+        "dependsOn": [
+          "prisma-generate",
+          "^build"
+        ]
+      }
+    }
+  }
+}

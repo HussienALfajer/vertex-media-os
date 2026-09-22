@@ -1,0 +1,57 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Dependency install/build scripts are opt-in (pnpm `strictDepBuilds` stays at its
+# default `true`). Approve a package here only when its install script is required
+# for it to function; record the reason next to it. `false` records a reviewed
+# denial so the installation does not fail on an unreviewed script.
+allowBuilds:
+  # nx's postinstall only asserts platform support and refreshes the Nx Cloud
+  # client (unused here); Nx itself documents it as non-critical.
+  nx: false
+  # prisma's preinstall only prints a Node.js support notice.
+  prisma: false
+  # @prisma/engines' postinstall pre-downloads engine binaries; Prisma 7 with the
+  # `client` engine type and driver adapters needs none for validate/generate.
+  '@prisma/engines': false
+  # Testcontainers -> ssh2: its install script only tries to compile an optional
+  # native crypto binding (pure-JS fallback is used); cpu-features is ssh2's
+  # optional native helper; protobufjs' postinstall only prints a version notice.
+  ssh2: false
+  cpu-features: false
+  protobufjs: false
+  # @scarf/scarf (via swagger-ui-dist) is an install-time analytics beacon; never run it.
+  '@scarf/scarf': false
+
+# Security patch: @nestjs/platform-fastify 12.0.3 pins fastify 5.12.4, which is
+# affected by GHSA-4mh8-r7rc-xpvc (fixed in 5.12.5). Forcing the patch release also
+# keeps a single fastify copy, so the API's type imports match the runtime instance.
+# Remove once @nestjs/platform-fastify >= 12.0.4 (which pins 5.12.5) is adopted.
+overrides:
+  fastify: 5.12.5
+
+# Reviewed exceptions for `pnpm deps:audit` (docs/SECURITY.md, Sections 31 and 42).
+# Each package is pinned exactly by an upstream tool, sits only in that tool's
+# dependency graph (not in the API runtime path), and is not reachable the way its
+# advisory requires. Re-check on every Nx/Prisma upgrade and delete an entry as
+# soon as the upstream pin moves to a patched version.
+auditConfig:
+  ignoreGhsas:
+    # smol-toml 1.6.1 (pinned by nx 23.2.1): DoS on malformed TOML; Nx parses only
+    # trusted repository files.
+    - GHSA-7w5x-hrqm-74c2
+    # mysql2 3.15.3 (pinned by the prisma 7.10.0 CLI): MySQL driver that is never
+    # loaded; Vertex OS uses PostgreSQL only.
+    - GHSA-3f6p-5ww8-9rcr
+    - GHSA-rgwj-5xj2-c3m3
+    # deepmerge-ts 7.1.5 (pinned by @prisma/config 7.10.0; fixed only in 8.x): stack
+    # exhaustion on recursive object graphs; it merges only this repository's own
+    # prisma.config.ts.
+    - GHSA-ggr8-5vv4-36mx
+
+# Supply-chain cooldown: only versions published at least one day ago may be
+# resolved (pnpm's built-in default, made explicit and strict so a too-new
+# version fails resolution instead of being silently excluded from the policy).
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
