@@ -13,8 +13,13 @@ const workspaceEnvFile = new URL('../../.env', import.meta.url);
 
 try {
   process.loadEnvFile(workspaceEnvFile);
-} catch {
-  // No local .env yet (fresh clone, CI): rely on the process environment only.
+} catch (error) {
+  // Only a missing file is expected (fresh clone, CI): then the process environment is used as is.
+  // Anything else (unreadable file, a directory in its place, …) must fail loudly rather than
+  // silently running Prisma without the developer's configuration.
+  if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+    throw error;
+  }
 }
 
 const databaseUrl = process.env['DATABASE_URL'];

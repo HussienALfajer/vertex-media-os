@@ -11,16 +11,16 @@ coverage/
 .vite/
 playwright-report/
 apps/api/generated/
+# Vite's temporary bundles of its config files; TanStack Router plugin scratch files
+vite.config.*.timestamp*
+vitest.config.*.timestamp*
+.tanstack/
 
 # Generated Prisma client (regenerate with `pnpm db:generate`)
 packages/database/src/generated/
 
-# Nx
-.nx/cache
-.nx/workspace-data
-.nx/polygraph
-.nx/self-healing
-.nx/migrate-runs
+# Nx (caches and workspace data only; nothing under .nx is source)
+.nx/
 
 # Local environment (secrets never committed; `.env.example` is tracked)
 .env
@@ -34,3 +34,5 @@ packages/database/src/generated/
 .DS_Store
 Thumbs.db
 *.log
+*.tmp
+tmp/

@@ -26,7 +26,11 @@ pnpm infra:up                          # starts PostgreSQL 18 on 127.0.0.1 and w
 pnpm exec playwright install chromium  # browser for the end-to-end smoke test
 ```
 
-`pnpm env:setup` never overwrites an existing `.env` (`pnpm env:setup -- --force` regenerates it).
+`pnpm env:setup` never overwrites an existing `.env`. It also refuses to generate a new password
+while the local PostgreSQL volume exists, because PostgreSQL keeps the password it was initialised
+with. To rotate the local credentials, delete the local database first (its data is lost):
+`pnpm infra:reset`, then `pnpm env:setup -- --force`, then re-apply local overrides such as
+`POSTGRES_PORT` and `pnpm infra:up`.
 If port 5432 is already taken, change `POSTGRES_PORT` and the port in `DATABASE_URL` in `.env`.
 Never put production values in `.env`, and do not add `NODE_ENV` to it (see `.env.example`).
 
@@ -38,13 +42,13 @@ pnpm dev:api    # API only
 pnpm dev:web    # web only
 ```
 
-| URL                                         | What                                                        |
-| ------------------------------------------- | ----------------------------------------------------------- |
-| http://127.0.0.1:4200                       | Web shell; it calls the API through `/api` (Vite proxy)     |
-| http://127.0.0.1:3000/api/health/live       | Liveness: `200 {"status":"ok"}`, independent of PostgreSQL  |
-| http://127.0.0.1:3000/api/health/ready      | Readiness: `200` when PostgreSQL answers, otherwise a `503` |
-| http://127.0.0.1:3000/api/docs              | Swagger UI (off by default when `NODE_ENV=production`)      |
-| http://127.0.0.1:3000/api/docs/openapi.json | OpenAPI document                                            |
+| URL                                         | What                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------- |
+| http://127.0.0.1:4200                       | Web shell; it calls the API through `/api` (Vite proxy)                      |
+| http://127.0.0.1:3000/api/health/live       | Liveness: `200 {"status":"ok"}`, independent of PostgreSQL                   |
+| http://127.0.0.1:3000/api/health/ready      | Readiness: `200` when PostgreSQL answers, otherwise a `503` within about 3 s |
+| http://127.0.0.1:3000/api/docs              | Swagger UI (off by default when `NODE_ENV=production`)                       |
+| http://127.0.0.1:3000/api/docs/openapi.json | OpenAPI document                                                             |
 
 Errors use RFC 9457 Problem Details (`application/problem+json`) with a stable `code` and the
 request's `traceId`; every response carries an `x-request-id` header.
@@ -98,5 +102,6 @@ docs/             Canonical documentation and execution plans
   a backend-for-frontend holding the session) is specified next, in `docs/modules/iam.md`. The only
   endpoints are the public technical health endpoints.
 - No business modules, tables, migrations or seed data.
-- No CI workflow: the repository does not yet identify a source-control/CI provider. CI should run
-  `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit`.
+- No CI workflow yet. The repository is hosted on GitHub; wiring GitHub Actions is a separate
+  follow-up. CI should run `pnpm install --frozen-lockfile`, `pnpm verify:full` and
+  `pnpm deps:audit`.

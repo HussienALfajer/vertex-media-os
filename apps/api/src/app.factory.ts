@@ -1,6 +1,7 @@
 import helmet from '@fastify/helmet';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { FastifyLoggerOptions } from 'fastify';
 import { AppModule } from './app.module.js';
 import { type AppConfig } from './config/app-config.js';
 import { ProblemDetailsFilter } from './http/problem-details.js';
@@ -14,14 +15,25 @@ export const API_PREFIX = 'api';
 /** Fastify's default request body limit (1 MiB), stated explicitly so it is a reviewed choice. */
 const BODY_LIMIT_BYTES = 1_048_576;
 
+export interface CreateAppOptions {
+  /** Destination of the JSON log records; standard output when omitted. Tests inspect logs through it. */
+  readonly logStream?: NonNullable<FastifyLoggerOptions['stream']>;
+}
+
 /**
  * Creates the fully configured (not yet listening) Nest application on Fastify.
  * The server entry point, Fastify-injection tests and OpenAPI generation all use
  * this one factory, so they exercise the same middleware, filters and headers.
  */
-export async function createApp(config: AppConfig): Promise<NestFastifyApplication> {
+export async function createApp(
+  config: AppConfig,
+  options: CreateAppOptions = {},
+): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({
-    logger: { level: config.logging.level },
+    logger: {
+      level: config.logging.level,
+      ...(options.logStream ? { stream: options.logStream } : {}),
+    },
     // Request ids come only from `resolveRequestId`, which validates inbound values.
     requestIdHeader: false,
     genReqId: resolveRequestId,

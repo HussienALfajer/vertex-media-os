@@ -3,7 +3,7 @@
 **Repository path:** `docs/plans/PHASE_0_PLAN.md`  
 **Status:** COMPLETE  
 **Plan type:** Living execution plan  
-**Last updated:** 2026-09-22 05:35  
+**Last updated:** 2026-09-22 06:50 (post-completion hardening; Sections 10, 11, 12, 26, 27)  
 **Scope owner:** Vertex OS repository  
 **Execution target:** Claude Code or Codex operating from the repository root
 
@@ -410,6 +410,7 @@ The executing agent MUST update this checklist as work proceeds. Use actual time
 - [x] Phase 0 final verification completed with observed evidence. *(2026-09-22 05:30 — from a cleaned tree: frozen install and every Section 21 command exit 0; see "Final acceptance evidence".)*
 - [x] Plan status changed to `COMPLETE`.
 - [x] Execution stopped before IAM work. *(No `docs/modules/iam.md`, no domain package, no authentication code or Keycloak runtime.)*
+- [x] Post-completion hardening of the independent review findings F-01…F-06. *(2026-09-22 06:50 — Git initialised on `main` with a baseline commit of the reviewed tree; readiness bounded inside the database client; log-safe, correlated readiness logging; narrow `.env` loading; `env:setup` can no longer desynchronise `.env` from the local database volume; local database credential rotated; every Section 21 command re-run with exit 0. Decisions D-026…D-030, evidence in Section 26. Still no IAM work.)*
 
 ---
 
@@ -482,6 +483,23 @@ During execution:
   **Impact:** Automatic recovery is proven by a fake-timer RTL test (which fails when the interval is removed) instead of by manual observation.
 - **2026-09-22 05:16 — Discovery:** The M3 sources had never been run through Prettier (M1's format check predates them), and most differences were 80-column wraps.
   **Impact:** `printWidth: 100` set explicitly; `pnpm format` applied (line wrapping only).
+
+After completion, an independent review raised findings F-01…F-06 (no Git history; local artifacts in a shared archive; unbounded database work behind the readiness timeout; raw driver messages in logs; swallowed `.env` loading errors; credential regeneration against an existing database volume). The hardening pass discovered:
+
+- **2026-09-22 06:15 — Discovery (F-01):** Git for Windows sets `core.autocrlf=true` system-wide on this machine, so a fresh checkout would turn every LF source into CRLF and fail Prettier's `endOfLine: lf` check. `git diff --check` also reports this plan's intentional Markdown hard line breaks (two trailing spaces).
+  **Evidence:** `git config --show-origin core.autocrlf` → `C:/Program Files/Git/etc/gitconfig true`; `git add` warned "LF will be replaced by CRLF the next time Git touches it" for every source file.
+  **Impact:** D-030 (`.gitattributes`).
+- **2026-09-22 06:23 — Discovery (F-04):** The readiness warning quoted the Prisma error message ("Can't reach database server at `127.0.0.1:1`"); for rejected credentials that message names the database user. Refused connections and rejected credentials both surface as the same Prisma code `P2010`: the log-safe category (`DatabaseNotReachable`, `AuthenticationFailed` with SQLSTATE `28P01`) exists only in the error's `meta.driverAdapterError.cause`, and timeouts surface as plain `pg` errors without any code.
+  **Evidence:** the captured Phase 0 log line `readiness check failed: PostgreSQL unreachable (PrismaClientKnownRequestError: … Can't reach database server at 127.0.0.1:1)`; probes against refused, wrong-credential and paused PostgreSQL.
+  **Impact:** D-027.
+- **2026-09-22 06:26 — Discovery (F-03):** The readiness timeout existed only as a `Promise.race` in the controller; the Prisma/`pg` query underneath had no bound. Against a stalled PostgreSQL (container paused) a ping made with the pre-hardening client options was still pending after 10 s, holding its pooled connection, and settled only when the server resumed, so repeated probes pile up until the pool (10 connections) is exhausted.
+  **Evidence:** throwaway probe with the pre-hardening pool options (`connectionTimeoutMillis` only): "after 10015 ms the ping is still pending"; `pg@8.23.0` sources: `query_timeout` rejects the query and the pool then discards (force-closes) that connection, and `statement_timeout` is sent as a session startup parameter.
+  **Impact:** D-026.
+- **2026-09-22 06:29 — Discovery (F-05):** When `.env` exists but is not a readable file (for example a directory), `process.loadEnvFile()` throws a `TypeError` that has no error `code`. The bare `catch {}` in `prisma.config.ts` swallowed it, so `prisma validate` exited 0 without the developer's configuration.
+  **Evidence:** the Prisma CLI in a scratch copy of the package layout with `.env` as a directory: old config exit 0 "is valid", new config exit 1 with the loader error.
+  **Impact:** D-028.
+- **2026-09-22 06:31 — Discovery (F-06):** PostgreSQL applies `POSTGRES_PASSWORD` only when it initialises an empty data volume. `pnpm env:setup -- --force`, and `pnpm env:setup` after `.env` had been deleted, generated a new password while `vertexos_postgres-data` still held a database initialised with the old one, leaving `.env` and the database silently inconsistent. `--force` also resets local overrides such as `POSTGRES_PORT` to the template values.
+  **Impact:** D-029.
 
 Routine package installation output does not belong here. Record only discoveries that change implementation, risk, or understanding.
 
@@ -676,6 +694,38 @@ Keep this section current.
 **Decision:** API tests create the application with the same `createApp()` used by `main.ts` and send requests through Fastify injection after `app.init()` and the Fastify instance's `ready()`. `@nestjs/testing` (declared by the first session but never imported) was removed.
 
 **Reason:** `docs/TESTING.md` Section 18 asks for a real Nest application with production-like middleware on the Fastify adapter. No Phase 0 test needs provider overrides, which are what the testing module adds; the package is added back when a test genuinely needs one.
+
+### D-026 — Readiness is bounded inside the database client, not by a race in the controller
+
+**Decision (post-completion hardening, F-03):** `createDatabaseClient` takes `connectTimeoutMs` (the pool's `connectionTimeoutMillis`: opening a connection or waiting for a free one) and `statementTimeoutMs`, applied twice: server-side as the session `statement_timeout` (PostgreSQL cancels the statement) and client-side as `pg`'s `query_timeout` (the driver abandons a statement the server does not answer and the pool discards that connection). The API configures 2 s and 1 s. The readiness handler has no timer of its own, so it answers only after the ping itself has settled.
+
+**Reason:** Only the driver and PostgreSQL can end the work; a caller-side race merely stops waiting for it. These pool options are what the existing Prisma 7 / `@prisma/adapter-pg` / `pg` stack supports cleanly (Prisma offers no per-query cancellation). No cancellation abstraction or dependency was added.
+
+**Consequence:** The bounds apply to every statement issued through this client. Phase 0 issues only the readiness ping; **revisit** when a module adds real queries, which need their own deliberate limits. Worst-case readiness is about 3 s, plus pool queueing under heavy concurrent probing.
+
+### D-027 — Log-safe, correlated readiness failures
+
+**Decision (F-04):** `ping()` rejects with the package's `DatabaseUnavailableError`, which carries only the driver adapter's failure category (`reason`: for example `DatabaseNotReachable`, `AuthenticationFailed`, or `Unclassified` for timeouts) and the PostgreSQL SQLSTATE when there is one, both validated against a strict shape. The driver error is neither quoted nor kept as `cause`, because generic error serializers print the whole cause chain. The readiness handler logs one structured warning through the Fastify request logger (`reqId`, `dependency`, `reason`, `sqlState`, `durationMs`) and no longer attaches the driver error to its `ServiceUnavailableException`. `createApp` gained an optional `logStream` so tests can assert on log records.
+
+**Reason:** `docs/SECURITY.md` Sections 24 and 27, `docs/ENGINEERING.md` Section 25. Host, port, user and database names are not logged: no policy calls for them, and the category plus duration identify the failure class. Classification lives in `packages/database` because Prisma's error shape is an infrastructure detail.
+
+### D-028 — Only a missing `.env` is tolerated when loading it
+
+**Decision (F-05):** `prisma.config.ts` ignores only `ENOENT` from `process.loadEnvFile()` and rethrows every other error.
+
+**Reason:** `docs/ENGINEERING.md` Section 13: errors are not silently swallowed.
+
+### D-029 — `env:setup` never desynchronises `.env` from the local database volume
+
+**Decision (F-06):** Before generating a password (first run or `--force`), the script looks up the Compose volume by its labels (project `vertexos`, volume `postgres-data`) and refuses while it exists, printing the explicit rotation path: `pnpm infra:reset`, then `pnpm env:setup -- --force`. When `.env` itself is gone it prints `docker compose -p vertexos down --volumes` instead, because `infra:reset` needs `.env`. It also refuses when Docker cannot be queried. No automatic reset or in-place `ALTER ROLE` rotation was added.
+
+**Reason:** Tying regeneration to the existing destructive reset keeps the script small and makes the data loss a separate, explicit developer action.
+
+### D-030 — Git and GitHub baseline
+
+**Decision (F-01, F-02):** Git repository on `main`. The first commit is the reviewed Phase 0 tree, unchanged, plus `.gitattributes` (`* text=auto eol=lf`, and `*.md whitespace=-blank-at-eol` so Markdown hard line breaks are not whitespace errors). The hardening follows as a separate commit. `.gitignore` now also ignores all of `.nx/`, `.tanstack/`, Vite's config timestamp bundles, `*.tmp` and `tmp/`. GitHub hosts the repository: `HussienALfajer/vertex-media-os`, private, default branch `main`, Dependabot alerts enabled (GitHub reports secret scanning as not available for this private repository).
+
+**Reason:** D-007's condition, a provable provider, is now met. A GitHub Actions workflow is still deliberately left to a focused follow-up pass rather than folded into this hardening task.
 
 ---
 
@@ -1623,6 +1673,17 @@ Initial state:
 - Stale-technology search (Section 21 list): matches only in documentation statements and this plan; none in source or configuration. Canonical documents (`docs/*.md`) and `CLAUDE.md` are unchanged.
 - Final tree: `apps/api`, `apps/web`, `apps/web-e2e`, `packages/database`, `infra/compose.yaml`, `scripts/setup-env.mjs`, root configuration, `README.md`, `docs/`. No `domains/`, `docs/modules/`, `docs/adr/` or `packages/{ui,contracts,shared,config,testing,api-client}`.
 
+### Post-completion hardening evidence (2026-09-22 06:50)
+
+- Git baseline (F-01, F-02): `git init -b main`. Staged set: the 84 reviewed files plus `.gitattributes`. None of `.env`, `node_modules`, `.nx`, build or test output, generated Prisma client or OpenAPI output was staged. The then-current local database password occurred in no staged file, a credential-pattern search found only the fake test URLs, `git diff --cached --check` was clean and every blob was stored with LF. Commit `d68a3b9` `chore: establish Phase 0 foundation`. `git check-ignore` confirmed `.env`, `.env.*` (not `.env.example`), `node_modules`, `.nx/**`, `.tanstack/`, `dist`, `out-tsc`, generated Prisma client, `apps/api/generated`, `test-output`, `playwright-report`, `coverage`, `*.tsbuildinfo`, `*.log`, `*.tmp` and `tmp/`.
+- F-03: database integration test *ping itself gives up within its bounds while PostgreSQL is stalled, then recovers* (container paused; statement bound, then connect bound; 2.1 s in total) and API integration test (paused → `503 NOT_READY` in 1.1 s → `200` after unpause). Probe with the pre-hardening client options: the ping was still pending after 10 s. Server-side probe: `SHOW statement_timeout` returned the configured value, and PostgreSQL logged "canceling statement due to statement timeout" (SQLSTATE `57014`).
+- F-04: unit test (unreachable, sentinel URL) and integration test (wrong credentials) assert exactly one structured warning whose `reqId` equals the `x-request-id` header, and no user, password, database name, host:port or URL in any log line or response. Database tests assert `DatabaseUnavailableError` (`DatabaseNotReachable`; `AuthenticationFailed` with `28P01`) without `cause` or connection details. Built API against local PostgreSQL: records `{"reqId":…,"dependency":"postgresql","reason":"Unclassified","durationMs":1027}` (stalled) and `{…,"reason":"DatabaseNotReachable","durationMs":3}` (stopped); no password (old or new), URL, database name or `:5440` anywhere in the log.
+- F-05: the Prisma CLI in a scratch copy with no `.env`: old and new exit 0. With `.env` as a directory: old exit 0 (error swallowed), new exit 1. With a valid `.env`: both exit 0.
+- F-06: with the volume present, `pnpm env:setup -- --force` exits 1 and leaves `.env` byte-identical; `pnpm env:setup` with `.env` moved aside exits 1 and creates nothing; with Docker unreachable (`DOCKER_HOST=tcp://127.0.0.1:1`) it exits 1; after `pnpm infra:reset` the forced run writes `.env`.
+- Local credential rotation (the previous local `.env` had been shared inside a review archive): the resolved Compose project `vertexos` owned only the volume `vertexos_postgres-data` (created by M3); `pnpm infra:reset` removed exactly that volume, and all 35 other containers and 58 other volumes on the host were unchanged. `pnpm env:setup -- --force` generated a new 32-character password; `POSTGRES_PORT=5440` was re-applied; `pnpm infra:up` came up healthy on a fresh volume. The new credential is accepted; the old one is rejected (`AuthenticationFailed`, `28P01`).
+- Each exit 0: `pnpm install --frozen-lockfile`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:integration`, `pnpm test:e2e` (`1 passed`), `pnpm verify`, `pnpm verify:full` (81 s), `pnpm deps:audit` (the four reviewed exceptions, nothing new), `pnpm infra:up`, `pnpm db:validate` and `pnpm db:generate` (both also with `--skip-nx-cache`). `pnpm dev`: the web shell and `/api/health/live` and `/api/health/ready` returned 200 through the proxy on `127.0.0.1:4200`. OpenAPI: the same two paths; readiness has no parameters and documents 200/503.
+- Test counts: API unit 21 (was 20), web 5, database integration 4 (was 2), API integration 3 (was 1), Playwright 1.
+
 ---
 
 ## 27. Outcomes & Retrospective
@@ -1671,6 +1732,14 @@ Recorded 2026-09-22 05:35, after the final acceptance run.
 - **Signal-driven shutdown was not exercised.** `enableShutdownHooks()` is configured and `app.close()` (HTTP server and database pool) runs in every API test, but Windows has no POSIX signals; verify SIGTERM handling on the Linux CI/deployment target.
 - **Nx loads the workspace `.env` into every task.** `DATABASE_URL` and the local password are therefore present in every task environment; harmless today (nothing reads them implicitly), but keep it in mind before adding tools that read environment variables on their own.
 - `apps/web/src/routeTree.gen.ts` is committed and regenerated by the Vite plugin during `dev`/`build`/`test`; after adding a route, run one of those before relying on `pnpm typecheck` alone.
+
+### Post-completion hardening (2026-09-22 06:50)
+
+The independent review's findings were resolved after completion (D-026…D-030, evidence in Section 26). Readiness is now bounded by the database client and PostgreSQL themselves. Readiness failures are logged as structured, correlated, log-safe records. `.env` loading fails loudly on anything but a missing file. `env:setup` can no longer desynchronise `.env` from the local database volume. The exposed local database credential was rotated, and the source is under Git with a private GitHub remote. The residual risks above still apply, with these updates:
+
+- **CI:** GitHub is now the provider, but no workflow exists yet. Wiring GitHub Actions (frozen install, `pnpm verify:full`, `pnpm deps:audit`, Playwright artifacts on failure) is the immediate follow-up. Dependabot alerts are enabled; GitHub reports secret scanning as not available for this private repository, so the local staged-content scans used for the baseline remain the only secret check.
+- **Database client bounds:** the 1 s statement bound (D-026) applies to every statement of the API's database client; revisit it when the first module adds queries.
+- **Unexpected errors:** the global problem filter still logs unexpected (non-HTTP) errors in full, which is right for diagnosis today. Once modules issue real queries, decide how database errors are classified before they reach that log.
 
 ### Next exact step
 

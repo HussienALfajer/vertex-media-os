@@ -162,6 +162,47 @@ describe('API over Fastify inject without PostgreSQL', () => {
   });
 });
 
+describe('readiness failure logging', () => {
+  // Every connection detail is a distinctive sentinel, so a leak anywhere in the log output shows up.
+  const SENTINEL_DATABASE_URL =
+    'postgresql://sentinel_user:sentinel-password-7c1e@127.0.0.1:1/sentinel_db';
+
+  it('logs one structured, correlated warning without connection details', async () => {
+    const lines: string[] = [];
+    const app = await createApp(
+      loadAppConfig({ NODE_ENV: 'test', LOG_LEVEL: 'warn', DATABASE_URL: SENTINEL_DATABASE_URL }),
+      { logStream: { write: (line) => lines.push(line) } },
+    );
+    try {
+      await app.init();
+      await app.getHttpAdapter().getInstance().ready();
+
+      const response = await app.inject({ method: 'GET', url: '/api/health/ready' });
+
+      expect(response.statusCode).toBe(503);
+      const records = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      const failures = records.filter((record) => record['msg'] === 'readiness check failed');
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        level: 40,
+        reqId: response.headers['x-request-id'],
+        dependency: 'postgresql',
+        reason: 'DatabaseNotReachable',
+        durationMs: expect.any(Number),
+      });
+      expect(failures[0]).not.toHaveProperty('err');
+      expect(failures[0]).not.toHaveProperty('stack');
+
+      const output = lines.join('');
+      for (const leaked of ['sentinel', '127.0.0.1:1', 'postgresql://']) {
+        expect(output).not.toContain(leaked);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe('API documentation exposure', () => {
   it('does not serve the documentation UI or document when docs are disabled', async () => {
     const app = await startApp({ API_DOCS_ENABLED: 'false' });

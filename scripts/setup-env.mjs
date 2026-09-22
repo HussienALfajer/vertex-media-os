@@ -7,20 +7,62 @@
  *   pnpm env:setup            # create .env if missing
  *   pnpm env:setup -- --force # replace .env (loses local overrides)
  *
+ * PostgreSQL applies `POSTGRES_PASSWORD` only when it initialises an empty data
+ * volume and keeps that password afterwards. A new password is therefore generated
+ * only while the local database volume does not exist; otherwise `.env` and the
+ * database would silently disagree. Rotating the local credentials means deleting
+ * the local database first, which the script explains when it refuses.
+ *
  * Uses only Node built-ins so no dependency is needed for secret generation.
  */
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+// Must match `name:` and the volume key in infra/compose.yaml.
+const COMPOSE_PROJECT = 'vertexos';
+const DATA_VOLUME = 'postgres-data';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
 const examplePath = resolve(repositoryRoot, '.env.example');
 const envPath = resolve(repositoryRoot, '.env');
 const force = process.argv.includes('--force');
+const envExists = existsSync(envPath);
 
-if (existsSync(envPath) && !force) {
+if (envExists && !force) {
   console.log('.env already exists; leaving it untouched (use --force to regenerate).');
   process.exit(0);
+}
+
+const volume = findDatabaseVolume();
+if (volume !== undefined) {
+  console.error(
+    [
+      'Refusing to generate a new local database password.',
+      '',
+      `The Docker volume "${volume}" already holds the local PostgreSQL database, which keeps`,
+      'the password it was initialised with, so a new password in .env would not match it.',
+      envExists ? '.env was left untouched.' : 'That password came from an earlier .env.',
+      '',
+      ...(envExists
+        ? [
+            'To rotate the local credentials, delete the local development database first (all',
+            'data in it is lost), then generate new credentials:',
+            '',
+            '  pnpm infra:reset',
+            '  pnpm env:setup -- --force',
+          ]
+        : [
+            'Restore that .env if you still have it. Otherwise delete the local development',
+            'database (all data in it is lost) and run this command again:',
+            '',
+            `  docker compose -p ${COMPOSE_PROJECT} down --volumes`,
+            '  pnpm env:setup',
+          ]),
+    ].join('\n'),
+  );
+  process.exit(1);
 }
 
 // URL-safe so the value can be embedded in DATABASE_URL without percent-encoding.
@@ -37,3 +79,44 @@ if (rendered === template) {
 
 writeFileSync(envPath, rendered, { encoding: 'utf8', flag: force ? 'w' : 'wx' });
 console.log(`Wrote ${envPath} with a generated local database password.`);
+if (envExists) {
+  console.log(
+    'It was recreated from .env.example: re-apply local overrides such as POSTGRES_PORT.',
+  );
+}
+
+/** Name of this repository's local PostgreSQL volume, or undefined when it does not exist. */
+function findDatabaseVolume() {
+  let output;
+  try {
+    output = execFileSync(
+      'docker',
+      [
+        'volume',
+        'ls',
+        '--quiet',
+        '--filter',
+        `label=com.docker.compose.project=${COMPOSE_PROJECT}`,
+        '--filter',
+        `label=com.docker.compose.volume=${DATA_VOLUME}`,
+      ],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+  } catch (error) {
+    const reason =
+      String(error.stderr ?? '')
+        .trim()
+        .split('\n')[0] || error.message;
+    console.error(
+      [
+        'Cannot check whether the local PostgreSQL volume already exists, so no password was',
+        `generated. Make sure Docker is installed and running, then try again. (${reason})`,
+      ].join('\n'),
+    );
+    process.exit(1);
+  }
+  return output
+    .split(/\r?\n/)
+    .find((line) => line.trim() !== '')
+    ?.trim();
+}
