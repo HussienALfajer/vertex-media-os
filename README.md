@@ -84,6 +84,11 @@ arrive with their module specifications.
 Single project targets run with `pnpm nx run <project>:<target>`, for example
 `pnpm nx run @vertex-os/api:test`.
 
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same commands,
+`pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit`, for every pull request
+to `main` and every push to `main`. It needs no secrets. When `verify:full` fails, the Playwright
+traces, screenshots and report are kept as a run artifact for 7 days.
+
 ## Repository layout
 
 ```text
@@ -102,6 +107,3 @@ docs/             Canonical documentation and execution plans
   a backend-for-frontend holding the session) is specified next, in `docs/modules/iam.md`. The only
   endpoints are the public technical health endpoints.
 - No business modules, tables, migrations or seed data.
-- No CI workflow yet. The repository is hosted on GitHub; wiring GitHub Actions is a separate
-  follow-up. CI should run `pnpm install --frozen-lockfile`, `pnpm verify:full` and
-  `pnpm deps:audit`.

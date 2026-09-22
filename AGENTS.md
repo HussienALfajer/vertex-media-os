@@ -126,6 +126,7 @@ Policy: `docs/TESTING.md`.
   * `pnpm verify:full` — `pnpm verify` plus Prisma validate/generate, Testcontainers PostgreSQL integration tests and the Playwright smoke test (Docker required).
   * `pnpm deps:audit` — dependency vulnerability audit; reviewed exceptions live in `pnpm-workspace.yaml`.
   * Narrower checks: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:integration`, `pnpm test:e2e`, or `pnpm nx run <project>:<target>`.
+* CI (GitHub Actions, `.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit` for every pull request to `main` and every push to `main`. Change what is verified in those root commands, not by duplicating steps in the workflow.
 * In non-interactive shells, run Nx with `NX_DAEMON=false` when capturing or piping its output; on Windows the daemon it spawns otherwise keeps the output pipe open.
 * Run the narrowest relevant checks while implementing, then the required checks for the affected surface before completion.
 * If a required check cannot be run, state explicitly what was not verified and why.

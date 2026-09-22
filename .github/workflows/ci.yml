@@ -1,0 +1,64 @@
+# Remote enforcement of the repository's own verification commands (README, "Verification").
+# No secrets are needed: integration tests start ephemeral PostgreSQL containers through
+# Testcontainers, and the end-to-end smoke test gives the API a synthetic, never-connected
+# database URL (apps/web-e2e/playwright.config.mts). Nx runs locally only (Nx Cloud is disabled).
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer commit on a pull request cancels its superseded run. Runs on `main` are queued,
+  # never cancelled, so every commit on `main` gets a result.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Verify (verify:full, deps:audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # Actions are pinned to full commit SHAs; the comment names the reviewed release.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js (version from .node-version)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install pnpm (exact version from package.json "packageManager")
+        run: npm install --global "$(node -p "require('./package.json').packageManager.split('+')[0]")"
+
+      - name: Install dependencies (committed lockfile, frozen)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium and its system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: pnpm verify:full
+        id: verify
+        run: pnpm verify:full
+
+      - name: pnpm deps:audit
+        run: pnpm deps:audit
+
+      - name: Upload Playwright diagnostics
+        if: failure() && steps.verify.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-diagnostics
+          # Traces and screenshots of failed tests plus the HTML report; nothing else.
+          path: apps/web-e2e/test-output/
+          if-no-files-found: ignore
+          retention-days: 7

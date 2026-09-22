@@ -3,7 +3,7 @@
 **Repository path:** `docs/plans/PHASE_0_PLAN.md`  
 **Status:** COMPLETE  
 **Plan type:** Living execution plan  
-**Last updated:** 2026-09-22 06:50 (post-completion hardening; Sections 10, 11, 12, 26, 27)  
+**Last updated:** 2026-09-22 07:30 (post-completion hardening and CI follow-up; Sections 10, 11, 12, 26, 27)  
 **Scope owner:** Vertex OS repository  
 **Execution target:** Claude Code or Codex operating from the repository root
 
@@ -411,6 +411,7 @@ The executing agent MUST update this checklist as work proceeds. Use actual time
 - [x] Plan status changed to `COMPLETE`.
 - [x] Execution stopped before IAM work. *(No `docs/modules/iam.md`, no domain package, no authentication code or Keycloak runtime.)*
 - [x] Post-completion hardening of the independent review findings F-01…F-06. *(2026-09-22 06:50 — Git initialised on `main` with a baseline commit of the reviewed tree; readiness bounded inside the database client; log-safe, correlated readiness logging; narrow `.env` loading; `env:setup` can no longer desynchronise `.env` from the local database volume; local database credential rotated; every Section 21 command re-run with exit 0. Decisions D-026…D-030, evidence in Section 26. Still no IAM work.)*
+- [x] Post-completion CI follow-up. *(2026-09-22 07:30 — GitHub Actions workflow `.github/workflows/ci.yml` runs `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit` (D-031); the same three commands passed locally, also with `CI=true`. The remote run is recorded in the repository's Actions history. Still no IAM work.)*
 
 ---
 
@@ -726,6 +727,22 @@ Keep this section current.
 **Decision (F-01, F-02):** Git repository on `main`. The first commit is the reviewed Phase 0 tree, unchanged, plus `.gitattributes` (`* text=auto eol=lf`, and `*.md whitespace=-blank-at-eol` so Markdown hard line breaks are not whitespace errors). The hardening follows as a separate commit. `.gitignore` now also ignores all of `.nx/`, `.tanstack/`, Vite's config timestamp bundles, `*.tmp` and `tmp/`. GitHub hosts the repository: `HussienALfajer/vertex-media-os`, private, default branch `main`, Dependabot alerts enabled (GitHub reports secret scanning as not available for this private repository).
 
 **Reason:** D-007's condition, a provable provider, is now met. A GitHub Actions workflow is still deliberately left to a focused follow-up pass rather than folded into this hardening task.
+
+### D-031 — GitHub Actions CI over the existing command surface
+
+**Decision (post-completion CI follow-up):** One workflow, `.github/workflows/ci.yml`, with one job on `ubuntu-24.04`, whose Docker engine serves Testcontainers.
+- **Triggers:** pull requests to `main` and pushes to `main`.
+- **Permissions:** `contents: read` only; checkout runs with `persist-credentials: false`.
+- **Runtime:** Node from `.node-version` via `actions/setup-node`, with caching off. pnpm is installed with `npm install --global` at the exact `packageManager` version (no third-party action).
+- **Steps:** `pnpm install --frozen-lockfile`, `pnpm exec playwright install --with-deps chromium`, `pnpm verify:full`, `pnpm deps:audit`.
+- **Artifacts:** Playwright `test-output` is uploaded only when `verify:full` fails, with 7-day retention.
+- **Concurrency:** a newer commit cancels a superseded pull-request run; runs on `main` are queued so every commit gets a result.
+- **Pinning and limits:** actions are pinned to full commit SHAs (`checkout` v7.0.1, `setup-node` v7.0.0, `upload-artifact` v7.0.1); job timeout is 30 minutes.
+- **Not used:** no dependency cache, no Nx Cloud, no secrets.
+
+**Reason:** This meets the Section 20 requirements with the repository's own commands as the single verification surface, so CI cannot drift from local verification. `verify:full` already contains format, lint (including module boundaries), typecheck, tests, builds, Prisma validate/generate, the Testcontainers suites and the Playwright smoke test, so none of them is repeated in the workflow.
+
+**Consequence:** Any new advisory turns CI red until it is reviewed (D-019). GitHub reports native secret scanning as not available for this private repository (HTTP 422, re-checked). No replacement scanner was added: the obvious candidate (gitleaks) would mean downloading and executing a binary at CI time, which is not clearly justified for this baseline. Secret scanning therefore remains a residual limitation (Section 27).
 
 ---
 
@@ -1740,6 +1757,12 @@ The independent review's findings were resolved after completion (D-026…D-030,
 - **CI:** GitHub is now the provider, but no workflow exists yet. Wiring GitHub Actions (frozen install, `pnpm verify:full`, `pnpm deps:audit`, Playwright artifacts on failure) is the immediate follow-up. Dependabot alerts are enabled; GitHub reports secret scanning as not available for this private repository, so the local staged-content scans used for the baseline remain the only secret check.
 - **Database client bounds:** the 1 s statement bound (D-026) applies to every statement of the API's database client; revisit it when the first module adds queries.
 - **Unexpected errors:** the global problem filter still logs unexpected (non-HTTP) errors in full, which is right for diagnosis today. Once modules issue real queries, decide how database errors are classified before they reach that log.
+
+### Post-completion CI follow-up (2026-09-22 07:30)
+
+CI now enforces `pnpm verify:full` and `pnpm deps:audit` on GitHub (D-031), which resolves the "CI is not wired" residual risk. Native secret scanning is still not available for this private repository.
+
+The repository was briefly observed Public right after its first push and was set back to Private immediately. A read-only investigation (repository event feed, collaborators, deploy keys, webhooks, token scopes, local session transcripts) could not determine the cause. The personal-account security log has no API and could not be read with the available tooling, so the account owner should review it (`action:repo.access`).
 
 ### Next exact step
 
