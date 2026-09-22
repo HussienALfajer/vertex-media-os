@@ -1,6 +1,6 @@
 # Vertex OS — IAM Module Specification
 
-**Status:** Proposed V1 Implementation Specification  
+**Status:** Accepted V1 Implementation Specification  
 **Module:** MOD-IAM — Identity, Organization, and Access  
 **Repository:** HussienALfajer/vertex-media-os  
 **Baseline date:** 2026-09-22  
