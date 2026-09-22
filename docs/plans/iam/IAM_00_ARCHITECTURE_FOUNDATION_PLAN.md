@@ -2,12 +2,12 @@
 
 **Repository path:** `docs/plans/iam/IAM_00_ARCHITECTURE_FOUNDATION_PLAN.md`  
 **Master Plan item:** `IAM-MP-00`  
-**Status:** IMPLEMENTED — AUDIT REQUIRED  
+**Status:** COMPLETE — independently audited `IAM-00 ACCEPTED` with no blocking findings; baseline accepted by the owner on 2026-09-23 (Section 49A)  
 **Plan type:** Living execution plan  
 **Prepared:** 2026-09-22  
 **Scope owner:** IAM / Vertex OS architecture  
 **Execution target:** One Claude Code or Codex conversation operating from the repository root  
-**Required follow-up:** Independent read-only audit before `IAM-MP-01` planning
+**Required follow-up:** Write the `IAM-MP-01` executable plan from the accepted baseline (Section 50; Master Plan Section 19)
 
 > This plan establishes the enforceable architecture and package boundary for the IAM domain. It is deliberately **not** an authentication, persistence, Keycloak, user-management, or authorization-feature implementation plan. Its job is to make the architecture difficult to violate before IAM business behavior is added.
 
@@ -1589,6 +1589,8 @@ Evidence: `pnpm config list`, `pnpm install --lockfile-only --offline`, registry
 Impact: Local scripts needed `pnpm_config_verify_deps_before_run=warn` plus the existing root `.bin` on `PATH`. No dependency versions changed.  
 Action: Ran the real repository scripts with those environment settings; left package policy unchanged. CI's pinned pnpm/frozen install remains an audit/CI check.
 
+Audit note (2026-09-22): resolved — see Section 49A, finding A-07.
+
 ### S-004 — Docker runtime unavailable
 
 Observed: The Docker CLI could not connect to `//./pipe/docker_engine`; both existing Testcontainers integration suites failed before tests could run.  
@@ -1602,6 +1604,8 @@ Observed: After Docker became available, `pnpm verify:full` passed format, lint,
 Evidence: `apps/web-e2e/src/lab/shared/overlays.spec.ts:5` and its retained trace/screenshot under ignored `apps/web-e2e/test-output`; the same test passed three times in one focused Firefox run (`--repeat-each=3`).  
 Impact: The full verification gate is not green. The focus behavior under the full parallel suite remains uncertain; an isolated pass does not erase the failure.  
 Action: Preserved the failing test and its diagnostics, made no unrelated UI change, and recorded the residual finding for independent audit.
+
+Audit note (2026-09-22): investigated — see Section 49A, finding A-01. The retained trace/screenshot cited above no longer existed at audit time (A-07).
 
 ---
 
@@ -1649,6 +1653,8 @@ The conditional `packages/iam` preference resolved to `domains/iam` because the 
 ### Remaining risks
 
 The full gate is red due to the one Firefox overlay focus-trap failure under parallel E2E execution; the isolated three-run check passed, so reproducibility under full load remains unresolved. A frozen install with pinned pnpm 12.5.1 has not been run in this environment; the lockfile change is limited to `domains/iam: {}`.
+
+Audit note (2026-09-22): both risks were re-examined by the independent audit — see Section 49A (A-01, A-07).
 
 ### Final working tree
 
@@ -1769,6 +1775,91 @@ IAM-00 REJECTED — FIXES REQUIRED
 ```
 
 Only `IAM-00 ACCEPTED` unlocks IAM-MP-01 planning.
+
+---
+
+## 49A. Independent Audit Record — 2026-09-22
+
+### Basis
+
+Separate conversation, not relying on the implementation report. Audited `eef2b25..54107b0` (`40c5aff` implementation, `54107b0` plan follow-up) at `HEAD` `54107b00a075c1d781406f9f02cfd7397d19358c`, clean working tree, against `AGENTS.md`, `docs/PLANNING.md`, `docs/modules/iam.md` (Sections 43, 44, 55), `IAM_MASTER_PLAN.md` (IAM-MP-00/01/03, Sections 7 and 13), this plan (Sections 7–30, 41–42), `docs/ARCHITECTURE.md` (Sections 8, 9, 39), `docs/ENGINEERING.md` Section 24 and `docs/TESTING.md` Sections 31 and 56. Findings were recorded before any change. Windows 11, Node 24.21.0, pnpm 12.5.1, Docker 29.2.1, `NX_DAEMON=false`, `CI` unset.
+
+### Verdict
+
+```text
+IAM-00 ACCEPTED
+```
+
+No blocking finding exists, and no fix was required or made; this audit changed only this plan. All Section 42 Definition of Done items were re-verified from repository evidence. The acceptance applies to IAM-00's scope. The pre-existing, intermittent design-system E2E failure (A-01) is a repository defect that remains open outside IAM-00: until it is fixed, a single green `pnpm verify:full` does not prove the full gate is deterministic. Updating the Master Plan ledger to `COMPLETE` is left to the owner's baseline acceptance.
+
+### Findings
+
+| ID | Severity | Blocks IAM-00 | Evidence | Impact | Recommended fix / owner |
+|---|---|---|---|---|---|
+| A-01 | Major (pre-existing; outside IAM-00) | No | `apps/web-e2e/src/lab/shared/overlays.spec.ts:18-26`; `apps/web-e2e/playwright.config.mts:49` (`retries: isCI ? 1 : 0`); `.github/workflows/ci.yml:60` (diagnostics uploaded only on job failure). CI runs 35730287381 (`ab44887`), 35735960974, 35738951526, 35740331719, 35764643469 (`eef2b25`), 35770339061 (`40c5aff`) and 35771316065 (`54107b0`): the dialog Tab-containment test failed its first WebKit attempt in 7/7 runs and passed on retry (`1 flaky`); 35735960974 also had a one-off Chromium touch-target flake (`media.spec.ts:116`, 43.99997 < 44). | CI reports green while a flaky test is hidden, contrary to TESTING.md §31/§56. IAM-00 changed no web, UI or E2E code and did not cause it. | Separate design-system task: synchronise the containment check on frame delivery (wait until the modal has left `data-starting-style`, then sample after a rendered frame after each key press) while still rejecting any focus on page content; make CI surface flaky tests and their traces. Do not raise the 1 s timeout. |
+| A-02 | Minor | No | `eslint.config.mjs:137-157` matches only `process.env` / `process['env']`. Probe: `import { env } from 'node:process'` and `globalThis.process.env` in `apps/api/src` pass lint. IAM is additionally protected by `types: []` (`domains/iam/tsconfig.lib.json:8`): both forms fail `tsc` (TS2591, TS7017). | Guardrail parity with the conventional `no-process-env` rule; a deliberate alternative form bypasses it in Node-typed projects. | Optional hardening: restrict the `env` named import from `process`/`node:process` and the `globalThis.process.env` form. |
+| A-03 | Minor | No | `layer:domain` banned list (`eslint.config.mjs:117-130`) omits `pg`, which `scope:web` bans (`:98`). Probe: `import 'pg'` in IAM passes lint. | A raw PostgreSQL driver could enter domain core without a lint error; IAM has no dependencies today and adding one is visible in review. | Decide in the IAM-MP-01 plan together with A-06 (add `pg` to the domain-core ban when the adapter boundary is defined). |
+| A-04 | Minor / informational | No | `eslint.config.mjs:128-129`. Probes: `@keycloak/keycloak-admin-client`, `keycloak-js` and `openid-client` imports in IAM are not flagged, because Nx applies `bannedExternalImports` only to packages present in the project graph and none is installed. No OIDC-runtime package is named. | The Keycloak ban is latent until such a package is installed; the DoD rule is configured but cannot be observed failing today. | IAM-MP-03/06 plans: add the chosen OIDC/Keycloak packages to the domain-core ban and prove the rule fires once they are installed. |
+| A-05 | Minor | No | `packages/ui/eslint.config.mjs:9` turns off all of `no-restricted-imports`, which now also carries the IAM pattern (`eslint.config.mjs:56`); Nx does not map package subpaths to projects. Probe: `@vertex-os/iam/src/index.js` from `packages/ui` passes lint. | Lint gap only: the closed export map still rejects the subpath (`ERR_PACKAGE_PATH_NOT_EXPORTED`), and the root import from `packages/ui` is rejected by Nx tags. | Design-system configuration: re-declare the non-Base UI patterns in `packages/ui` instead of disabling the whole rule. |
+| A-06 | Informational (forward constraint) | No | `layer:domain` may depend only on `layer:domain`/`layer:shared`; `layer:infrastructure` only on `layer:infrastructure` (`eslint.config.mjs:111-116`). Spec Section 43 sketches `domains/iam/src/infrastructure/`; IAM-MP-01 requires adapters "private to IAM"; Section 16 allows "future IAM infrastructure → @vertex-os/iam". `layer:shared` is referenced but not described in the tag header. | That edge cannot be expressed yet; IAM-MP-01 must choose the adapter project and tags deliberately rather than loosen the domain rule. | IAM-MP-01 plan (entry criterion "persistence ownership is unambiguous"). |
+| A-07 | Minor (record accuracy) | No | S-003 and Outcomes: local pnpm reported as 11.25.0 and frozen install unverified. At audit time local pnpm is 12.5.1; its run preflight reported "Lockfile passes supply-chain policies" and "Lockfile is up to date", and CI's frozen install with pinned pnpm passed on `40c5aff` and `54107b0`. S-005 cites a retained Firefox trace/screenshot; the later focused run had overwritten `apps/web-e2e/test-output` (`.last-run.json` = passed, no results). | Earlier records overstated the remaining risk and pointed at evidence that no longer existed. | Recorded here; original entries preserved with audit notes. |
+| A-08 | Informational | No | Negative-boundary evidence uses temporary probes (Section 28, Method B), and S-002 shows a rule can stop matching silently. | A later ESLint change could disable a boundary without any failing check. | Consider a lint-fixture regression check when a stage next changes boundary configuration (ARCHITECTURE Section 39). |
+
+### Negative boundary evidence (auditor's own probes)
+
+Temporary `zz-audit-probe.ts` files were linted with each project's own ESLint configuration and then deleted. The working tree was clean afterwards.
+
+| Probe | Result | Rule / message |
+|---|---|---|
+| `apps/web` → `@vertex-os/iam` | Rejected | `@nx/enforce-module-boundaries`: `scope:web` can only depend on `scope:web` |
+| `packages/ui` → `@vertex-os/iam` | Rejected | `layer:ui` can only depend on `layer:ui` |
+| `packages/database` → `@vertex-os/iam` | Rejected | `layer:infrastructure` can only depend on `layer:infrastructure` |
+| IAM → `@vertex-os/database` | Rejected | `layer:domain` can only depend on `layer:domain`, `layer:shared` |
+| IAM → `@vertex-os/ui` | Rejected | `scope:backend` can only depend on `scope:backend` |
+| IAM → `../../../apps/api/src/main.js`, `../../../packages/database/src/index.js` | Rejected | Projects cannot be imported by a relative or absolute path |
+| IAM → `react`, `@nestjs/common`, `fastify`, `@prisma/client`, `@tanstack/react-query`, `vite` | Rejected | `layer:domain` is not allowed to import … |
+| IAM `process.env['X']`; `apps/api` non-bootstrap `process.env['X']` | Rejected | `no-restricted-syntax` (raw environment message) |
+| `apps/api`, `apps/web` → `@vertex-os/iam/src/index.js` | Rejected | `no-restricted-imports` IAM pattern |
+| `apps/api` → `../../../domains/iam/src/index.js`; `…/dist/index.js` | Rejected | `no-restricted-imports` and/or Nx relative-path rule |
+| `apps/api` → `@vertex-os/iam` (allowed direction) | Accepted | ESLint exit 0 |
+| Not rejected | — | `pg` (A-03); Keycloak/OIDC packages (A-04); UI deep subpath (A-05); `node:process` `env` / `globalThis.process.env` in `apps/api` (A-02). `@vertex-os/api` imported by package name is not flagged either, but applications expose no entry point and cannot be resolved; every resolvable relative form is rejected. |
+
+Package resolution (Node, from `domains/iam`): `@vertex-os/iam` resolves (no exports); `@vertex-os/iam/src/index.js`, `/dist/index.js` and `/package.json` throw `ERR_PACKAGE_PATH_NOT_EXPORTED`. A `tsc -p domains/iam/tsconfig.lib.json` probe rejects `node:process` and `globalThis.process` (TS2591, TS7017).
+
+### Scope and structure checks
+
+- Nx discovers `@vertex-os/iam` at `domains/iam` with tags `type:lib`, `scope:backend`, `layer:domain`, `domain:iam` and inferred `build`, `typecheck` and `lint` targets. `nx graph` shows no IAM project or npm edge, and `nx sync:check` reports the workspace up to date.
+- The lockfile diff is only `domains/iam: {}`. The Prisma schema still has no model and no migration exists. The only `process.env` read in production `src` is `apps/api/src/main.ts:5`.
+- No Keycloak, OIDC, token, session, auth-module, IAM API or IAM UI code exists; the Nest decorators under `apps/api/src` all predate IAM-00. The Master Plan wording changes (D-005) are recorded, keep every IAM-0 specification item assigned to a later stage, and change no ownership.
+
+### Verification (every command actually run)
+
+| Command | Result | Notes |
+|---|---|---|
+| `git status --short`, `git rev-parse HEAD`, `git log` | PASS | Clean; `54107b0` |
+| `gh run list` / `gh run view --log` (CI history) | Evidence | All green, but see A-01 |
+| `pnpm verify:full` (22:19–22:21) | PASS | Format; lint/typecheck/test/build as Nx cache hits; Prisma validate/generate; `test:integration` (api, database, uncached); Playwright 130/130 with local retries 0 |
+| `NX_SKIP_NX_CACHE=true pnpm verify` (22:21–22:22) | PASS | Format, lint (6 projects), typecheck (6), test (3), build (5), all executed without cache |
+| `pnpm deps:audit` | PASS | 4 previously reviewed exceptions (1 moderate, 3 high); none new |
+| `nx sync:check`; `nx graph --file`; `nx show project @vertex-os/iam --json` | PASS | See above |
+| ESLint, `tsc` and Node resolution probes | As tabled | All probe files removed |
+
+### A-01 investigation (diagnostics, not gate evidence)
+
+The original failing Firefox trace was gone, so the failure was reproduced deliberately. A temporary mirror spec that logged focus movement and animation-frame progress, and a temporary Playwright configuration, were added for these runs and then deleted. Linux WebKit ran in the pinned `mcr.microsoft.com/playwright:v1.63.0-noble` image through `run-server`, the same engine as CI, in a separately named container that was removed afterwards.
+
+| Run | Result | Observation |
+|---|---|---|
+| Windows, lab Chromium/Firefox/WebKit, `--repeat-each=4`, 16 workers | 447/448 | Firefox failed once at step 2. The predicate's single `page.evaluate` took 3,459 ms and then returned `true`. The screenshot shows the dialog rendered and focus on "More actions" inside it: the test's own probe stalled under load, and focus never escaped. |
+| Linux WebKit container, `--workers=2`, `--repeat-each=4` | 88/88 | — |
+| Linux WebKit container limited to 2 CPUs, `--repeat-each=6` | 131/132 | Same CI signature (`Received: false`) at step 11, the first Tab past the last control onto Base UI's trailing focus guard. Three samples over more than 1 s were `false` while each `evaluate` took 3–78 ms. The screenshot shows the dialog and scrim still unpainted (`data-starting-style`, `opacity: 0`) about 2 s after opening: the page delivered no animation frames, and Base UI schedules both the end of that entry style and the guard's focus redirect with `requestAnimationFrame` (`enqueueFocus`). |
+| Same, `--repeat-each=10` | 220/220 | The mirror spec did not hit a failing sample in 26 runs, so frame starvation was inferred from the unpainted entry state rather than counted directly. |
+
+Classification: reproducible intermittently, on CI's engine under CPU contention and on Windows Firefox under heavy parallel load. It is a **test defect** that the environment triggers: the assertion requires animation-frame delivery and round-trip latency within a fixed 1 s wall-clock window, which headless engines under contention do not guarantee. It is **not a Vertex product defect**: in both captured failures, focus never reached page content outside the modal. Extending the timeout would only hide it; the recommended fix is in A-01.
+
+### Owner acceptance — 2026-09-23
+
+The owner accepted this audited repository state as the IAM-00 baseline. IAM-MP-00 is `COMPLETE` and IAM-MP-01 is `READY` in `IAM_MASTER_PLAN.md`. Non-blocking items A-02, A-03, A-04, A-06 and A-08 are recorded there under the stages that will resolve them. A-01 is being fixed in a separate design-system task, and A-05 belongs to design-system configuration. The acceptance was recorded in a documentation-only commit on `main`; no IAM code changed after the audit.
 
 ---
 

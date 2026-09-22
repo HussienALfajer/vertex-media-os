@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-00` — `AUDIT_REQUIRED` (implementation complete; independent audit pending)  
+**Next executable stage:** `IAM-MP-01` — `READY` (IAM-MP-00 `COMPLETE`: audited `IAM-00 ACCEPTED` and baseline accepted by the owner on 2026-09-23; its executable plan is not yet written)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -544,9 +544,11 @@ The mapping back to the parent specification is recorded in Section 13.
 
 ## IAM-MP-00 — Architecture & Domain Boundary Foundation
 
-**Status:** AUDIT_REQUIRED  
+**Status:** COMPLETE  
 **Parent specification area:** IAM-0  
-**Depends on:** execution gate in Section 3 (closed)
+**Depends on:** execution gate in Section 3 (closed)  
+**Executable plan:** `docs/plans/iam/IAM_00_ARCHITECTURE_FOUNDATION_PLAN.md` (implemented in `40c5aff`/`54107b0`)  
+**Accepted:** 2026-09-23 — independent audit verdict `IAM-00 ACCEPTED` with no blocking findings (executable plan Section 49A); baseline accepted by the owner
 
 ### Objective
 
@@ -595,9 +597,9 @@ Establish the first real business-domain package boundary and the platform integ
 
 ## IAM-MP-01 — IAM Persistence Model & First Business Migration
 
-**Status:** PLANNED  
+**Status:** READY  
 **Parent specification area:** IAM-1  
-**Depends on:** IAM-MP-00 COMPLETE
+**Depends on:** IAM-MP-00 COMPLETE (satisfied 2026-09-23)
 
 ### Objective
 
@@ -627,6 +629,12 @@ Introduce the authoritative IAM persistence model and prove structural invariant
 - domain boundary is accepted;
 - persistence ownership is unambiguous;
 - migration conventions from existing database infrastructure are understood.
+
+### Carried forward from the IAM-MP-00 audit
+
+- **A-06:** decide deliberately which project owns IAM's private repository adapters, and give it explicit tags and constraints. Today `layer:domain` may depend only on `layer:domain`/`layer:shared`, with `@prisma/*` banned, and `layer:infrastructure` only on `layer:infrastructure`, so "IAM infrastructure → `@vertex-os/iam`" is not yet expressible. Do not loosen the domain-core rule to make persistence fit.
+- **A-03:** add `pg` to the domain-core banned external imports when that adapter boundary is defined.
+- **A-08:** this stage changes boundary configuration, so prefer a durable, repository-run check of the new rules over temporary probes alone (`docs/ARCHITECTURE.md` Section 39).
 
 ### Exit criteria
 
@@ -720,6 +728,11 @@ Create a reproducible, version-pinned local/test Keycloak environment and prove 
 - the centralized API configuration loader and raw-environment lint boundary exist; this stage adds typed Keycloak configuration when its actual values are defined;
 - no material Keycloak dependency choice conflicts with architecture/security;
 - local infrastructure behavior is understood.
+
+### Carried forward from the IAM-MP-00 audit
+
+- **A-04:** the domain-core Keycloak bans take effect only once a package is installed. When this stage installs Keycloak packages, prove an IAM import of them is rejected. IAM-MP-06 does the same for the chosen OIDC runtime library, adding it to the ban list.
+- **A-02 (optional):** when typed Keycloak configuration is added, consider closing the raw-environment lint bypasses (`env` imported from `node:process`, `globalThis.process.env`).
 
 ### Exit criteria
 
@@ -1450,14 +1463,14 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 ## 15. Stage Status Ledger
 
-The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 implementation is complete and awaits independent audit; no later IAM stage has started.
+The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No later IAM stage has started.
 
-No later stage is eligible for detailed planning until IAM-MP-00 has an accepted audit baseline.
+The next stage eligible for detailed planning is `IAM-MP-01`, which is `READY`: its executable plan may be written from the current `main`, but it has not yet been created or implemented.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
-| IAM-MP-00 Architecture & Domain Boundary Foundation | AUDIT_REQUIRED | IAM spec execution gate (closed) |
-| IAM-MP-01 IAM Persistence & First Migration | PLANNED | MP-00 COMPLETE |
+| IAM-MP-00 Architecture & Domain Boundary Foundation | COMPLETE | IAM spec execution gate (closed) |
+| IAM-MP-01 IAM Persistence & First Migration | READY | MP-00 COMPLETE (satisfied) |
 | IAM-MP-02 Reference Data & Minimal Audit Foundation | PLANNED | MP-01 COMPLETE |
 | IAM-MP-03 Keycloak Environment & Realm Contract | PLANNED | MP-02 COMPLETE |
 | IAM-MP-04 Identity Reconciliation & Invitations | PLANNED | MP-03 COMPLETE |
@@ -1475,6 +1488,14 @@ No later stage is eligible for detailed planning until IAM-MP-00 has an accepted
 | Final IAM Module Audit | PLANNED | MP-15 COMPLETE |
 
 The ledger MUST be updated only from real implementation/audit evidence.
+
+### Amendment record — IAM-MP-00 acceptance (2026-09-23)
+
+- **What changed:** IAM-MP-00 `AUDIT_REQUIRED` → `COMPLETE`, and IAM-MP-01 `PLANNED` → `READY`. Non-blocking audit items A-02, A-03, A-04, A-06 and A-08 were attached to IAM-MP-01 and IAM-MP-03 as "Carried forward from the IAM-MP-00 audit".
+- **Evidence:** `IAM_00_ARCHITECTURE_FOUNDATION_PLAN.md` Section 49A: independent audit of `40c5aff`/`54107b0` with the auditor's own negative boundary probes, `pnpm verify:full`, uncached `pnpm verify`, `pnpm deps:audit` and Nx graph/sync checks, followed by the owner's acceptance.
+- **Stages affected:** IAM-MP-01 and IAM-MP-03 (and IAM-MP-06 for the OIDC runtime ban). Stage order and ownership are unchanged.
+- **Findings outside IAM scope:** A-01 (a design-system E2E test that is flaky under CPU contention and has been hidden by CI retries) is being fixed separately. A-05 (`packages/ui` switches off `no-restricted-imports` entirely) belongs to design-system configuration. Neither blocks IAM planning.
+- **Accepted baselines:** remain valid.
 
 ---
 
@@ -1640,28 +1661,28 @@ The governance steps that had to precede execution are complete:
 - this file is placed at `docs/plans/iam/IAM_MASTER_PLAN.md` and is `ACTIVE`;
 - these governance changes are recorded on `main`.
 
+IAM-MP-00 has been completed through that cycle: plan written, implemented (`40c5aff`, `54107b0`), independently audited (`IAM-00 ACCEPTED`, executable plan Section 49A) and accepted by the owner on 2026-09-23.
+
 The next steps are:
 
-1. create **only** the first executable plan for:
+1. create **only** the executable plan for:
 
 ```text
-IAM-MP-00 — Architecture & Domain Boundary Foundation
+IAM-MP-01 — IAM Persistence Model & First Business Migration
 ```
 
 Suggested filename:
 
 ```text
-docs/plans/iam/IAM_00_ARCHITECTURE_FOUNDATION_PLAN.md
+docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md
 ```
 
-2. write that executable plan from the then-current `main` baseline using the exact structure required by `docs/PLANNING.md`;
-3. implement that plan in one implementation conversation;
-4. stop implementation;
-5. perform an independent audit;
-6. accept the resulting baseline only after blocking findings are closed;
-7. then create the executable plan for IAM-MP-01.
+2. write that executable plan from the current `main` baseline, using the structure required by `docs/PLANNING.md` and resolving the items in IAM-MP-01's "Carried forward from the IAM-MP-00 audit" (above all A-06, the adapter project boundary);
+3. implement it in one implementation conversation, then stop;
+4. perform an independent audit and accept the resulting baseline only after blocking findings are closed;
+5. then create the executable plan for IAM-MP-02.
 
-Do **not** create detailed implementation plans for IAM-MP-01 through IAM-MP-15 now.
+Do **not** create detailed implementation plans for IAM-MP-02 through IAM-MP-15 now.
 
 That would defeat the rolling-wave planning method that `docs/PLANNING.md` was added to enforce.
 
