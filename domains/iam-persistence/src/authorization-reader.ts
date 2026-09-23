@@ -26,7 +26,10 @@ const accessStates: Record<string, UserAccessState> = {
   DISABLED: 'DISABLED',
   TERMINATED: 'TERMINATED',
 };
-const departmentStates: Record<string, DepartmentState> = { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' };
+const departmentStates: Record<string, DepartmentState> = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+};
 const roleStates: Record<string, RoleState> = { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' };
 const permissionStates: Record<string, PermissionState> = {
   ACTIVE: 'ACTIVE',
