@@ -1494,7 +1494,7 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **What changed:** IAM-MP-00 `AUDIT_REQUIRED` → `COMPLETE`, and IAM-MP-01 `PLANNED` → `READY`. Non-blocking audit items A-02, A-03, A-04, A-06 and A-08 were attached to IAM-MP-01 and IAM-MP-03 as "Carried forward from the IAM-MP-00 audit".
 - **Evidence:** `IAM_00_ARCHITECTURE_FOUNDATION_PLAN.md` Section 49A: independent audit of `40c5aff`/`54107b0` with the auditor's own negative boundary probes, `pnpm verify:full`, uncached `pnpm verify`, `pnpm deps:audit` and Nx graph/sync checks, followed by the owner's acceptance.
 - **Stages affected:** IAM-MP-01 and IAM-MP-03 (and IAM-MP-06 for the OIDC runtime ban). Stage order and ownership are unchanged.
-- **Findings outside IAM scope:** A-01 (a design-system E2E test that is flaky under CPU contention and has been hidden by CI retries) is being fixed separately. A-05 (`packages/ui` switches off `no-restricted-imports` entirely) belongs to design-system configuration. Neither blocks IAM planning.
+- **Findings outside IAM scope:** A-01 (a design-system E2E test that was flaky under CPU contention and hidden by CI retries) was fixed in `ea8b16c`; CI now fails on flaky tests. A-05 (`packages/ui` switches off `no-restricted-imports` entirely) belongs to design-system configuration. Neither blocks IAM planning.
 - **Accepted baselines:** remain valid.
 
 ---

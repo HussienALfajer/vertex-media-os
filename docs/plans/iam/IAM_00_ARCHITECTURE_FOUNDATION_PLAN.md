@@ -1861,6 +1861,16 @@ Classification: reproducible intermittently, on CI's engine under CPU contention
 
 The owner accepted this audited repository state as the IAM-00 baseline. IAM-MP-00 is `COMPLETE` and IAM-MP-01 is `READY` in `IAM_MASTER_PLAN.md`. Non-blocking items A-02, A-03, A-04, A-06 and A-08 are recorded there under the stages that will resolve them. A-01 is being fixed in a separate design-system task, and A-05 belongs to design-system configuration. The acceptance was recorded in a documentation-only commit on `main`; no IAM code changed after the audit.
 
+### A-01 resolution — 2026-09-23
+
+Resolved in `ea8b16c`. The test now waits until the dialog has left its entry style, records any focus outside the modal other than its own sibling guards, and checks focus after two rendered frames instead of a 1 s deadline. CI keeps one retry only to classify a failure, and `failOnFlakyTests` makes a test that passes only on retry fail `verify:full`. Verified before the push:
+
+- local `verify:full` steps pass, with Playwright 130/130;
+- in Linux WebKit (pinned image, a fresh 2-CPU container per round), the old test failed 8/8 with CI's signature while the new test passed 8/8;
+- an injected brief focus escape fails the new test in Chromium, Firefox and WebKit.
+
+A different, one-off flaky test (`apps/web-e2e/src/lab/chromium/media.spec.ts:116`, 43.99997 < 44 in CI run 35735960974) will now fail CI if it recurs.
+
 ---
 
 ## 50. Next Planning Step After Acceptance
