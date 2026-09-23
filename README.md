@@ -9,7 +9,9 @@ persistence foundation (`domains/iam` and `domains/iam-persistence`), and the IA
 with the minimal MOD-AUDIT foundation (`domains/audit` and `domains/audit-persistence`). IAM
 tables, the permission catalog and the protected System Administrator role exist, but no IAM
 behavior is reachable from the running application yet. A local Keycloak with the Vertex realm
-(`infra/keycloak`) runs next to PostgreSQL; the API does not use it yet.
+(`infra/keycloak`) and a local mail sink run next to PostgreSQL. IAM identity provisioning
+(`domains/iam-keycloak`: reconciling users with Keycloak and sending invitations) exists as
+application capabilities; the running API does not call it yet.
 The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
@@ -20,7 +22,7 @@ The product and architecture are defined in the canonical documents: [product](d
 - **Node.js 24 LTS** — `.node-version` pins `24.21.0`; `package.json` requires `>=24 <25`.
 - **pnpm 12.5.1** — pinned in `package.json` (`packageManager`). A globally installed pnpm switches
   to the pinned version automatically.
-- **Docker** with Compose v2 and a running daemon — for local PostgreSQL and Keycloak, the
+- **Docker** with Compose v2 and a running daemon — for local PostgreSQL, Keycloak and Mailpit, the
   Testcontainers integration tests and the visual baselines (rendered in the pinned Playwright
   Linux image).
 
@@ -29,14 +31,14 @@ The product and architecture are defined in the canonical documents: [product](d
 ```sh
 pnpm install                           # installs exactly what pnpm-lock.yaml records
 pnpm env:setup                         # creates the ignored .env with generated local secrets
-pnpm infra:up                          # starts PostgreSQL 18 and Keycloak 26.7.4 on 127.0.0.1, waits until healthy
+pnpm infra:up                          # starts PostgreSQL 18, Keycloak 26.7.4 and Mailpit on 127.0.0.1, waits until healthy
 pnpm db:migrate                        # applies forward-only database migrations
 pnpm iam:sync-reference                # synchronizes the IAM permission catalog and system role
 pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-end tests
 ```
 
-`pnpm env:setup` generates the local database password, the Keycloak administrator credentials and
-the two Keycloak client secrets, and never prints them. It never rewrites an existing `.env`: run
+`pnpm env:setup` generates the local database password, the Keycloak administrator credentials,
+the two Keycloak client secrets and the realm's SMTP password, and never prints them. It never rewrites an existing `.env`: run
 again after `.env.example` gains keys (for example after pulling a new service), it appends only
 the missing keys. It refuses to generate a value while the Docker volume that keeps it exists,
 because PostgreSQL and Keycloak keep the credentials they were initialised with. To rotate the
@@ -44,7 +46,8 @@ local credentials, delete the local data first (all of it is lost): `pnpm infra:
 `pnpm env:setup -- --force`, then re-apply local overrides such as `POSTGRES_PORT` and
 `pnpm infra:up`.
 If port 5432 is already taken, change `POSTGRES_PORT` and the port in `DATABASE_URL` in `.env`;
-for Keycloak change `KEYCLOAK_PORT`. Never put production values in `.env`, and do not add
+for Keycloak change `KEYCLOAK_PORT` and the port in `KEYCLOAK_ISSUER_URL`; for the mail sink change
+`MAILPIT_PORT`. Never put production values in `.env`, and do not add
 `NODE_ENV` to it (see `.env.example`).
 
 ## Running locally
@@ -65,6 +68,7 @@ pnpm dev:web    # web only
 | http://127.0.0.1:3000/api/docs/openapi.json | OpenAPI document                                                             |
 | http://127.0.0.1:8080/realms/vertex         | Local Keycloak `vertex` realm (issuer); `/.well-known/openid-configuration`  |
 | http://127.0.0.1:8080/admin                 | Keycloak admin console: `KEYCLOAK_BOOTSTRAP_ADMIN_*` from `.env`             |
+| http://127.0.0.1:8025                       | Mailpit: every invitation and password-reset email the local realm sends     |
 
 Errors use RFC 9457 Problem Details (`application/problem+json`) with a stable `code` and the
 request's `traceId`; every response carries an `x-request-id` header.
@@ -76,7 +80,7 @@ pnpm db:validate   # validate the Prisma schema
 pnpm db:generate   # generate the Prisma client into packages/database/src/generated (ignored)
 pnpm db:migrate    # apply pending migrations; safe to run again (no reset)
 pnpm iam:sync-reference  # synchronize IAM reference data (after db:migrate); safe to run again
-pnpm infra:down    # stop local PostgreSQL and Keycloak; both data volumes are kept
+pnpm infra:down    # stop local PostgreSQL, Keycloak and Mailpit; both data volumes are kept
 pnpm infra:reset   # stop them AND delete both local data volumes (destructive)
 ```
 
@@ -88,6 +92,14 @@ effect only after `pnpm infra:reset`, which deletes the Keycloak and PostgreSQL 
 IAM users and Keycloak identities never drift apart. Do not change the realm in the admin console:
 the committed file is the source of truth. Non-secret server options (health, Argon2id password
 hashing) live in `infra/keycloak/keycloak.env`, shared with the integration tests.
+
+The realm sends email (invitations, verification and self-service password reset) through
+Mailpit, a local mail sink that accepts any credentials and delivers nothing onward; its messages
+are kept in memory and are gone when the container stops. Self-service reset asks for the enrolled
+one-time code before a new password, so a mailbox alone cannot replace both factors. A Keycloak
+volume created before the SMTP settings existed has no email configuration and still has reset
+off: `pnpm infra:reset` imports the current realm (and `pnpm env:setup` refuses to add the new
+SMTP password while that volume exists).
 
 There are three migrations: `20260923013708_iam_persistence_foundation` creates seven IAM tables
 and their structural constraints; `20260923035742_audit_foundation` creates MOD-AUDIT's
@@ -166,11 +178,12 @@ apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and 
 apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab and visual baselines
 domains/iam       @vertex-os/iam: backend IAM domain core and private persistence contract
 domains/iam-persistence @vertex-os/iam-persistence: IAM-owned Prisma adapters and transaction runner
+domains/iam-keycloak @vertex-os/iam-keycloak: IAM-owned Keycloak Admin REST adapter (provisioning)
 domains/audit     @vertex-os/audit: MOD-AUDIT core (Audit entry contract and append capability)
 domains/audit-persistence @vertex-os/audit-persistence: MOD-AUDIT-owned append-only recorder
 packages/database Backend-only PostgreSQL/Prisma 7 client boundary
 packages/ui       @vertex-os/ui: business-neutral design system (tokens, fonts, components)
-infra/compose.yaml Local PostgreSQL and Keycloak for development
+infra/compose.yaml Local PostgreSQL, Keycloak and the Mailpit mail sink for development
 infra/keycloak    Vertex realm import (no secrets) and shared Keycloak server options
 scripts/          Local environment setup and the lint:boundaries probes
 docs/             Canonical documentation and execution plans
@@ -186,7 +199,6 @@ docs/             Canonical documentation and execution plans
   none of them. There is no seed user, no user holding any role, no authentication or authorization,
   no Audit read path and no IAM endpoint. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
-- The local Keycloak realm has no email (SMTP) configuration yet, so Keycloak cannot send
-  invitation or verification email locally, and self-service password reset is off until a reset
-  flow that also requires the existing one-time code is added. Its back-channel logout URL points
-  at an API endpoint that does not exist yet.
+- Identity provisioning (creating, linking, enabling and disabling Keycloak identities and sending
+  invitations) is not reachable from the API yet: no endpoint or command creates users. The local
+  realm's back-channel logout URL points at an API endpoint that does not exist yet.

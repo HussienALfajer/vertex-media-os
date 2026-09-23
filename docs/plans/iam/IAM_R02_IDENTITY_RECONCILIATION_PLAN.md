@@ -83,11 +83,15 @@ Carried-forward items and their resolution:
 - **Required state** (spec Section 11.1): `INVITED` and `ACTIVE` require an existing, linked, enabled identity; the denied states require none to be created and an owned one disabled with its sessions terminated.
 - **Store operations** (in `IamTransactionScope.users`): `bindIdentity`, `recordIdentitySync`, `recordInvitationDelivery`, each `{ id, expectedVersion, … }` → `updated` (with the new user) | `version-conflict` | `not-found`; `bindIdentity` also `identity-taken`. `bindIdentity` requires the row to be unbound. The existing database checks (`identity_pair`, `invitation_sent`, the identity unique key) stay the last line of defense.
 - **Issuer.** The bound issuer is the configured `KEYCLOAK_ISSUER_URL`. The adapter derives the Admin base (`<origin>/admin/realms/<realm>`) and token endpoint from it.
-- **Logging.** The capabilities do not log; composition logs outcome categories only. The adapter's `fetch` errors (whose messages can contain the URL) are never propagated.
+- **Logging.** Neither the capabilities nor the composition log; the callers of IAM-MP-10 log outcome categories. The adapter's `fetch` errors (whose messages can contain the URL, and so a searched email) are never propagated.
 
 ### Discoveries during the run
 
-(Recorded as they happen.)
+- **An invitation link signs nobody in.** Completing an execute-actions link without `client_id` or `redirect_uri` verifies the email, sets the password and enrols the TOTP, and leaves no Keycloak session (the composed test asserts it). The first stop condition therefore does not apply.
+- **The OTP form runs in the reset-credentials flow on 26.7.4.** After the emailed link, a user with OTP must enter it before the password form; a user without one is sent to enrolment. A mutation that drops the OTP step fails three recovery tests.
+- **Duplicate email under another username.** With `duplicateEmailsAllowed: false`, creating a user whose email another identity holds answers 409 like a duplicate username; the single re-lookup by username finds nothing, which D-07 reports as a conflict.
+- **A different issuer is a conflict, not an outage.** A bound user reconciled through a provider configured with another issuer gets `identity-conflict` before any call; transport failures must therefore be simulated with the same issuer.
+- **Local environment.** `pnpm env:setup` refuses to add the SMTP password while `vertexos_keycloak-data` exists and leaves `.env` untouched; a developer runs `pnpm infra:reset` first, as for any realm change.
 
 ## 6. Done means
 
@@ -122,8 +126,8 @@ Carried-forward items and their resolution:
 - [x] M2 Core: ports, capabilities, unit tests with fakes
 - [x] M3 Persistence store operations and integration tests
 - [x] M4 `domains/iam-keycloak` adapter, unit tests, boundary lint and probes
-- [ ] M5 Realm SMTP and reset flow; mail sink in Compose and harness; env setup; realm contract tests
-- [ ] M6 Typed configuration, composition, real-Keycloak and composed integration tests
+- [x] M5 Realm SMTP and reset flow; mail sink in Compose and harness; env setup; realm contract tests
+- [x] M6 Typed configuration, composition, real-Keycloak and composed integration tests
 - [ ] M7 README, ENGINEERING Section 6; `pnpm verify` and integration suites green
 - [ ] M8 In-run review (three reviewers); findings resolved
 - [ ] M9 Master Plan ledger, hand-off, pull request, CI green
