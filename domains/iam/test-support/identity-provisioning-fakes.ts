@@ -71,6 +71,14 @@ export class InMemoryIam implements IamTransactionRunner {
 
   readonly repository = {
     findById: async (id: UserId): Promise<ApplicationUser | undefined> => this.users.get(id),
+    findByIdentity: async (identity: {
+      issuer: string;
+      subject: string;
+    }): Promise<ApplicationUser | undefined> =>
+      [...this.users.values()].find(
+        (user) =>
+          user.identity?.issuer === identity.issuer && user.identity.subject === identity.subject,
+      ),
   };
 
   private queue: Promise<unknown> = Promise.resolve();
@@ -136,6 +144,18 @@ export class InMemoryIam implements IamTransactionRunner {
       recordIdentitySync: async ({ id, expectedVersion, state }) => {
         operations.push(`sync:${state}`);
         return write(id, expectedVersion, { identitySyncState: state });
+      },
+      recordFirstActivation: async ({ id, expectedVersion }) => {
+        operations.push('activate');
+        if (staged.get(id)?.accessState !== 'INVITED' && staged.has(id)) {
+          return { outcome: 'version-conflict' };
+        }
+        const at = new Date(this.clock + 1000);
+        return write(id, expectedVersion, {
+          accessState: 'ACTIVE',
+          firstActivatedAt: at,
+          lastAccessStateChangedAt: at,
+        });
       },
       recordInvitationDelivery: async ({ id, expectedVersion, state }) => {
         operations.push(`invitation:${state}`);

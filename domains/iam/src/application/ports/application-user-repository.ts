@@ -15,6 +15,11 @@ export type UpdateDisplayNameResult =
 export interface ApplicationUserRepository {
   create(draft: NewApplicationUser): Promise<CreateApplicationUserResult>;
   findById(id: UserId): Promise<ApplicationUser | undefined>;
+  /** The committed user bound to exactly this issuer and subject (spec Section 13 step 8). */
+  findByIdentity(identity: {
+    readonly issuer: string;
+    readonly subject: string;
+  }): Promise<ApplicationUser | undefined>;
   updateDisplayName(change: {
     readonly id: UserId;
     readonly expectedVersion: number;

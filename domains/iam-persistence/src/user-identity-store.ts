@@ -5,7 +5,7 @@ import type {
   UserIdentityWriteResult,
 } from '@vertex-os/iam/persistence';
 import { mapUser, userSelect } from './application-user-repository.js';
-import { identitySyncToDatabase, invitationToDatabase } from './enum-mapping.js';
+import { accessToDatabase, identitySyncToDatabase, invitationToDatabase } from './enum-mapping.js';
 
 /**
  * The version-checked identity writes of IAM-R02 D-09, bound to the caller's transaction. Each
@@ -16,7 +16,10 @@ export function createUserIdentityStore(client: IamPersistenceClient): UserIdent
   async function write(
     id: UserId,
     expectedVersion: number,
-    where: { readonly identitySubject?: null },
+    where: {
+      readonly identitySubject?: null;
+      readonly accessState?: (typeof accessToDatabase)['INVITED'];
+    },
     data: Record<string, unknown>,
   ): Promise<UserIdentityWriteResult> {
     const rows = await client.iamApplicationUser.updateManyAndReturn({
@@ -54,6 +57,20 @@ export function createUserIdentityStore(client: IamPersistenceClient): UserIdent
 
     recordIdentitySync({ id, expectedVersion, state }) {
       return write(id, expectedVersion, {}, { identitySyncState: identitySyncToDatabase[state] });
+    },
+
+    recordFirstActivation({ id, expectedVersion }) {
+      const now = new Date();
+      return write(
+        id,
+        expectedVersion,
+        { accessState: accessToDatabase.INVITED },
+        {
+          accessState: accessToDatabase.ACTIVE,
+          firstActivatedAt: now,
+          lastAccessStateChangedAt: now,
+        },
+      );
     },
 
     recordInvitationDelivery({ id, expectedVersion, state }) {
