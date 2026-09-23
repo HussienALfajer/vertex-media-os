@@ -96,7 +96,7 @@ Detailed rules: `docs/ENGINEERING.md` and `docs/SECURITY.md`. Non-negotiable for
 * Database changes preserve data integrity, prefer backward-compatible migration strategies, and are safe for the intended environment.
 * Security-sensitive and financially significant state transitions remain attributable and auditable.
 * Preserve existing user changes and unrelated working-tree changes.
-* Do not commit, push, force-push, rebase shared history, or rewrite Git history unless the task explicitly requires it.
+* Do not commit, push, force-push, rebase shared history, or rewrite Git history unless the task explicitly requires it. A stage run under `docs/PLANNING.md` is authorized to create its own branch, commit to it, push it and open a pull request to `main`. Merging, pushing to `main` directly, force-pushing and rewriting published history remain the owner's actions.
 
 ---
 
@@ -110,9 +110,31 @@ Detailed rules: `docs/ENGINEERING.md` and `docs/SECURITY.md`. Non-negotiable for
 6. Implement the smallest coherent change that fully solves the task, following established local patterns and fixing root causes.
 7. Keep implementation, contracts, tests, schemas, and documentation synchronized.
 8. Validate the affected behavior.
-9. Report what changed and what was actually verified.
+9. Report in the Run Contract format below.
 
 Do not leave known partially migrated behavior behind unless the task explicitly requires staged delivery.
+
+---
+
+## Run Contract
+
+Work continues until the task is done or a real stop applies.
+
+* **Keep going** while the next step does not need the owner. Put status notes in the same message as the next action. Do not end a turn with an offer to continue, a summary that names the next step without taking it, or a list of choices that do not block the work.
+* **Stop and ask only when:**
+  * a change listed under "Changes Requiring Explicit Approval", or a plan's owner decision, is needed;
+  * canonical sources conflict in a way that affects architecture, security, data integrity or public contracts;
+  * the next step is destructive or hard to undo: deleting data, volumes or files outside the task, rewriting history, force-pushing, pushing to or merging into `main`, changing repository or GitHub settings, or touching servers and infrastructure outside this repository;
+  * the work cannot continue without something only the owner can provide.
+
+  A failing test, an ordinary bug, or a detail the canonical documents already settle is not a reason to stop.
+* **Evidence only.** Report timestamps, hashes, counts and results only when a command produced them. Mark anything you could not confirm and say where you looked.
+* **Final report.** End every substantial run with these headings, in this order:
+  1. **Needs the owner** — decisions, approvals or blockers, or "None".
+  2. **Changed** — what changed, grouped by purpose.
+  3. **Verified** — each check actually run, with its result.
+  4. **Not verified** — what was not run or could not be confirmed, and why.
+  5. **Found** — discoveries, risks and carried-forward items.
 
 ---
 
@@ -147,7 +169,7 @@ Read only the documentation relevant to the task.
 * `docs/TESTING.md` — verification policy, test layers, migration/concurrency/idempotency/security testing, CI gates.
 * `docs/DESIGN_SYSTEM.md` — visual, interaction, content and accessibility language of the application UI; implemented by `packages/ui` (`@vertex-os/ui`).
 * `docs/modules/*.md` — module-specific behavior, created when a module approaches implementation.
-* `docs/PLANNING.md` — mandatory planning, implementation, audit and delivery method: specification, master plan, one executable plan at a time, independent audit, accepted baseline. Required reading before creating or executing any module plan.
+* `docs/PLANNING.md` — mandatory planning, implementation, review and delivery method: specification, master plan, one stage run at a time ending in a reviewed pull request, risk-tiered deep audits, accepted baseline on merge. Required reading before creating or executing any module plan.
 * `docs/adr/` — accepted architectural decisions and their rationale (canonical once accepted records exist).
 * `README.md` — local setup, commands, and URLs that currently work.
 

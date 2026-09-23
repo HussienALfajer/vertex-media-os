@@ -9,8 +9,8 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-03` — `READY` (IAM-MP-02 `COMPLETE`: implemented in `2b7e103`, audited `IAM-02 ACCEPTED` (`a40f5a2`) and baseline accepted by the owner on 2026-09-23; the IAM-MP-03 executable plan is not yet written)  
-**Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
+**Next run:** `IAM-R01` (stage `IAM-MP-03`) — `READY`; start it with `/stage IAM-MP-03`  
+**Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
 
@@ -28,16 +28,17 @@ It follows `docs/PLANNING.md` and therefore:
 
 - defines the complete IAM delivery route;
 - defines stage order and dependencies;
+- groups stages into runs, assigns each run a risk tier and places the deep-audit checkpoints (Section 8);
 - identifies major deliverables and security checkpoints;
 - defines stage-level entry and exit criteria;
-- identifies audit focus after each stage;
+- identifies the review focus of each stage (its "Audit focus");
 - tracks stage status;
 - does **not** prescribe detailed file-by-file implementation for future stages;
-- does **not** create all executable plans in advance;
+- does **not** create all run plans in advance;
 - does **not** duplicate the full normative contents of `docs/modules/iam.md`;
-- does **not** authorize work beyond the current executable plan.
+- does **not** authorize work beyond the current run plan.
 
-Detailed implementation planning is created only for the next eligible stage from the real accepted repository baseline at that time.
+Detailed planning is created only for the next eligible run, from the merged `main` at that time.
 
 ---
 
@@ -64,11 +65,11 @@ docs/PLANNING.md
         ↓
 this IAM Master Plan
         ↓
-current executable IAM plan
+current IAM run plan
         ↓
-implemented repository state
+merged repository state
         ↓
-independent audit evidence
+review and audit evidence (pull requests, CI, audit records)
 ```
 
 If implementation reveals a contradiction between this Master Plan and a higher-authority source, the conflict MUST be surfaced and reconciled deliberately. The plan MUST NOT silently reinterpret architecture, security, ownership, or the IAM specification.
@@ -301,22 +302,20 @@ Business modules later own resource-specific authorization.
 
 `docs/PLANNING.md` is now committed on `main` and is explicitly routed from repository governance.
 
-That changes how IAM must be delivered:
+That changes how IAM must be delivered. Since 2026-09-23 (Section 15, amendment "delivery method"), IAM follows the run-based method:
 
 ```text
 approved IAM specification
         ↓
-IAM Master Plan
+IAM Master Plan (runs, tiers, checkpoints)
         ↓
-next executable plan only
+next run: plan → implement → verify → in-run review → pull request
         ↓
-one implementation conversation
+owner merges = accepted baseline
         ↓
-independent audit
+deep audit at IAM-CP1 / IAM-CP2
         ↓
-accepted baseline
-        ↓
-next executable plan
+next run
 ```
 
 A future agent must be able to resume IAM from the repository alone without relying on conversation memory.
@@ -402,7 +401,7 @@ This Master Plan does not authorize:
 
 ## 7. Locked Architectural and Security Invariants
 
-Every executable IAM plan inherits these invariants.
+Every IAM run plan inherits these invariants.
 
 1. **Authentication is not authorization.** Keycloak authentication alone never grants Vertex access.
 
@@ -450,45 +449,42 @@ Any implementation proposal that weakens one of these invariants requires explic
 
 ## 8. Delivery Model
 
+IAM follows `docs/PLANNING.md`. This section fixes the IAM-specific parts: runs, tiers and checkpoints.
+
 ### 8.1 Stage lifecycle
 
-Each Master Plan stage uses the repository-standard status model:
+Stages use the status model of `docs/PLANNING.md` Section 2: `PLANNED`, `READY`, `COMPLETE` and, when needed, `BLOCKED` are recorded here. `IN_PROGRESS` and `IN_REVIEW` are the open branch and the open pull request. IAM-MP-00 to IAM-MP-02 were accepted under the previous method; their records are historical.
 
-```text
-PLANNED
-READY
-IN_PROGRESS
-AUDIT_REQUIRED
-BLOCKED
-COMPLETE
-```
-
-A stage is not `COMPLETE` merely because code was written.
-
-It becomes `COMPLETE` only after:
-
-1. its executable plan was implemented;
-2. required verification passed;
-3. an independent audit found no unresolved blocking issue;
-4. required fixes were re-verified and re-audited;
-5. documentation was synchronized where needed;
-6. the resulting repository state was accepted as the next baseline.
+A stage is `COMPLETE` when the pull request of its run is merged, after in-run review and green CI. A stage covered by a checkpoint also needs the checkpoint's accepted audit before any later run starts.
 
 ### 8.2 Rolling-wave rule
 
-Only the next eligible stage receives a detailed executable plan.
+Only the next run receives a detailed plan, written from the merged `main`. The run planner may split a run when its diff would not be reviewable in one careful pass, and records the split here. Merging runs, moving a checkpoint or reordering stages is an amendment of this plan.
 
-Future stage details MUST be authored from the accepted repository state produced by earlier stages.
+### 8.3 Runs, tiers and checkpoints
 
-This Master Plan may be amended when implementation evidence proves that the stage decomposition should change, but such a change must preserve the canonical IAM specification and be recorded intentionally.
+| Run | Stages | Tier | Reviewers (`docs/PLANNING.md` Section 8.2) | After the run |
+|---|---|---|---|---|
+| `IAM-R01` | IAM-MP-03 | A | security; architecture and boundaries; tests and verification | — |
+| `IAM-R02` | IAM-MP-04 | A | security; data and concurrency; architecture and boundaries | — |
+| `IAM-R03` | IAM-MP-05, IAM-MP-06 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP1` deep audit** — authentication (MP-03 to MP-06) |
+| `IAM-R04` | IAM-MP-07 | A | security; data and concurrency; architecture and boundaries | — |
+| `IAM-R05` | IAM-MP-08, IAM-MP-09 | A | security; data and concurrency; architecture and boundaries | — |
+| `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP2` deep audit** — authorization and administration core (MP-07 to MP-10) |
+| `IAM-R07` | IAM-MP-11 | A | security; architecture and boundaries; tests and verification | — |
+| `IAM-R08` | IAM-MP-12, IAM-MP-13, IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
+| `IAM-R09` | IAM-MP-15 | A | security; data and concurrency; tests and verification | **Final IAM Module Audit** (Section 17) |
 
-### 8.3 One conversation rule
+Grouping rules behind the table:
 
-One executable plan is implemented in one implementation conversation.
+- Runs group stages that share one risk surface: sessions with the OIDC flow that creates them (R03), the two privilege-administration cores (R05), and the three frontend stages that consume one accepted HTTP surface (R08).
+- IAM-MP-04 and IAM-MP-10 stay alone: identity linking and user lifecycle carry the highest failure cost and the most concurrency.
+- `IAM-R08` is Tier B because the backend stays authoritative for every rule it presents. Its planner splits it if the frontend diff would not be reviewable in one pass.
+- Each stage's "Audit focus" in Section 10 is the review focus of its run and of the checkpoint that covers it.
 
-If a detailed plan becomes too broad to finish and verify professionally in one conversation, it MUST be split before implementation.
+### 8.4 Scope rule
 
-An implementation agent MUST NOT continue into a later Master Plan stage merely because adjacent work appears convenient.
+A run delivers only its stages. It MUST NOT continue into a later stage because adjacent work appears convenient.
 
 ---
 
@@ -503,38 +499,38 @@ IAM-MP-01  IAM Persistence Model & First Business Migration
       ↓
 IAM-MP-02  Permission/System-Role Reference Data & Minimal Audit Foundation
       ↓
-IAM-MP-03  Keycloak Environment, Realm Contract & Integration Harness
+IAM-MP-03  Keycloak Environment, Realm Contract & Integration Harness      [R01]
       ↓
-IAM-MP-04  Identity Reconciliation, Provisioning & Invitation Delivery
+IAM-MP-04  Identity Reconciliation, Provisioning & Invitation Delivery    [R02]
       ↓
-IAM-MP-05  Backend Application Session Foundation
+IAM-MP-05  Backend Application Session Foundation                         [R03]
+IAM-MP-06  OIDC Login, First Activation, CSRF & Logout                    [R03]
       ↓
-IAM-MP-06  OIDC Login, First Activation, CSRF & Logout
+IAM-CP1    Deep audit: authentication
       ↓
-IAM-MP-07  Protected-by-Default API & Authorization Context
+IAM-MP-07  Protected-by-Default API & Authorization Context               [R04]
       ↓
-IAM-MP-08  Department & Membership Administration Core
+IAM-MP-08  Department & Membership Administration Core                    [R05]
+IAM-MP-09  Role/Permission Administration & Last-Admin Protection         [R05]
       ↓
-IAM-MP-09  Role/Permission Administration & Last-Admin Protection
+IAM-MP-10  User Lifecycle, Session Revocation & Bootstrap Core            [R06]
       ↓
-IAM-MP-10  User Lifecycle, Session Revocation & Bootstrap Core
+IAM-CP2    Deep audit: authorization and administration core
       ↓
-IAM-MP-11  IAM/Auth HTTP Administration Surface & OpenAPI
+IAM-MP-11  IAM/Auth HTTP Administration Surface & OpenAPI                 [R07]
       ↓
-IAM-MP-12  Frontend Authentication & Session Experience
+IAM-MP-12  Frontend Authentication & Session Experience                   [R08]
+IAM-MP-13  Frontend User, Access & Provisioning Administration            [R08]
+IAM-MP-14  Frontend Departments, Roles & Permissions Administration       [R08]
       ↓
-IAM-MP-13  Frontend User, Access & Provisioning Administration
-      ↓
-IAM-MP-14  Frontend Departments, Roles & Permissions Administration
-      ↓
-IAM-MP-15  End-to-End Security, Concurrency & Operational Hardening
+IAM-MP-15  End-to-End Security, Concurrency & Operational Hardening       [R09]
       ↓
 Final IAM Module Audit
       ↓
 IAM CLOSED
 ```
 
-The sequence deliberately separates high-risk concerns instead of reproducing the broad `IAM-0 ... IAM-7` implementation-order headings as eight oversized conversations.
+The stages deliberately separate high-risk concerns instead of reproducing the broad `IAM-0 ... IAM-7` implementation-order headings. Runs (Section 8.3) group stages that share one risk surface, so the separation stays visible in review while one session delivers the group.
 
 The mapping back to the parent specification is recorded in Section 13.
 
@@ -773,7 +769,7 @@ Details and evidence: `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Secti
 
 - **A2-02 (boundary configuration):** a dynamic import whose template literal starts with an interpolation, such as ``import(`${'@vertex-os'}/database/iam`)``, and `createRequire(…)('@vertex-os/…/<subpath>')` pass lint. Add `ImportExpression > TemplateLiteral.source[expressions.length>0]` to `restrictedImportSyntax` (validated by the auditor). Optionally forbid `createRequire` in backend production source; `apps/web-e2e` uses it legitimately. Add `lint:boundaries` cases. Do this when this stage changes boundary configuration (A-04).
 - **A2-03 (boundary configuration):** bracket-notation and destructured `$queryRawUnsafe`/`$executeRawUnsafe` pass the D-14 ban. Add `property.value` and destructuring selectors (validated by the auditor), or remove the unsafe methods from the production scoped types in favor of a test-only entry. Add `lint:boundaries` cases.
-- **A2-01 (forward; must be closed before IAM or Audit persistence enters the HTTP runtime):** `PinoLoggerService` writes an `Error`'s raw `message` as the log `msg`, and a string stack argument as `stack`, outside the sanitized `err`. The auditor proved it with real P2007, validation and P1001 errors through Nest's `Logger`. It is not reachable while the HTTP runtime's only query is the readiness ping. Whichever stage first composes IAM or Audit persistence, or any query beyond `ping`, into the HTTP runtime must fix it and prove it with a test, together with the API statement-timeout item. Until then, each next executable plan carries this item forward.
+- **A2-01 (forward; must be closed before IAM or Audit persistence enters the HTTP runtime):** `PinoLoggerService` writes an `Error`'s raw `message` as the log `msg`, and a string stack argument as `stack`, outside the sanitized `err`. The auditor proved it with real P2007, validation and P1001 errors through Nest's `Logger`. It is not reachable while the HTTP runtime's only query is the readiness ping. Whichever stage first composes IAM or Audit persistence, or any query beyond `ping`, into the HTTP runtime must fix it and prove it with a test, together with the API statement-timeout item. Until then, each next run plan carries this item forward.
 - Open items passed on by the IAM-02 plan (Section 40) are unchanged. They include API statement-timeout sizing, the effectiveness of `DEPRECATED` permissions and custom-role version semantics (IAM-MP-07/09), system-role mappings that stay unwritable (IAM-MP-09), bootstrap requiring synchronized reference data (IAM-MP-10), security-event recording, database-level Audit immutability and role separation, `docs/modules/audit.md`, and a shared test-support package.
 
 ### Exit criteria
@@ -1416,46 +1412,41 @@ The expected evidence progression is:
 | MP-12–14 | frontend feature, accessibility, RTL, conflict-state tests |
 | MP-15 | real browser E2E, concurrency, dependency/security, full repository gates |
 
-Every executable plan must select the smallest meaningful subset during implementation and then run the full gate required by the affected surface before requesting audit.
+Every run selects the smallest meaningful subset during implementation, runs the gate required by `docs/PLANNING.md` Section 6.4 before review, and relies on CI for `pnpm verify:full` and `pnpm deps:audit` on its pull request.
 
 A check MUST NOT be reported as passed unless it actually ran successfully.
 
 ---
 
-## 12. Independent Audit Contract
+## 12. Review and Audit Contract
 
-After every executable plan:
+Every run is reviewed; the checkpoints are audited in depth (`docs/PLANNING.md` Sections 8 and 9).
 
 ```text
-implementation complete
+run implemented and verified
         ↓
-stage status = AUDIT_REQUIRED
+in-run review by fresh-context reviewers (concerns: Section 8.3)
         ↓
-independent read-only audit
+blocking findings fixed and re-verified in the run
         ↓
-┌───────────────────────┬───────────────────────────┐
-│ no blocking findings │ blocking findings         │
-│        ↓              │        ↓                  │
-│ accept baseline       │ targeted fixes            │
-│ stage COMPLETE        │ re-verification            │
-│        ↓              │ re-audit                  │
-│ plan next stage       │ accept baseline only then │
-└───────────────────────┴───────────────────────────┘
+pull request + green CI  →  owner merges  =  stage COMPLETE
+        ↓
+at IAM-CP1 / IAM-CP2 / final: deep audit in a separate session
+        ↓
+ACCEPTED → next run READY        FIXES REQUIRED → fix run → re-check
 ```
 
-The independent audit should evaluate the stage against:
+Reviews and audits evaluate the change against:
 
-- its executable plan;
+- the run plan;
 - `docs/modules/iam.md`;
-- architecture/module ownership;
-- security invariants;
+- architecture and module ownership;
+- the locked invariants of Section 7;
 - testing policy;
-- actual repository diff;
-- actual verification evidence.
+- the actual diff and code;
+- actual verification evidence (local runs, CI).
 
-The implementation agent's completion report is evidence, not acceptance.
-
-No later executable plan may be authored from an unaccepted baseline.
+The implementing run's report is a claim, not evidence of acceptance. No run is planned from an unmerged baseline, and no run after a checkpoint starts before that checkpoint is accepted.
 
 ---
 
@@ -1474,7 +1465,7 @@ The parent specification intentionally describes eight broad implementation phas
 | IAM-6 — Frontend | IAM-MP-12, IAM-MP-13, IAM-MP-14 |
 | IAM-7 — E2E, hardening, and closeout | IAM-MP-15 + Final IAM Module Audit |
 
-This decomposition exists to satisfy `docs/PLANNING.md`: each executable plan should remain small enough for one professional implementation conversation and one confident audit.
+This decomposition keeps each high-risk concern separately reviewable. Section 8.3 groups the stages into runs, each delivered by one session and reviewed as one pull request.
 
 The broad IAM-0 specification also mentions typed auth/IAM configuration and a local Keycloak baseline. The approved IAM-MP-00 executable plan limits that first stage to package and static boundaries; the configuration shapes and Keycloak files are delivered by the later stages that consume them. This is sequencing within the accepted IAM architecture, not a change of ownership or topology.
 
@@ -1499,37 +1490,49 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 | IAM-R13 | IAM frontend invents a second component system | UI fragmentation and accessibility regression | consume `@vertex-os/ui`; add only justified reusable primitives |
 | IAM-R14 | E2E absorbs all verification | slow/flaky suite hides lower-level defects | risk-based test layering; focused E2E only |
 | IAM-R15 | Scope expands into HR/multi-tenancy/client identities | delays first business module and weakens architecture | enforce explicit non-goals and PLANNING scope discipline |
-| IAM-R16 | Main-branch governance relies only on convention | security-sensitive changes may bypass intended review discipline | keep independent audit mandatory; repository protection policy may be hardened separately from IAM scope |
+| IAM-R16 | Main-branch governance relies only on convention | security-sensitive changes may bypass intended review discipline | every run lands through a reviewed pull request with green CI; deep audits at IAM-CP1, IAM-CP2 and the Final IAM Module Audit; repository protection policy may be hardened separately from IAM scope |
+| IAM-R17 | Lighter per-run review misses a defect a full audit would catch | a security defect reaches `main` between checkpoints | three fresh-context reviewers on every Tier A run; checkpoints placed directly after the authentication and privilege clusters; later runs cannot start before the checkpoint is accepted |
 
 ---
 
 ## 15. Stage Status Ledger
 
-The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 is `COMPLETE`: its independent audit returned `IAM-01 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-02 is `COMPLETE`: its independent audit returned `IAM-02 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No subsequent IAM stage has started.
+This Master Plan is `ACTIVE`. IAM-MP-00 to IAM-MP-02 are `COMPLETE` under the previous method: each was independently audited (`IAM-00`, `IAM-01`, `IAM-02 ACCEPTED`, no blocking findings) and accepted by the owner on 2026-09-23.
 
-The next stage eligible for detailed planning is `IAM-MP-03`, which is `READY`: its executable plan may be written from the current `main`, but it has not yet been created or implemented. It must carry the items listed under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in its section.
+The next run is `IAM-R01` (IAM-MP-03), which is `READY`. Its plan is written from the current `main` by `/stage IAM-MP-03`. It must resolve the items under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in the IAM-MP-03 section.
 
-| Stage | Status | Accepted baseline required before planning |
-|---|---|---|
-| IAM-MP-00 Architecture & Domain Boundary Foundation | COMPLETE | IAM spec execution gate (closed) |
-| IAM-MP-01 IAM Persistence & First Migration | COMPLETE | MP-00 COMPLETE (satisfied) |
-| IAM-MP-02 Reference Data & Minimal Audit Foundation | COMPLETE | MP-01 COMPLETE (satisfied) |
-| IAM-MP-03 Keycloak Environment & Realm Contract | READY | MP-02 COMPLETE (satisfied) |
-| IAM-MP-04 Identity Reconciliation & Invitations | PLANNED | MP-03 COMPLETE |
-| IAM-MP-05 Application Session Foundation | PLANNED | MP-04 COMPLETE |
-| IAM-MP-06 OIDC / Activation / CSRF / Logout | PLANNED | MP-05 COMPLETE |
-| IAM-MP-07 Default Protection & Authorization Context | PLANNED | MP-06 COMPLETE |
-| IAM-MP-08 Department & Membership Core | PLANNED | MP-07 COMPLETE |
-| IAM-MP-09 Role/Permission & Last-Admin Core | PLANNED | MP-08 COMPLETE |
-| IAM-MP-10 User Lifecycle & Bootstrap Core | PLANNED | MP-09 COMPLETE |
-| IAM-MP-11 HTTP Administration Surface | PLANNED | MP-10 COMPLETE |
-| IAM-MP-12 Frontend Authentication & Session UX | PLANNED | MP-11 COMPLETE |
-| IAM-MP-13 Frontend User & Access Admin | PLANNED | MP-12 COMPLETE |
-| IAM-MP-14 Frontend Department/Role/Permission Admin | PLANNED | MP-13 COMPLETE |
-| IAM-MP-15 E2E & Hardening | PLANNED | MP-14 COMPLETE |
-| Final IAM Module Audit | PLANNED | MP-15 COMPLETE |
+| Stage | Run | Status | Required before the run starts |
+|---|---|---|---|
+| IAM-MP-00 Architecture & Domain Boundary Foundation | — | COMPLETE | IAM spec execution gate (closed) |
+| IAM-MP-01 IAM Persistence & First Migration | — | COMPLETE | MP-00 COMPLETE (satisfied) |
+| IAM-MP-02 Reference Data & Minimal Audit Foundation | — | COMPLETE | MP-01 COMPLETE (satisfied) |
+| IAM-MP-03 Keycloak Environment & Realm Contract | R01 | READY | MP-02 COMPLETE (satisfied) |
+| IAM-MP-04 Identity Reconciliation & Invitations | R02 | PLANNED | R01 merged |
+| IAM-MP-05 Application Session Foundation | R03 | PLANNED | R02 merged |
+| IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | PLANNED | R02 merged |
+| `IAM-CP1` Deep audit: authentication | — | PLANNED | R03 merged |
+| IAM-MP-07 Default Protection & Authorization Context | R04 | PLANNED | `IAM-CP1 ACCEPTED` |
+| IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |
+| IAM-MP-09 Role/Permission & Last-Admin Core | R05 | PLANNED | R04 merged |
+| IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | PLANNED | R05 merged |
+| `IAM-CP2` Deep audit: authorization and administration core | — | PLANNED | R06 merged |
+| IAM-MP-11 HTTP Administration Surface | R07 | PLANNED | `IAM-CP2 ACCEPTED` |
+| IAM-MP-12 Frontend Authentication & Session UX | R08 | PLANNED | R07 merged |
+| IAM-MP-13 Frontend User & Access Admin | R08 | PLANNED | R07 merged |
+| IAM-MP-14 Frontend Department/Role/Permission Admin | R08 | PLANNED | R07 merged |
+| IAM-MP-15 E2E & Hardening | R09 | PLANNED | R08 merged |
+| Final IAM Module Audit | — | PLANNED | R09 merged |
 
-The ledger MUST be updated only from real implementation/audit evidence.
+The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
+
+### Amendment record — delivery method (2026-09-23)
+
+- **What changed:** IAM moves to the run-based method of `docs/PLANNING.md`. Stages IAM-MP-03 to IAM-MP-15 are grouped into runs `IAM-R01` to `IAM-R09` with risk tiers (Section 8.3). Per-stage separate audits are replaced by in-run review and deep audits at `IAM-CP1`, `IAM-CP2` and the Final IAM Module Audit. Acceptance becomes the owner's merge of each run's pull request. Stage order, stage content, ownership, invariants and carried-forward items are unchanged.
+- **Why:** evidence from IAM-MP-00 to IAM-MP-02. Every stage took three separate sessions: plan, implementation, and audit with acceptance. All three audits returned ACCEPTED with no blocking finding and no implementation fix. The full verification gate ran three times per stage (implementer, auditor, CI). Documentation added in IAM-01 and IAM-02 was about 2.8 times the production code by size. The owner delegated the flagged plan decisions to the planning agent, so the separate planning session added a cold start without adding an owner decision.
+- **Stages affected:** IAM-MP-03 to IAM-MP-15 (run grouping only).
+- **Accepted baselines:** IAM-MP-00, IAM-MP-01 and IAM-MP-02 remain valid.
+
+The records below were written under the previous method and are kept as history. Under the current method, a record is added only when the roadmap changes.
 
 ### Amendment record — IAM-MP-00 acceptance (2026-09-23)
 
@@ -1619,7 +1622,7 @@ Acceptable reasons to amend this Master Plan include:
 
 - a completed stage reveals a new dependency that changes safe ordering;
 - an executable stage proves too large and must be split;
-- an independent audit finds a cross-stage risk;
+- a review or deep audit finds a cross-stage risk;
 - a canonical specification is deliberately amended;
 - a required external integration constraint changes materially.
 
@@ -1641,7 +1644,7 @@ When amended, record:
 
 ## 17. Final IAM Module Audit
 
-After `IAM-MP-15` is accepted, perform a dedicated Final Module Audit.
+After the `IAM-R09` pull request (IAM-MP-15) is merged, perform a dedicated Final Module Audit with `/audit IAM-FINAL`.
 
 This is not another implementation stage.
 
@@ -1743,7 +1746,7 @@ IAM is not complete until the audit is accepted and every blocking finding is re
 IAM may be marked complete only when:
 
 - every stage IAM-MP-00 through IAM-MP-15 is `COMPLETE`;
-- every stage completion is backed by an accepted independent audit;
+- every stage completion is backed by a reviewed, merged pull request with green CI (IAM-MP-00 to IAM-MP-02: by their independent audits), and checkpoints `IAM-CP1` and `IAM-CP2` are accepted;
 - the parent IAM specification Definition of Done is satisfied;
 - the dedicated Final IAM Module Audit returns `IAM ACCEPTED`;
 - canonical documentation matches the final repository;
@@ -1767,55 +1770,25 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-The governance steps that had to precede execution are complete:
+IAM-MP-00 to IAM-MP-02 are complete and accepted (Section 15). Their plans, audit records and amendment records are history.
 
-- `docs/modules/iam.md` has been reconciled from `Proposed V1 Implementation Specification` to `Accepted V1 Implementation Specification`, after its independent Final Audit was accepted;
-- this file is placed at `docs/plans/iam/IAM_MASTER_PLAN.md` and is `ACTIVE`;
-- these governance changes are recorded on `main`.
-
-IAM-MP-00 has been completed through that cycle: plan written, implemented (`40c5aff`, `54107b0`), independently audited (`IAM-00 ACCEPTED`, executable plan Section 49A) and accepted by the owner on 2026-09-23.
-
-The executable plan for IAM-MP-01 now exists:
+The next step is run `IAM-R01`, which delivers IAM-MP-03 only. Start it in a new Claude Code session:
 
 ```text
-docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md
+/stage IAM-MP-03
 ```
 
-It was written from `main` at `a1e087f` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A-03, A-06 and A-08 (its decisions D-01…D-04).
+The run writes its plan to `docs/plans/iam/IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md` on the branch `iam/r01-keycloak-environment`. It resolves the items under "Carried forward from the IAM-MP-00 audit" (A-04; A-02 optional) and "Carried forward from the IAM-MP-02 audit" (A2-02, A2-03; A2-01 passes on) in the IAM-MP-03 section, and ends with a reviewed pull request.
 
-IAM-MP-01 has been completed through the same cycle: implemented (`5056c9f`), independently audited (`IAM-01 ACCEPTED`, executable plan Section 40A, recorded in `3cc9cd4`) and accepted by the owner on 2026-09-23.
-
-The executable plan for IAM-MP-02 now exists:
-
-```text
-docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md
-```
-
-It was written from `main` at `21f536c` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A1-01, A1-02, A1-03, A1-05, A1-07 and R-06 (its Section 5.1).
-
-The owner accepted that plan on 2026-09-23 (plan Section 12.1). IAM-MP-02 has been completed through the same cycle: implemented (`2b7e103`), independently audited (`IAM-02 ACCEPTED`, executable plan Section 46A, recorded in `a40f5a2`) and accepted by the owner on 2026-09-23.
-
-The next step is to create the executable plan for IAM-MP-03, and only that plan:
-
-```text
-docs/plans/iam/IAM_03_KEYCLOAK_ENVIRONMENT_AND_REALM_CONTRACT_PLAN.md   (recommended name)
-```
-
-Write it from the accepted `main`, using the structure required by `docs/PLANNING.md`. Carry the items listed under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in the IAM-MP-03 section. Then implement it in one conversation, audit it independently, and accept its baseline before planning IAM-MP-04.
-
-Do **not** create detailed implementation plans for IAM-MP-04 through IAM-MP-15 now.
-
-That would defeat the rolling-wave planning method that `docs/PLANNING.md` was added to enforce.
+Do **not** plan later runs in detail now.
 
 ---
 
 ## 20. Core Rule for IAM Delivery
 
-> **One IAM Master Plan → one executable IAM plan at a time → one implementation conversation → one independent audit → one accepted repository baseline → next IAM plan.**
+> **One IAM Master Plan → one run at a time → a reviewed pull request → the owner's merge is the accepted baseline → deep audits at IAM-CP1 and IAM-CP2 → Final IAM Module Audit.**
 
-Repeat until all IAM stages are complete, then perform the Final IAM Module Audit.
-
-No stage is complete because it “looks finished.”  
-No future plan is detailed from an unaccepted baseline.  
+No stage is complete because it "looks finished."  
+No run is planned from an unmerged baseline.  
 No security invariant is deferred merely to preserve schedule.  
-The repository—not conversational memory—carries IAM forward.
+The repository, not conversational memory, carries IAM forward.
