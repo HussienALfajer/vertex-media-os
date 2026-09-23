@@ -100,7 +100,8 @@ are kept in memory and are gone when the container stops. Self-service reset ask
 one-time code before a new password, so a mailbox alone cannot replace both factors. A Keycloak
 volume created before the SMTP settings existed has no email configuration and still has reset
 off: `pnpm infra:reset` imports the current realm (and `pnpm env:setup` refuses to add the new
-SMTP password while that volume exists).
+SMTP password while that volume exists). `pnpm infra:down` and `pnpm infra:reset` read only
+`.env.example`, so they work even when `.env` still lacks keys added since it was created.
 
 There are three migrations: `20260923013708_iam_persistence_foundation` creates seven IAM tables
 and their structural constraints; `20260923035742_audit_foundation` creates MOD-AUDIT's

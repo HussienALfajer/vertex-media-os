@@ -160,4 +160,5 @@ Carried-forward items and their resolution:
 
 **Local environment note.**
 - An existing Keycloak volume has neither SMTP nor reset. `pnpm env:setup` refuses to add the SMTP password while that volume exists. Run `pnpm infra:reset`, then `pnpm env:setup`, then `pnpm infra:up`.
+- `pnpm infra:down` and `pnpm infra:reset` read `.env.example`, not `.env`. Fixed after the pull request was opened: with an `.env` that lacked the new SMTP keys, Compose refused to interpolate the file, so `infra:reset`, the very step `env:setup` asks for, could not run.
 - Mailpit publishes `127.0.0.1:${MAILPIT_PORT:-8025}`. Change `MAILPIT_PORT` if that port is taken.

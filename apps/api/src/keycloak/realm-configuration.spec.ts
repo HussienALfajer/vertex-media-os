@@ -73,6 +73,16 @@ describe('local exposure', () => {
     expect(compose).not.toMatch(/^\s*network_mode:/m);
   });
 
+  it('tears the local services down without the local .env', () => {
+    // A .env that predates new keys must never block `infra:reset`, which env:setup asks for.
+    const scripts = (
+      JSON.parse(workspaceFile('package.json')) as { scripts: Record<string, string> }
+    ).scripts;
+    for (const name of ['infra:down', 'infra:reset']) {
+      expect(scripts[name]).toContain('--env-file .env.example');
+    }
+  });
+
   it('runs Keycloak in development mode with the realm import', () => {
     expect(compose).toContain("command: ['start-dev', '--import-realm']");
   });
