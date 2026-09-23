@@ -15,6 +15,8 @@ const privateSubpath = 'dynamic imports and type queries of subpaths';
 const computedImport = 'computed dynamic imports';
 const rawEnvironment = 'Read raw environment variables';
 const unsafeRawSql = '$executeRawUnsafe is reserved for tests';
+const unsafeRawQuery = '$queryRawUnsafe is reserved for tests';
+const createRequireBan = 'createRequire bypasses the import boundaries';
 
 // [id, project, code, rule, message fragment?, virtual file relative to the project?]
 const violations = [
@@ -99,6 +101,50 @@ const violations = [
   ['V38', 'domains/audit', "process.env['X'];", syntaxRule, rawEnvironment],
   ['V39', 'domains/audit-persistence', "import '@prisma/client';", nxRule, '@prisma'],
   ['V40', 'apps/web', "import '@vertex-os/audit';", nxRule, 'scope:web'],
+  // A2-02: interpolated template specifiers and createRequire.
+  ['V41', 'apps/api', "await import(`${'@vertex-os'}/database/iam`);", syntaxRule, computedImport],
+  ['V42', 'apps/api', "await import(`@vertex-${'os'}/database/iam`);", syntaxRule, computedImport],
+  [
+    'V43',
+    'apps/api',
+    "import { createRequire } from 'node:module';",
+    importsRule,
+    createRequireBan,
+  ],
+  ['V44', 'domains/iam', "import * as m from 'module';", importsRule, createRequireBan],
+  // A2-03: bracket and destructured unsafe raw SQL.
+  [
+    'V45',
+    'domains/iam-persistence',
+    "declare const c: any; c['$queryRawUnsafe']('x');",
+    syntaxRule,
+    unsafeRawQuery,
+  ],
+  [
+    'V46',
+    'domains/iam-persistence',
+    "declare const c: any; c['$executeRawUnsafe']('x');",
+    syntaxRule,
+    unsafeRawSql,
+  ],
+  [
+    'V47',
+    'domains/audit-persistence',
+    'declare const c: any; const { $queryRawUnsafe } = c; void $queryRawUnsafe;',
+    syntaxRule,
+    unsafeRawQuery,
+  ],
+  // A-02: other routes to the raw environment in production source.
+  [
+    'V48',
+    'domains/iam',
+    "import { env } from 'node:process'; void env;",
+    syntaxRule,
+    rawEnvironment,
+  ],
+  ['V49', 'domains/iam', "globalThis.process.env['X'];", syntaxRule, rawEnvironment],
+  ['V50', 'domains/iam', "globalThis['process']['env'];", syntaxRule, rawEnvironment],
+  ['V51', 'apps/api', 'const { env } = process; void env;', syntaxRule, rawEnvironment],
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
@@ -137,6 +183,20 @@ const controls = [
   ],
   ['C4', 'domains/iam', imports('@vertex-os/audit')],
   ['C5', 'apps/api', ["process.env['DATABASE_URL'];"], 'src/commands/iam-sync-reference.ts'],
+  // Tagged raw SQL and a literal, non-interpolated template import stay permitted.
+  [
+    'C6',
+    'domains/iam-persistence',
+    ['declare const c: any;', 'await c.$queryRaw`SELECT 1`;', 'await c.$executeRaw`SELECT 1`;'],
+  ],
+  ['C7', 'apps/api', ['await import(`node:path`);']],
+  // The black-box end-to-end project resolves installed packages with createRequire.
+  [
+    'C8',
+    'apps/web-e2e',
+    ["import { createRequire } from 'node:module';", 'void createRequire;'],
+    'src/visual/browser.setup.ts',
+  ],
 ];
 
 const linters = new Map();

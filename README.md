@@ -8,7 +8,8 @@ Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.
 persistence foundation (`domains/iam` and `domains/iam-persistence`), and the IAM reference data
 with the minimal MOD-AUDIT foundation (`domains/audit` and `domains/audit-persistence`). IAM
 tables, the permission catalog and the protected System Administrator role exist, but no IAM
-behavior is reachable from the running application yet.
+behavior is reachable from the running application yet. A local Keycloak with the Vertex realm
+(`infra/keycloak`) runs next to PostgreSQL; the API does not use it yet.
 The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
@@ -19,27 +20,32 @@ The product and architecture are defined in the canonical documents: [product](d
 - **Node.js 24 LTS** — `.node-version` pins `24.21.0`; `package.json` requires `>=24 <25`.
 - **pnpm 12.5.1** — pinned in `package.json` (`packageManager`). A globally installed pnpm switches
   to the pinned version automatically.
-- **Docker** with Compose v2 and a running daemon — for local PostgreSQL, the Testcontainers
-  integration tests and the visual baselines (rendered in the pinned Playwright Linux image).
+- **Docker** with Compose v2 and a running daemon — for local PostgreSQL and Keycloak, the
+  Testcontainers integration tests and the visual baselines (rendered in the pinned Playwright
+  Linux image).
 
 ## First-time setup
 
 ```sh
 pnpm install                           # installs exactly what pnpm-lock.yaml records
-pnpm env:setup                         # creates the ignored .env with a generated local DB password
-pnpm infra:up                          # starts PostgreSQL 18 on 127.0.0.1 and waits until healthy
+pnpm env:setup                         # creates the ignored .env with generated local secrets
+pnpm infra:up                          # starts PostgreSQL 18 and Keycloak 26.7.4 on 127.0.0.1, waits until healthy
 pnpm db:migrate                        # applies forward-only database migrations
 pnpm iam:sync-reference                # synchronizes the IAM permission catalog and system role
 pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-end tests
 ```
 
-`pnpm env:setup` never overwrites an existing `.env`. It also refuses to generate a new password
-while the local PostgreSQL volume exists, because PostgreSQL keeps the password it was initialised
-with. To rotate the local credentials, delete the local database first (its data is lost):
-`pnpm infra:reset`, then `pnpm env:setup -- --force`, then re-apply local overrides such as
-`POSTGRES_PORT` and `pnpm infra:up`.
-If port 5432 is already taken, change `POSTGRES_PORT` and the port in `DATABASE_URL` in `.env`.
-Never put production values in `.env`, and do not add `NODE_ENV` to it (see `.env.example`).
+`pnpm env:setup` generates the local database password, the Keycloak administrator password and
+the two Keycloak client secrets, and never prints them. It never rewrites an existing `.env`: run
+again after `.env.example` gains keys (for example after pulling a new service), it appends only
+the missing keys. It refuses to generate a value while the Docker volume that keeps it exists,
+because PostgreSQL and Keycloak keep the credentials they were initialised with. To rotate the
+local credentials, delete the local data first (all of it is lost): `pnpm infra:reset`, then
+`pnpm env:setup -- --force`, then re-apply local overrides such as `POSTGRES_PORT` and
+`pnpm infra:up`.
+If port 5432 is already taken, change `POSTGRES_PORT` and the port in `DATABASE_URL` in `.env`;
+for Keycloak change `KEYCLOAK_PORT`. Never put production values in `.env`, and do not add
+`NODE_ENV` to it (see `.env.example`).
 
 ## Running locally
 
@@ -57,6 +63,8 @@ pnpm dev:web    # web only
 | http://127.0.0.1:3000/api/health/ready      | Readiness: `200` when PostgreSQL answers, otherwise a `503` within about 3 s |
 | http://127.0.0.1:3000/api/docs              | Swagger UI (off by default when `NODE_ENV=production`)                       |
 | http://127.0.0.1:3000/api/docs/openapi.json | OpenAPI document                                                             |
+| http://127.0.0.1:8080/realms/vertex         | Local Keycloak `vertex` realm (issuer); `/.well-known/openid-configuration`  |
+| http://127.0.0.1:8080/admin                 | Keycloak admin console: `KEYCLOAK_BOOTSTRAP_ADMIN_*` from `.env`             |
 
 Errors use RFC 9457 Problem Details (`application/problem+json`) with a stable `code` and the
 request's `traceId`; every response carries an `x-request-id` header.
@@ -68,9 +76,18 @@ pnpm db:validate   # validate the Prisma schema
 pnpm db:generate   # generate the Prisma client into packages/database/src/generated (ignored)
 pnpm db:migrate    # apply pending migrations; safe to run again (no reset)
 pnpm iam:sync-reference  # synchronize IAM reference data (after db:migrate); safe to run again
-pnpm infra:down    # stop local PostgreSQL; the data volume is kept
-pnpm infra:reset   # stop it AND delete the local data volume (destructive)
+pnpm infra:down    # stop local PostgreSQL and Keycloak; both data volumes are kept
+pnpm infra:reset   # stop them AND delete both local data volumes (destructive)
 ```
+
+Keycloak runs in development mode (never a production configuration) with its embedded database
+in the `keycloak-data` volume. The `vertex` realm is imported from
+`infra/keycloak/import/vertex-realm.json` only when that volume is empty; client secrets and the
+environment-specific URIs in it are placeholders filled from `.env`. Realm changes therefore take
+effect only after `pnpm infra:reset`, which deletes the Keycloak and PostgreSQL data together so
+IAM users and Keycloak identities never drift apart. Do not change the realm in the admin console:
+the committed file is the source of truth. Non-secret server options (health, Argon2id password
+hashing) live in `infra/keycloak/keycloak.env`, shared with the integration tests.
 
 There are three migrations: `20260923013708_iam_persistence_foundation` creates seven IAM tables
 and their structural constraints; `20260923035742_audit_foundation` creates MOD-AUDIT's
@@ -111,11 +128,11 @@ data.
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V40, C1–C5)                     |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V51, C1–C8)                     |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
 | `pnpm build`            | Production builds of every project with a build target                            |
-| `pnpm test:integration` | Tests against real, ephemeral PostgreSQL through Testcontainers (Docker required) |
+| `pnpm test:integration` | Tests against real, ephemeral PostgreSQL and Keycloak (Testcontainers; Docker)    |
 | `pnpm test:e2e`         | Playwright: production smoke, design-system lab in 3 engines, visual baselines    |
 | `pnpm verify`           | Fast gate: format check → lint → lint:boundaries → typecheck → test → build       |
 | `pnpm verify:full`      | `verify` + Prisma validate/generate + integration tests + end-to-end tests        |
@@ -153,7 +170,8 @@ domains/audit     @vertex-os/audit: MOD-AUDIT core (Audit entry contract and app
 domains/audit-persistence @vertex-os/audit-persistence: MOD-AUDIT-owned append-only recorder
 packages/database Backend-only PostgreSQL/Prisma 7 client boundary
 packages/ui       @vertex-os/ui: business-neutral design system (tokens, fonts, components)
-infra/compose.yaml Local PostgreSQL for development
+infra/compose.yaml Local PostgreSQL and Keycloak for development
+infra/keycloak    Vertex realm import (no secrets) and shared Keycloak server options
 scripts/          Local environment setup and the lint:boundaries probes
 docs/             Canonical documentation and execution plans
 ```
@@ -168,3 +186,6 @@ docs/             Canonical documentation and execution plans
   none of them. There is no seed user, no user holding any role, no authentication or authorization,
   no Audit read path and no IAM endpoint. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
+- The local Keycloak realm has no email (SMTP) configuration yet, so Keycloak cannot send
+  invitation, verification or password-reset email locally. Its back-channel logout URL points at
+  an API endpoint that does not exist yet.

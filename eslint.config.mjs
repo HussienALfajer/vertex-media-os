@@ -46,6 +46,17 @@ export const restrictedImportPatterns = [
   },
 ];
 
+/**
+ * `createRequire` resolves any specifier at run time and so bypasses every import restriction.
+ * Only the black-box end-to-end project (`apps/web-e2e`) uses it, and its configuration drops
+ * these paths.
+ */
+export const restrictedImportPaths = ['node:module', 'module'].map((name) => ({
+  name,
+  importNames: ['createRequire'],
+  message: 'createRequire bypasses the import boundaries; use a static import.',
+}));
+
 const PRIVATE_SUBPATH_MESSAGE =
   'Import @vertex-os packages statically and only through their approved entry points; dynamic imports and type queries of subpaths bypass the entry-point restriction.';
 
@@ -70,36 +81,65 @@ export const restrictedImportSyntax = [
     message: 'Use a static module specifier; computed dynamic imports cannot be checked.',
   },
   {
+    // An interpolated template can assemble any specifier, including a private subpath.
+    selector: 'ImportExpression > TemplateLiteral.source[expressions.length>0]',
+    message: 'Use a static module specifier; computed dynamic imports cannot be checked.',
+  },
+  {
     selector: 'TSImportType[source.value=/^@vertex-os\\u002F[^\\u002F]+\\u002F./]',
     message: PRIVATE_SUBPATH_MESSAGE,
   },
 ];
 
-/** Production source receives typed configuration from a bootstrap entry, never `process.env`. */
+const RAW_ENVIRONMENT_MESSAGE =
+  'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.';
+
+/**
+ * Production source receives typed configuration from a bootstrap entry, never `process.env`:
+ * not through `process`, `globalThis.process` or any other member named `process` (dot or bracket
+ * form), not by destructuring `process`, and not through an import of `node:process`.
+ */
 export const restrictedEnvSyntax = [
   {
-    selector: "MemberExpression[object.name='process'][property.name='env']",
-    message:
-      'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
+    selector:
+      "MemberExpression:matches([property.name='env'], [property.value='env']):matches([object.name='process'], [object.property.name='process'], [object.property.value='process'])",
+    message: RAW_ENVIRONMENT_MESSAGE,
   },
   {
-    selector: "MemberExpression[object.name='process'][property.value='env']",
-    message:
-      'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
+    selector:
+      "VariableDeclarator:matches([init.name='process'], [init.property.name='process'], [init.property.value='process']) > ObjectPattern > Property:matches([key.name='env'], [key.value='env'])",
+    message: RAW_ENVIRONMENT_MESSAGE,
+  },
+  {
+    selector: 'ImportDeclaration[source.value=/^(node:)?process$/]',
+    message: RAW_ENVIRONMENT_MESSAGE,
+  },
+  {
+    selector: 'ImportExpression[source.value=/^(node:)?process$/]',
+    message: RAW_ENVIRONMENT_MESSAGE,
   },
 ];
 
-/** Unsafe raw SQL (string-built queries) is for tests only; production uses tagged `$queryRaw`. */
+/**
+ * Unsafe raw SQL (string-built queries) is for tests only; production uses tagged `$queryRaw`.
+ * Covers dot, bracket and destructuring access.
+ */
 export const restrictedRawSqlSyntax = [
-  {
-    selector: "MemberExpression[property.name='$queryRawUnsafe']",
-    message: 'Use the tagged $queryRaw template; $queryRawUnsafe is reserved for tests.',
-  },
-  {
-    selector: "MemberExpression[property.name='$executeRawUnsafe']",
-    message: 'Use the tagged $executeRaw template; $executeRawUnsafe is reserved for tests.',
-  },
-];
+  ['$queryRawUnsafe', '$queryRaw'],
+  ['$executeRawUnsafe', '$executeRaw'],
+].flatMap(([unsafe, tagged]) => {
+  const message = `Use the tagged ${tagged} template; ${unsafe} is reserved for tests.`;
+  return [
+    {
+      selector: `MemberExpression:matches([property.name='${unsafe}'], [property.value='${unsafe}'])`,
+      message,
+    },
+    {
+      selector: `ObjectPattern > Property:matches([key.name='${unsafe}'], [key.value='${unsafe}'])`,
+      message,
+    },
+  ];
+});
 
 export default [
   ...nx.configs['flat/base'],
@@ -126,6 +166,7 @@ export default [
       'no-restricted-imports': [
         'error',
         {
+          paths: restrictedImportPaths,
           patterns: restrictedImportPatterns,
         },
       ],
