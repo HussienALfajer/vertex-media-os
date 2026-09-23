@@ -148,9 +148,9 @@ Before opening the pull request, fresh-context reviewers examine the change, one
 
 ### 6.6 Deliver
 
-- Commit following the repository's commit conventions and push the branch.
+- Commit in the Conventional Commits style of the existing history (for example `docs(iam): …`, `feat(iam): …`) and push the branch.
 - Open a pull request to `main`. The pull request description is the run report (Section 6.7) and links the plan.
-- In the same pull request, set the run's stages to `COMPLETE` in the Master Plan ledger, set the next run's stages to `READY` unless a checkpoint audit comes first, and attach carried-forward items to the stages that will resolve them.
+- In the same pull request, set the run's stages to `COMPLETE` in the Master Plan ledger (and wherever the Master Plan mirrors run status), set the next run's stages to `READY` unless a checkpoint audit comes first, and attach carried-forward items to the stages that will resolve them.
 - Watch CI. Fix failures in the same run.
 
 ### 6.7 Report
@@ -193,7 +193,7 @@ Header          Status · Master Plan stages · Risk tier · Branch · Baseline 
 10. Hand-off        written at the end: carried-forward items, open items for the next run
 ```
 
-The plan never records invented precision. Timestamps, hashes and counts appear only in the pull request report, and only when a command produced them.
+The plan never records invented precision. Apart from the header's baseline commit, timestamps, hashes and counts appear only in the pull request report, and only when a command produced them.
 
 ---
 

@@ -16,7 +16,7 @@ It does not define:
 - security policy -> `docs/SECURITY.md`
 - testing strategy -> `docs/TESTING.md`
 - domain-specific behavior -> `docs/modules/*.md`
-- design-system details -> the Vertex UI/design-system documentation
+- design-system details -> `docs/DESIGN_SYSTEM.md`
 
 When documents overlap, the more specific canonical document governs its own scope.
 
@@ -129,6 +129,14 @@ Business modules SHOULD follow this conceptual structure where the complexity wa
 ```
 
 The exact folder count MAY be reduced for simple features, but architectural responsibilities MUST remain clear.
+
+The implemented backend modules (IAM, Audit) realize this structure as two Nx projects per module, and lint enforces the split:
+
+- the core project `domains/<module>` (`layer:domain`) holds `domain/` and `application/`, including the ports; its public surface is the package entry `src/index.ts`, and a module MAY add a private, lint-restricted entry for its own adapter (for example `@vertex-os/iam/persistence`);
+- the adapter project `domains/<module>-persistence` (`layer:adapter`) holds the persistence adapters behind those ports and reaches the database only through its domain-scoped `@vertex-os/database/<module>` entry;
+- composition (wiring adapters to ports) happens in `apps/api`.
+
+Neither project may import NestJS or `@prisma/*` directly. Where inbound transport code (Section 6.4) lives is decided by the first run that adds a module endpoint and is then recorded here.
 
 ### 6.1 Domain
 
@@ -753,7 +761,9 @@ Before making a non-trivial change, an agent SHOULD read only the minimum canoni
 4. `docs/ENGINEERING.md` — implementation rules;
 5. the relevant `docs/modules/<module>.md` — domain-specific behavior;
 6. `docs/SECURITY.md` / `docs/TESTING.md` — when the change touches those concerns;
-7. relevant ADRs only when the current rule or implementation references them.
+7. `docs/DESIGN_SYSTEM.md` — when the change touches UI;
+8. `docs/PLANNING.md` — before creating or executing any module plan;
+9. relevant ADRs only when the current rule or implementation references them.
 
 Do not load unrelated documentation by default.
 

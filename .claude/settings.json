@@ -32,6 +32,7 @@
       "Bash(docker compose * down -v*)",
       "Bash(docker compose * down --volumes*)",
       "Bash(pnpm infra:reset *)",
+      "Bash(pnpm infra:reset)",
       "Bash(* prisma migrate reset *)",
       "Bash(prisma migrate reset *)",
       "PowerShell(git push --force *)",
@@ -41,6 +42,8 @@
       "PowerShell(git push * -f *)",
       "PowerShell(git -c * push * --force*)",
       "PowerShell(git reset --hard *)",
+      "PowerShell(git filter-branch *)",
+      "PowerShell(git filter-repo *)",
       "PowerShell(gh repo delete *)",
       "PowerShell(docker volume rm *)",
       "PowerShell(docker volume prune *)",
@@ -48,7 +51,9 @@
       "PowerShell(docker compose * down -v*)",
       "PowerShell(docker compose * down --volumes*)",
       "PowerShell(pnpm infra:reset *)",
-      "PowerShell(* prisma migrate reset *)"
+      "PowerShell(pnpm infra:reset)",
+      "PowerShell(* prisma migrate reset *)",
+      "PowerShell(prisma migrate reset *)"
     ]
   }
 }

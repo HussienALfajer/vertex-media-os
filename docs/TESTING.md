@@ -769,7 +769,7 @@ Every meaningful authorization-sensitive operation SHOULD have:
 Example:
 
 ```text
-projects.read + Department A
+projects.projects.read + Department A
 MUST NOT imply
 access to protected Department B projects
 ```

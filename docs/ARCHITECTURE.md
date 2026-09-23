@@ -534,7 +534,7 @@ Owns inbound delivery mechanisms such as:
 * response mapping,
 * and transport-specific concerns.
 
-The exact package layout SHOULD be validated during implementation rather than treated as immutable architecture.
+The exact package layout SHOULD be validated during implementation rather than treated as immutable architecture. The layout validated so far (a core project `domains/<module>` and a separate adapter project `domains/<module>-persistence` per backend module) is described in `docs/ENGINEERING.md` Section 6.
 
 The separation of responsibilities is more important than directory names.
 
@@ -620,7 +620,7 @@ When such a transaction is required, an application-level use case MAY establish
 
 Infrastructure-specific transaction objects MUST NOT appear in domain public interfaces or become a mechanism for bypassing domain ownership.
 
-No general transaction-orchestration framework is part of the baseline; the concrete mechanism is decided when the first genuine cross-domain case is implemented.
+No general transaction-orchestration framework is part of the baseline. The concrete mechanism was decided with the first genuine cross-domain case (an IAM mutation and its MOD-AUDIT evidence) and is recorded in `docs/ENGINEERING.md` Section 15.
 
 ### AR-023 — Event Publication Safety
 
@@ -907,7 +907,7 @@ The UI system is responsible for shared interface foundations such as:
 * layout primitives,
 * and reusable application patterns.
 
-Detailed UI-system rules belong to dedicated Vertex UI documentation.
+Detailed UI-system rules belong to `docs/DESIGN_SYSTEM.md`.
 
 `shadcn` MUST NOT be introduced.
 
@@ -1259,7 +1259,7 @@ The local environment SHOULD be:
 * fast enough for normal iteration,
 * and free from unnecessary production-only infrastructure.
 
-The repository SHOULD provide a consistent way to run required local dependencies once Phase 0 establishes the actual implementation.
+The repository SHOULD provide a consistent way to run required local dependencies (currently `pnpm infra:up` with `infra/compose.yaml`; see `README.md`).
 
 Development environment documentation MUST reflect commands and services that actually exist.
 
@@ -1448,6 +1448,8 @@ Related sources of truth:
 * `docs/ENGINEERING.md` — implementation and coding conventions.
 * `docs/SECURITY.md` — security and authorization architecture in depth.
 * `docs/TESTING.md` — verification strategy.
+* `docs/DESIGN_SYSTEM.md` — visual, interaction, content and accessibility language of the application UI.
+* `docs/modules/*.md` — module specifications.
 * `docs/PLANNING.md` — mandatory planning, implementation, audit and delivery method for modules.
 * `docs/adr/` — architecture decision history and rationale (canonical once accepted records exist).
 

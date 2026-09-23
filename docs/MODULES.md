@@ -1055,7 +1055,7 @@ Own durable accountability records for actions whose business significance requi
 Audit records SHOULD be append-oriented and resistant to ordinary business editing.
 
 **Detailed specification:**
-`docs/modules/audit.md`
+`docs/modules/audit.md` (not yet written; until it exists, the implemented MOD-AUDIT foundation is specified by `docs/modules/iam.md` Sections 34–35)
 
 ---
 
@@ -1563,7 +1563,9 @@ Related authoritative sources:
 * `docs/ENGINEERING.md` — implementation conventions.
 * `docs/SECURITY.md` — security and authorization model.
 * `docs/TESTING.md` — verification strategy.
-* `docs/adr/` — architecture decision rationale.
+* `docs/DESIGN_SYSTEM.md` — visual, interaction, content and accessibility language of the application UI.
+* `docs/PLANNING.md` — mandatory planning, implementation, review and delivery method for modules.
+* `docs/adr/` — architecture decision rationale (canonical once accepted records exist).
 
 A concept's authoritative ownership SHOULD be stated once in this document and referenced elsewhere rather than duplicated with conflicting wording.
 
