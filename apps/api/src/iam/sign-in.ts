@@ -1,15 +1,12 @@
 import type { AuditRecorder } from '@vertex-os/audit';
 import type { DatabaseClient, DatabaseTransaction } from '@vertex-os/database';
+import type { ResolveSessionUserResult, SignInRequest, SignInResult, UserId } from '@vertex-os/iam';
 import {
   resolveIdentityUser,
   resolveSessionUser,
   signIn,
-  type ResolveSessionUserResult,
   type SignInDependencies,
-  type SignInRequest,
-  type SignInResult,
-  type UserId,
-} from '@vertex-os/iam';
+} from '@vertex-os/iam/composition';
 import {
   createApplicationUserRepository,
   createIamTransactionRunner,

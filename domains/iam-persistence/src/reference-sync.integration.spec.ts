@@ -2,11 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { parseTraceId, type AuditEntry, type AuditRecorder } from '@vertex-os/audit';
 import {
   iamPermissionManifest,
-  synchronizeIamReferenceData,
   type PermissionDefinition,
   type PermissionManifest,
   type ReferenceSyncResult,
 } from '@vertex-os/iam';
+import { synchronizeIamReferenceData } from '@vertex-os/iam/composition';
 import { createIamTransactionRunner } from './index.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../test-support/postgres.js';
 
