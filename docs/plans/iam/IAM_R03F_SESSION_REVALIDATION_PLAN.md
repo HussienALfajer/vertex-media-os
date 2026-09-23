@@ -135,7 +135,7 @@ Three `vertex-reviewer` subagents (security; data and concurrency; tests and ver
 - [x] M5 Evidence scans (CP1-02, CP1-12), realm SSO limits (CP1-10), brute-force flake (D-12)
 - [x] M6 Documentation (CP1-16, R03 revision notes, README, `.env.example`); `pnpm verify` and integration suites green
 - [x] M7 In-run review (three reviewers); findings resolved
-- [ ] M8 Master Plan ledger, hand-off, pull request, CI green
+- [x] M8 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
 

@@ -396,9 +396,13 @@ function isUnavailable(error: unknown): boolean {
   const status = (error as { status?: unknown; cause?: { status?: unknown } } | null) ?? {};
   const statusCode = typeof status.status === 'number' ? status.status : status.cause?.status;
   if (typeof statusCode === 'number' && (statusCode >= 500 || statusCode === 429)) return true;
-  // oauth4webapi's processing errors (`OAUTH_*` codes) are validation failures, even when their
-  // cause is a `TypeError` from decoding a malformed response (IAM-R03F review S-01).
   const code = (error as { code?: unknown } | null)?.code;
+  // openid-client reports a request that timed out or was aborted with these codes and the
+  // `DOMException` as its cause: the provider did not answer, so nothing was refused (IAM-CP1
+  // CP1-21). A refusal here would revoke every session that re-validates while Keycloak hangs.
+  if (code === 'OAUTH_TIMEOUT' || code === 'OAUTH_ABORT') return true;
+  // oauth4webapi's processing errors (other `OAUTH_*` codes) are validation failures, even when
+  // their cause is a `TypeError` from decoding a malformed response (IAM-R03F review S-01).
   if (typeof code === 'string' && code.startsWith('OAUTH_')) return false;
   const cause = (error as { cause?: unknown } | null)?.cause;
   return cause !== undefined && cause !== error && cause instanceof Error && isUnavailable(cause);
