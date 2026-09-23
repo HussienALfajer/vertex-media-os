@@ -27,8 +27,12 @@ import { resolve } from 'node:path';
 // Must match `name:` and the volume keys in infra/compose.yaml.
 const COMPOSE_PROJECT = 'vertexos';
 
-/** The Compose volume that keeps each generated value once the service has started. */
+/**
+ * The Compose volume that keeps each generated value once the service has started, or `null` for a
+ * value only the API reads, which can be generated at any time.
+ */
 const OWNING_VOLUME = {
+  'auth-token-encryption-secret': null,
   'postgres-password': 'postgres-data',
   'keycloak-admin-username': 'keycloak-data',
   'keycloak-admin-password': 'keycloak-data',
@@ -165,7 +169,10 @@ function render(text, values) {
 
 function refuseIfVolumesExist(names, advice) {
   if (names.length === 0) return;
-  const owners = new Set(names.map((name) => OWNING_VOLUME[name]));
+  const owners = new Set(
+    names.map((name) => OWNING_VOLUME[name]).filter((owner) => owner !== null),
+  );
+  if (owners.size === 0) return;
   const existing = existingVolumes().filter((volume) => owners.has(volume.key));
   if (existing.length === 0) return;
   fail(

@@ -219,4 +219,107 @@ describe('UserIdentityStore against real PostgreSQL', () => {
 
     expect(await row(user.id)).toMatchObject({ identitySyncState: 'PENDING', version: 1 });
   });
+  async function boundUser(subject = 'subject-a'): Promise<{ id: UserId; version: number }> {
+    const user = await invitedUser();
+    const bound = await runner.run(({ users }) =>
+      users.bindIdentity({ id: user.id, expectedVersion: 1, issuer: ISSUER, subject }),
+    );
+    if (bound.outcome !== 'updated') throw new Error('seed binding');
+    return { id: user.id, version: bound.user.version };
+  }
+
+  it('finds a user by issuer and subject together, and by nothing else', async () => {
+    const user = await boundUser();
+    const repository = createApplicationUserRepository(postgres.database);
+
+    await expect(
+      repository.findByIdentity({ issuer: ISSUER, subject: 'subject-a' }),
+    ).resolves.toMatchObject({ id: user.id, identity: { issuer: ISSUER, subject: 'subject-a' } });
+    await expect(
+      repository.findByIdentity({
+        issuer: 'http://127.0.0.1:8080/realms/other',
+        subject: 'subject-a',
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      repository.findByIdentity({ issuer: ISSUER, subject: 'store@example.invalid' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('activates an INVITED user once and sets both activation times', async () => {
+    const user = await boundUser();
+
+    const result = await runner.run(({ users }) =>
+      users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
+    );
+
+    expect(result).toMatchObject({
+      outcome: 'updated',
+      user: { accessState: 'ACTIVE', version: 3 },
+    });
+    const after = await row(user.id);
+    expect(after.accessState).toBe('ACTIVE');
+    expect(after.firstActivatedAt).toBeInstanceOf(Date);
+    expect(after.lastAccessStateChangedAt).toEqual(after.firstActivatedAt);
+
+    const again = await runner.run(({ users }) =>
+      users.recordFirstActivation({ id: user.id, expectedVersion: 3 }),
+    );
+    expect(again).toEqual({ outcome: 'version-conflict' });
+    expect((await row(user.id)).firstActivatedAt).toEqual(after.firstActivatedAt);
+  });
+
+  it('never activates a user that is no longer INVITED, even at the same version', async () => {
+    const user = await boundUser();
+    // A restriction written without a version bump still wins: the write also requires INVITED.
+    await postgres.client.$executeRawUnsafe(
+      `UPDATE iam_application_user SET access_state = 'SUSPENDED' WHERE id = '${user.id}'`,
+    );
+
+    const result = await runner.run(({ users }) =>
+      users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
+    );
+
+    expect(result).toEqual({ outcome: 'version-conflict' });
+    expect(await row(user.id)).toMatchObject({ accessState: 'SUSPENDED', firstActivatedAt: null });
+  });
+
+  it('activates once when several first sign-ins write at the same version', async () => {
+    const user = await boundUser();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        runner.run(({ users }) =>
+          users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
+        ),
+      ),
+    );
+    expect(results.filter((result) => result.outcome === 'updated')).toHaveLength(1);
+    expect(results.filter((result) => result.outcome === 'version-conflict')).toHaveLength(5);
+    expect((await row(user.id)).version).toBe(user.version + 1);
+  });
+
+  it('lets exactly one of a first activation and a concurrent suspension commit', async () => {
+    for (let round = 0; round < 5; round += 1) {
+      await postgres.client.$executeRawUnsafe('TRUNCATE iam_application_user CASCADE');
+      const user = await boundUser();
+      const [activation, suspension] = await Promise.all([
+        runner.run(({ users }) =>
+          users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
+        ),
+        postgres.client.$executeRawUnsafe(
+          `UPDATE iam_application_user SET access_state = 'SUSPENDED', version = version + 1
+           WHERE id = '${user.id}' AND version = ${user.version}`,
+        ),
+      ]);
+      const committed = await row(user.id);
+      expect([activation.outcome === 'updated', suspension === 1]).toContain(true);
+      expect(activation.outcome === 'updated').not.toBe(suspension === 1);
+      expect(committed.version).toBe(user.version + 1);
+      if (suspension === 1) {
+        expect(committed).toMatchObject({ accessState: 'SUSPENDED', firstActivatedAt: null });
+      } else {
+        expect(committed.accessState).toBe('ACTIVE');
+      }
+    }
+  });
 });

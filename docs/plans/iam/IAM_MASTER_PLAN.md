@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next run:** `IAM-R03` (stages `IAM-MP-05`, `IAM-MP-06`) — `READY`; start it with `/stage IAM-MP-05`  
+**Next step:** the `IAM-CP1` deep audit (authentication, IAM-MP-03 to IAM-MP-06) — `READY` once run `IAM-R03` is merged; start it with `/audit IAM-CP1`. `IAM-R04` (IAM-MP-07) waits for its acceptance  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -859,7 +859,7 @@ Implement the single safe IAM path that reconciles committed Vertex user state w
 
 ## IAM-MP-05 — Backend Application Session Foundation
 
-**Status:** READY (run `IAM-R03`)  
+**Status:** COMPLETE (run `IAM-R03`, plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)  
 **Parent specification area:** IAM-3, Sections 14, 32, 39  
 **Depends on:** IAM-MP-04 COMPLETE (satisfied by run `IAM-R02`)
 
@@ -917,9 +917,9 @@ Create backend-owned, PostgreSQL-backed application-session infrastructure witho
 
 ## IAM-MP-06 — OIDC Login, First Activation, CSRF & Logout
 
-**Status:** READY (run `IAM-R03`)  
+**Status:** COMPLETE (run `IAM-R03`, plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)  
 **Parent specification area:** IAM-3, Sections 13–15, 32–33  
-**Depends on:** IAM-MP-05 COMPLETE
+**Depends on:** IAM-MP-05 COMPLETE (satisfied by run `IAM-R03`)
 
 ### Objective
 
@@ -1012,6 +1012,11 @@ Make authenticated protection the default API posture and expose the narrow, cur
 ### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
 
 - **Whether `DEPRECATED` permissions are effective** for custom roles (decided together with IAM-MP-09's mapping rules).
+
+### Carried forward from run IAM-R03 (`IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)
+
+- **Build on the session boundary, do not duplicate it.** `requireSession` (`apps/api/src/auth/request-session.ts`) resolves the cookie, the live session and the ACTIVE user on every request (request-local memoization only) and revokes a session whose user is no longer ACTIVE. The global `CsrfGuard` already rejects every unsafe request without a valid session (`401`) or CSRF token (`403`), with `@CsrfExempt()` only on back-channel logout. This stage adds the protected-by-default rule for safe methods, the explicit public-route marker (health, login, callback, back-channel logout) and the authorization context on top.
+- **Bound capabilities only.** The authentication area reaches IAM through `apps/api/src/iam/sign-in.ts` (bound functions); lint keeps adapters in `apps/api/src/auth/auth-runtime.ts`. The authorization-context composition follows the same pattern.
 
 ### Exit criteria
 
@@ -1180,6 +1185,10 @@ Implement the highest-risk IAM administrative workflows as application services 
 - **Concurrent bind (R02 review DC-2):** two concurrent binds of one identity to two users surface as a thrown unique violation instead of `identity-taken`. This is unreachable because of ownership proof. If the use cases change that, map it, and make the store test check the loser.
 - **Refusal evidence:** the capabilities return `not-invited`, `sync-incomplete`, `no-action-required` and `superseded` without Audit records. Decide which administrative refusals are audited (spec Section 34) and how `superseded` (competing changes kept winning) is reported.
 
+### Carried forward from run IAM-R03 (`IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)
+
+- **Session revocation capability.** Suspension, disablement, termination and the administrator revoke-sessions action call `SessionService.revokeUserSessions` (one Audit record per revoked session, same transaction) after the access change commits; add their reasons to `auth_session_revocation_reason` in a migration. Every session use already re-checks `accessState`, so a restriction takes effect on the next request even before revocation runs.
+
 ### Exit criteria
 
 - every allowed/forbidden lifecycle transition matches the canonical state machine;
@@ -1290,6 +1299,12 @@ Integrate the real web application shell with backend-owned authentication/sessi
 
 - `/api/auth/session` and CSRF/session contracts are accepted;
 - application shell uses the completed Vertex UI foundation.
+
+### Carried forward from run IAM-R03 (`IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)
+
+- **Contracts to consume:** `/api/auth/login` (top-level navigation); the callback returns to `/` or `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`; `GET /api/auth/session`; `GET /api/auth/csrf` (hold the token in memory, send `X-CSRF-Token` on every unsafe request); `POST /api/auth/logout` returns `logoutUrl`, which the browser opens.
+- **Real-browser cookie behavior:** prove that Chromium, Firefox and WebKit accept the `__Host-` cookies on `http://127.0.0.1` locally (only a fetch-based browser was used so far).
+- **Session rotation across sites (R03 review S-02):** the rotation of an existing session at the callback reads the `SameSite=Strict` session cookie on a navigation from Keycloak. It works while Keycloak and the web app share a site (locally, and a production subdomain of the same registrable domain); verify it for the deployed topology, or rotate differently.
 
 ### Exit criteria
 
@@ -1439,6 +1454,12 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 - all functional backend and frontend stages are independently accepted;
 - no earlier stage has unresolved blocking findings.
 
+### Carried forward from run IAM-R03 (`IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)
+
+- **Rate limiting** of the session-establishment and logout endpoints (SECURITY Section 37); every `GET /api/auth/login` stores a login attempt (R03 review S-05).
+- **Retention:** expired and revoked `auth_session` rows are kept; decide their retention and purge. ID tokens of expired sessions are discarded when the session is next seen and by a bounded sweep on each sign-in; a scheduled purge would remove the dependency on sign-in activity.
+- **Back-channel logout before session creation (R03 review D-3):** a logout token for a Keycloak session that arrives between the code exchange and the session insert revokes nothing, and the new session lives until its deadline. Consider remembering recently logged-out `sid` values briefly, or re-checking the Keycloak session.
+
 ### Exit criteria
 
 - the IAM specification Definition of Done is satisfied or every remaining item is explicitly classified as a blocker;
@@ -1575,7 +1596,9 @@ Run `IAM-R01` delivered IAM-MP-03 (plan `IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md`).
 
 Run `IAM-R02` delivered IAM-MP-04 (plan `IAM_R02_IDENTITY_RECONCILIATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed the Keycloak Admin error item, typed provisioner configuration (R01 D-11; a separate `loadIdentityProvisioningConfig` beside `AppConfig`, so the HTTP runtime needs no Keycloak value before a stage consumes it there, R02 D-13), email delivery (Mailpit, owner decision OD-1), self-service recovery (R01 S-01), the provisioner residual (R01 D-14, operation set pinned by a test) and the harness location (R01 AB-5). A-04 was again not triggered (no Keycloak package; the adapter uses `fetch`) and stays with IAM-MP-06. A2-01 passes on unchanged. Its new carried-forward items are attached to IAM-MP-05, IAM-MP-06, IAM-MP-10 and IAM-MP-11.
 
-The next run is `IAM-R03` (IAM-MP-05 and IAM-MP-06), which is `READY`. Its plan is written from the merged `main` by `/stage IAM-MP-05`. It must resolve the items carried forward in the IAM-MP-05 and IAM-MP-06 sections. The `IAM-CP1` deep audit follows it.
+Run `IAM-R03` delivered IAM-MP-05 and IAM-MP-06 (plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed A2-01 and the API statement-timeout item (R03 D-20, D-21), A-04 (OIDC libraries banned in the domain core and in web code, subpaths included), the request-URL logging item, typed OIDC configuration, audience binding, back-channel reachability (Testcontainers host exposure; Docker Desktop locally), MFA in browser tests (TOTP through the real invitation flow), security events (Audit records), the SSO limits (application defaults equal the realm's) and the recovery signal (Keycloak's back-channel logout, R03 D-15). Cookie scoping was decided by R03 D-06: spec Section 14 fixes `Path=/` and the host prefix, so the cookies also reach a Keycloak on the same host locally; production must give Keycloak its own host (listed below). Its new carried-forward items are attached to IAM-MP-07, IAM-MP-10, IAM-MP-12 and IAM-MP-15.
+
+The next step is the `IAM-CP1` deep audit of authentication (IAM-MP-03 to IAM-MP-06), `READY` once IAM-R03 is merged. `IAM-R04` (IAM-MP-07) starts after the owner accepts it.
 
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
@@ -1590,6 +1613,7 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
   - event retention;
   - narrowing `vertex-provisioner` with fine-grained admin permissions (also reviewed by the Final IAM Module Audit);
   - production SMTP (run IAM-R02): the realm's `KEYCLOAK_SMTP_*` values, TLS (`starttls`/`ssl`) and trust, and a real sender domain. Mailpit is local and test only.
+  - Keycloak on its own host (run IAM-R03 D-06): the `__Host-vertex-*` cookies use `Path=/`, so a Keycloak on the web app's host would receive them. Keycloak must also reach the API's back-channel logout URL; locally only Docker Desktop forwards `host.docker.internal` to a loopback API.
 
 | Stage | Run | Status | Required before the run starts |
 |---|---|---|---|
@@ -1598,9 +1622,9 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-02 Reference Data & Minimal Audit Foundation | — | COMPLETE | MP-01 COMPLETE (satisfied) |
 | IAM-MP-03 Keycloak Environment & Realm Contract | R01 | COMPLETE | MP-02 COMPLETE (satisfied) |
 | IAM-MP-04 Identity Reconciliation & Invitations | R02 | COMPLETE | R01 merged (satisfied) |
-| IAM-MP-05 Application Session Foundation | R03 | READY | R02 merged |
-| IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | READY | R02 merged |
-| `IAM-CP1` Deep audit: authentication | — | PLANNED | R03 merged |
+| IAM-MP-05 Application Session Foundation | R03 | COMPLETE | R02 merged (satisfied) |
+| IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | COMPLETE | R02 merged (satisfied) |
+| `IAM-CP1` Deep audit: authentication | — | READY | R03 merged |
 | IAM-MP-07 Default Protection & Authorization Context | R04 | PLANNED | `IAM-CP1 ACCEPTED` |
 | IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | PLANNED | R04 merged |
@@ -1860,15 +1884,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-04 are complete (Section 15); IAM-MP-03 through run `IAM-R01` and IAM-MP-04 through run `IAM-R02`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-06 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, and IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-The next step is run `IAM-R03`, which delivers IAM-MP-05 and IAM-MP-06. Start it in a new Claude Code session after the `IAM-R02` pull request is merged:
+The next step is the `IAM-CP1` deep audit of authentication (IAM-MP-03 to IAM-MP-06). Start it in a new Claude Code session after the `IAM-R03` pull request is merged:
 
 ```text
-/stage IAM-MP-05
+/audit IAM-CP1
 ```
 
-The run writes its plan under `docs/plans/iam/` on a branch `iam/r03-<short-name>`. It resolves the items carried forward in the IAM-MP-05 and IAM-MP-06 sections and ends with a reviewed pull request. The `IAM-CP1` deep audit (authentication, MP-03 to MP-06) follows before `IAM-R04`.
+The audit writes its record under `docs/plans/iam/audits/`. Run `IAM-R04` (IAM-MP-07) starts only after the owner accepts it.
 
 Do **not** plan later runs in detail now.
 

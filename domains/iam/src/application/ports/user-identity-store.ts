@@ -29,6 +29,16 @@ export interface UserIdentityStore {
     readonly state: IdentitySyncState;
   }): Promise<UserIdentityWriteResult>;
   /**
+   * First activation (spec Sections 10 and 13 step 10): `INVITED` becomes `ACTIVE` and
+   * `firstActivatedAt` and `lastAccessStateChangedAt` are set to the current time. Succeeds only
+   * while the user is still `INVITED` at `expectedVersion`; anything else is a `version-conflict`,
+   * so a concurrent restriction or activation is never overwritten.
+   */
+  recordFirstActivation(change: {
+    readonly id: UserId;
+    readonly expectedVersion: number;
+  }): Promise<UserIdentityWriteResult>;
+  /**
    * Records an invitation dispatch state. `SENT` sets `invitationSentAt` to the current time;
    * `FAILED` keeps it; `NOT_SENT` is never written after creation.
    */

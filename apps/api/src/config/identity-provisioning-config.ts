@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ConfigurationError } from './app-config.js';
+import { REALM_ISSUER } from './auth-config.js';
 
 /**
  * Typed configuration of IAM identity provisioning (docs/modules/iam.md Section 39): the Keycloak
@@ -16,8 +17,6 @@ export interface IdentityProvisioningConfig {
   };
   readonly invitationLifespanSeconds: number;
 }
-
-const REALM_ISSUER = /^https?:\/\/[^/]+(\/[^?#]*)?\/realms\/[^/?#]+$/;
 
 const environmentSchema = z
   .object({

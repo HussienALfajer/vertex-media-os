@@ -7,10 +7,11 @@ import { APP_CONFIG } from '../config/config.module.js';
 export const DATABASE_CLIENT = Symbol('DATABASE_CLIENT');
 
 /**
- * Phase 0 issues a single statement, the readiness ping, so the client's bounds are sized for it:
  * `GET /api/health/ready` answers within about three seconds even when PostgreSQL is unreachable
- * or stalled, and nothing the check started is still running once it has answered. Revisit these
- * values when a module adds real queries.
+ * or stalled, and nothing the check started is still running once it has answered. Sign-in and
+ * session statements (IAM-R03 D-21) are key lookups, single-row writes, and batches bounded to a
+ * few hundred rows, so the same bounds hold for them. Revisit these values when a module adds
+ * queries that scan (reports, searches).
  */
 const CONNECT_TIMEOUT_MS = 2_000;
 const STATEMENT_TIMEOUT_MS = 1_000;

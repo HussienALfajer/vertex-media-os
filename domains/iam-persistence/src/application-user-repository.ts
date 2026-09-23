@@ -148,6 +148,16 @@ export function createApplicationUserRepository(
       return row === null ? undefined : mapUser(row);
     },
 
+    async findByIdentity({ issuer, subject }) {
+      const row = await client.iamApplicationUser.findUnique({
+        where: {
+          identityIssuer_identitySubject: { identityIssuer: issuer, identitySubject: subject },
+        },
+        select: userSelect,
+      });
+      return row === null ? undefined : mapUser(row);
+    },
+
     async updateDisplayName(change) {
       const rows = await client.iamApplicationUser.updateManyAndReturn({
         where: { id: change.id, version: change.expectedVersion },

@@ -2,14 +2,16 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { createApp } from '../app.factory.js';
 import { type AppConfig } from '../config/app-config.js';
+import { type AuthConfig } from '../config/auth-config.js';
 import { createOpenApiDocument } from './openapi.js';
 
 /**
  * Writes the OpenAPI document to the path given as the first argument
  * (`pnpm openapi:generate` -> apps/api/generated/openapi.json).
  *
- * The application is created but never listens, and the database client connects
- * lazily on first query, so the placeholder URL below is never contacted.
+ * The application is created but never listens, the database client connects lazily on first
+ * query, and OIDC discovery happens on the first sign-in, so the placeholders below are never
+ * contacted.
  */
 const GENERATION_CONFIG: AppConfig = {
   environment: 'development',
@@ -19,8 +21,25 @@ const GENERATION_CONFIG: AppConfig = {
   docs: { enabled: false },
 };
 
+const GENERATION_AUTH_CONFIG: AuthConfig = {
+  oidc: {
+    issuer: 'http://127.0.0.1:1/realms/never-contacted',
+    clientId: 'vertex-web',
+    clientSecret: 'openapi-generation-placeholder',
+    redirectUri: 'http://127.0.0.1:1/api/auth/callback',
+    postLogoutRedirectUri: 'http://127.0.0.1:1/',
+    allowInsecureRequests: true,
+  },
+  session: {
+    idleTimeoutSeconds: 1_800,
+    absoluteTimeoutSeconds: 36_000,
+    loginAttemptTimeoutSeconds: 600,
+  },
+  tokenEncryptionSecret: 'openapi-generation-placeholder-secret-0000',
+};
+
 async function generate(outputPath: string): Promise<void> {
-  const app = await createApp(GENERATION_CONFIG);
+  const app = await createApp(GENERATION_CONFIG, GENERATION_AUTH_CONFIG);
   try {
     const document = createOpenApiDocument(app);
     await mkdir(dirname(outputPath), { recursive: true });

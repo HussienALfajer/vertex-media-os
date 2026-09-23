@@ -124,6 +124,12 @@ export default defineConfig({
         API_PORT,
         LOG_LEVEL: 'warn',
         DATABASE_URL: 'postgresql://e2e:not-used@127.0.0.1:1/never_connected',
+        // Required by the API's sign-in configuration; no journey signs in, so none is contacted.
+        KEYCLOAK_ISSUER_URL: 'http://127.0.0.1:1/realms/never-contacted',
+        KEYCLOAK_WEB_CLIENT_SECRET: 'e2e-not-used-client-secret',
+        KEYCLOAK_WEB_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/api/auth/callback`,
+        KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/`,
+        AUTH_TOKEN_ENCRYPTION_SECRET: 'e2e-not-used-token-encryption-secret',
       },
     },
     {

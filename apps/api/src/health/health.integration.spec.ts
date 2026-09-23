@@ -3,6 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { getContainerRuntimeClient } from 'testcontainers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp, type CreateAppOptions } from '../app.factory.js';
+import { testAuthConfig } from '../../test-support/auth-config.js';
 import { type LogLevel, loadAppConfig } from '../config/app-config.js';
 
 // Same image as infra/compose.yaml and the database package tests.
@@ -15,6 +16,7 @@ async function startApp(
 ): Promise<NestFastifyApplication> {
   const app = await createApp(
     loadAppConfig({ NODE_ENV: 'test', LOG_LEVEL: logLevel, DATABASE_URL: databaseUrl }),
+    testAuthConfig(),
     options,
   );
   await app.init();

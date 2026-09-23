@@ -2,6 +2,7 @@ import { Writable } from 'node:stream';
 import { DatabaseUnavailableError } from '@vertex-os/database';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../app.factory.js';
+import { testAuthConfig } from '../../test-support/auth-config.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { DATABASE_ERROR_MESSAGE, safeErrorSerializer } from './safe-error-serializer.js';
 
@@ -126,6 +127,7 @@ describe('the API logger', () => {
         LOG_LEVEL: 'error',
         DATABASE_URL: 'postgresql://vertex:unused@127.0.0.1:1/vertex_os',
       }),
+      testAuthConfig(),
       {
         logStream: new Writable({
           write(chunk: Buffer, _encoding, done) {

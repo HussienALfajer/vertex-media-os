@@ -215,6 +215,13 @@ export default [
                 '@fastify/*',
                 'testcontainers',
                 '@testcontainers/*',
+                // The browser never handles OIDC tokens (ARCHITECTURE AR-041).
+                'openid-client',
+                'openid-client/*',
+                'oauth4webapi',
+                'oauth4webapi/*',
+                'jose',
+                'jose/*',
               ],
             },
             {
@@ -242,6 +249,13 @@ export default [
                 '@vitejs/*',
                 '@keycloak/*',
                 'keycloak-*',
+                // OIDC runtime libraries belong to the API's authentication area (IAM-R03 D-19).
+                'openid-client',
+                'openid-client/*',
+                'oauth4webapi',
+                'oauth4webapi/*',
+                'jose',
+                'jose/*',
               ],
             },
             {

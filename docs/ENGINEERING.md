@@ -139,6 +139,8 @@ The implemented backend modules (IAM, Audit) realize this structure as two Nx pr
 
 Neither project may import NestJS or `@prisma/*` directly. Where inbound transport code (Section 6.4) lives is decided by the first run that adds a module endpoint and is then recorded here.
 
+Browser authentication (application sessions, login attempts, CSRF, OIDC) is platform infrastructure, not a business module (`docs/modules/iam.md` Section 6.2). It lives in `apps/api/src/auth`, which alone may import its scoped persistence entry `@vertex-os/database/auth` (lint-enforced), calls IAM only through `@vertex-os/iam`, and appends Audit evidence through the Audit capability bound to its own transactions (`docs/plans/iam/IAM_R03_SESSIONS_AND_OIDC_PLAN.md` D-01).
+
 ### 6.1 Domain
 
 `domain/` contains business concepts and rules that are meaningful independently of frameworks.

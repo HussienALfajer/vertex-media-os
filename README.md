@@ -7,12 +7,13 @@ This repository contains the **Phase 0 technical foundation**, the **Vertex Desi
 Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)), the IAM
 persistence foundation (`domains/iam` and `domains/iam-persistence`), and the IAM reference data
 with the minimal MOD-AUDIT foundation (`domains/audit` and `domains/audit-persistence`). IAM
-tables, the permission catalog and the protected System Administrator role exist, but no IAM
-behavior is reachable from the running application yet. A local Keycloak with the Vertex realm
-(`infra/keycloak`) and a local mail sink run next to PostgreSQL. IAM identity provisioning
-(reconciling users with Keycloak and sending invitations, in `domains/iam`, through the Keycloak
-Admin adapter `domains/iam-keycloak`) exists as application capabilities; the running API does
-not call it yet.
+tables, the permission catalog and the protected System Administrator role exist. A local Keycloak
+with the Vertex realm (`infra/keycloak`) and a local mail sink run next to PostgreSQL. The API signs
+users in through Keycloak as a backend-for-frontend (`apps/api/src/auth`): OIDC with PKCE, an
+opaque server-side session in PostgreSQL, CSRF protection, logout and Keycloak back-channel logout.
+IAM identity provisioning (reconciling users with Keycloak and sending invitations, in
+`domains/iam`, through the Keycloak Admin adapter `domains/iam-keycloak`) exists as application
+capabilities; no endpoint or command calls it yet.
 The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
@@ -39,7 +40,8 @@ pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-
 ```
 
 `pnpm env:setup` generates the local database password, the Keycloak administrator credentials,
-the two Keycloak client secrets and the realm's SMTP password, and never prints them. It never rewrites an existing `.env`: run
+the two Keycloak client secrets, the realm's SMTP password and the API's ID-token encryption
+secret, and never prints them. It never rewrites an existing `.env`: run
 again after `.env.example` gains keys (for example after pulling a new service), it appends only
 the missing keys. It refuses to generate a value while the Docker volume that keeps it exists,
 because PostgreSQL and Keycloak keep the credentials they were initialised with. To rotate the
@@ -65,6 +67,7 @@ pnpm dev:web    # web only
 | http://127.0.0.1:4200/dev/ui                | Design-system lab (development and the `lab` build only; synthetic data)     |
 | http://127.0.0.1:3000/api/health/live       | Liveness: `200 {"status":"ok"}`, independent of PostgreSQL                   |
 | http://127.0.0.1:3000/api/health/ready      | Readiness: `200` when PostgreSQL answers, otherwise a `503` within about 3 s |
+| http://127.0.0.1:4200/api/auth/login        | Sign in through Keycloak (password and TOTP); back to `/` with a session     |
 | http://127.0.0.1:3000/api/docs              | Swagger UI (off by default when `NODE_ENV=production`)                       |
 | http://127.0.0.1:3000/api/docs/openapi.json | OpenAPI document                                                             |
 | http://127.0.0.1:8080/realms/vertex         | Local Keycloak `vertex` realm (issuer); `/.well-known/openid-configuration`  |
@@ -103,10 +106,12 @@ off: `pnpm infra:reset` imports the current realm (and `pnpm env:setup` refuses 
 SMTP password while that volume exists). `pnpm infra:down` and `pnpm infra:reset` read only
 `.env.example`, so they work even when `.env` still lacks keys added since it was created.
 
-There are three migrations: `20260923013708_iam_persistence_foundation` creates seven IAM tables
+There are four migrations: `20260923013708_iam_persistence_foundation` creates seven IAM tables
 and their structural constraints; `20260923035742_audit_foundation` creates MOD-AUDIT's
 append-only `audit_record` table; `20260923041312_iam_system_role_code` adds
-`iam_role_system_code_ck`, which reserves the code `system-administrator` for the one system role.
+`iam_role_system_code_ck`, which reserves the code `system-administrator` for the one system role;
+`20260923190000_auth_sessions` creates the API's `auth_session` and `auth_login_attempt` tables
+(platform authentication state, not IAM domain state).
 The schema lives in `packages/database/prisma/schema/` (one file per owning module); migrations
 live in `packages/database/prisma/migrations/`. The API does not apply migrations on startup.
 
@@ -175,7 +180,7 @@ screenshots and report are kept as a run artifact for 7 days.
 ## Repository layout
 
 ```text
-apps/api          NestJS on Fastify: configuration, health endpoints, errors, logging, OpenAPI
+apps/api          NestJS on Fastify: configuration, health, browser sign-in (src/auth), errors, logging, OpenAPI
 apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and the /dev/ui lab
 apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab and visual baselines
 domains/iam       @vertex-os/iam: backend IAM domain core and private persistence contract
@@ -191,16 +196,36 @@ scripts/          Local environment setup and the lint:boundaries probes
 docs/             Canonical documentation and execution plans
 ```
 
+## Sign-in
+
+The browser signs in at `/api/auth/login` and comes back to `/` with the `__Host-vertex-session`
+cookie; it never receives a Keycloak token. `GET /api/auth/session` returns the signed-in user,
+`GET /api/auth/csrf` the token every unsafe request must send as `X-CSRF-Token`, and
+`POST /api/auth/logout` ends the session and returns the Keycloak end-session URL to open next.
+A failed sign-in returns to `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED` or
+`IDENTITY_PROVIDER_UNAVAILABLE`. Only a Keycloak identity bound to an active or invited Vertex user
+may sign in; since nothing creates users yet (see below), a local sign-in ends in
+`AUTH_ACCESS_DENIED` until one exists. Sessions expire after 30 minutes idle and 10 hours in total
+(`AUTH_SESSION_*` in `.env`).
+
+Keycloak calls `KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL` (`host.docker.internal:3000`) from its
+container when a user's Keycloak session ends. Docker Desktop forwards that name to the host's
+loopback, where the API listens; on Docker Engine for Linux the name does not exist by default and
+back-channel logout does not reach a loopback-only API. Locally, Keycloak (port 8080) and the web
+origin (port 4200) share the host `127.0.0.1`, and cookies are not port-scoped, so the browser also
+sends the `__Host-vertex-*` cookies to the local Keycloak, which ignores them.
+
 ## Current limitations
 
-- **No authentication or authorization yet.** The approved design (Keycloak over OIDC with the API as
-  a backend-for-frontend holding the session) is specified in `docs/modules/iam.md`. The only
-  endpoints are the public technical health endpoints.
+- **No authorization yet.** Browser authentication works (see Sign-in), but only its own endpoints
+  use the session. The other endpoints are the public technical health endpoints; protected-by-
+  default routing and the authorization context arrive with IAM-MP-07.
 - IAM tables, the IAM permission catalog and the protected System Administrator role exist
-  (`pnpm iam:sync-reference`), and MOD-AUDIT can append immutable records, but the HTTP API uses
-  none of them. There is no seed user, no user holding any role, no authentication or authorization,
-  no Audit read path and no IAM endpoint. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
+  (`pnpm iam:sync-reference`), and MOD-AUDIT appends immutable records (sign-in, activation and
+  session events among them). The HTTP API touches IAM only for sign-in: it reads users by identity
+  and records first activation and sign-in refusals.
+  There is no seed user, no user holding any role, no authorization, no Audit read path and no
+  IAM endpoint. Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
 - Identity provisioning (creating, linking, enabling and disabling Keycloak identities and sending
-  invitations) is not reachable from the API yet: no endpoint or command creates users. The local
-  realm's back-channel logout URL points at an API endpoint that does not exist yet.
+  invitations) is not reachable from the API yet: no endpoint or command creates users.

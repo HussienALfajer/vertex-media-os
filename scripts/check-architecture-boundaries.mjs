@@ -214,6 +214,37 @@ const violations = [
   ],
   ['V73', 'domains/iam-persistence', "import '@vertex-os/iam-keycloak';", nxRule, 'layer:adapter'],
   ['V74', 'apps/web', "import '@vertex-os/iam-keycloak';", nxRule, 'scope:web'],
+  // IAM-R03: the platform session entry stays inside the API's authentication area (D-01), and
+  // the OIDC runtime libraries stay out of the domain core (A-04, D-19).
+  ['V75', 'apps/api', "import '@vertex-os/database/auth';", importsRule],
+  ['V76', 'apps/api', "import '@vertex-os/database/auth';", importsRule, undefined, 'src/iam/x.ts'],
+  ['V77', 'domains/iam', "import '@vertex-os/database/auth';", importsRule],
+  ['V78', 'domains/iam-persistence', "import '@vertex-os/database/auth';", importsRule],
+  ['V79', 'domains/iam', "import 'openid-client';", nxRule, 'openid-client'],
+  ['V80', 'domains/iam', "import 'jose';", nxRule, 'jose'],
+  ['V81', 'domains/iam', "import 'oauth4webapi';", nxRule, 'oauth4webapi'],
+  ['V82', 'apps/api', "await import('@vertex-os/database/auth');", syntaxRule, privateSubpath],
+  // Review F1: inside the authentication area only its composition root imports adapters.
+  [
+    'V83',
+    'apps/api',
+    "import '@vertex-os/iam-persistence';",
+    importsRule,
+    'Only auth-runtime.ts',
+    'src/auth/x.ts',
+  ],
+  [
+    'V84',
+    'apps/api',
+    "import '@vertex-os/audit-persistence';",
+    importsRule,
+    'Only auth-runtime.ts',
+    'src/auth/x.ts',
+  ],
+  // Review F2: subpath exports of the OIDC libraries are banned in the domain core too.
+  ['V85', 'domains/iam', "import 'jose/jwt/verify';", nxRule, 'jose'],
+  ['V86', 'domains/iam', "import 'openid-client/passport';", nxRule, 'openid-client'],
+  ['V87', 'apps/web', "import 'openid-client';", nxRule, 'openid-client'],
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
@@ -253,6 +284,18 @@ const controls = [
   ],
   ['C4', 'domains/iam', imports('@vertex-os/audit')],
   ['C9', 'domains/iam-keycloak', imports('@vertex-os/iam', '@vertex-os/iam/identity-provider')],
+  [
+    'C10',
+    'apps/api',
+    imports('@vertex-os/database/auth', 'openid-client', 'jose'),
+    'src/auth/__boundary_probe__.ts',
+  ],
+  [
+    'C11',
+    'apps/api',
+    imports('@vertex-os/audit-persistence', '@vertex-os/database/auth'),
+    'src/auth/auth-runtime.ts',
+  ],
   ['C5', 'apps/api', ["process.env['DATABASE_URL'];"], 'src/commands/iam-sync-reference.ts'],
   // Tagged raw SQL and a literal, non-interpolated template import stay permitted.
   [

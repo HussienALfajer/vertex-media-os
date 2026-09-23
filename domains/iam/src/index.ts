@@ -1,7 +1,8 @@
 /**
  * Public IAM package entry point (spec Section 44). It exposes only what composition roots need:
- * the reference-data synchronization command, the IAM permission manifest, and the identity
- * provisioning capabilities with the dependency types composition supplies. Stores and adapter
+ * the reference-data synchronization command, the IAM permission manifest, the identity
+ * provisioning capabilities, and sign-in resolution (IAM-R03 D-09), with the dependency types
+ * composition supplies. Stores and adapter
  * contracts stay behind the private `@vertex-os/iam/persistence` and
  * `@vertex-os/iam/identity-provider` entries.
  */
@@ -34,5 +35,15 @@ export type {
   IdentityProvisioningDependencies,
   IdentityProvisioningRequest,
 } from './application/identity-provisioning-dependencies.js';
+export {
+  resolveIdentityUser,
+  resolveSessionUser,
+  signIn,
+  type ResolveSessionUserResult,
+  type SessionUser,
+  type SignInDependencies,
+  type SignInRequest,
+  type SignInResult,
+} from './application/sign-in.js';
 export type { ApplicationUser } from './domain/application-user.js';
 export type { UserId } from './domain/identifiers.js';
