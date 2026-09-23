@@ -115,7 +115,11 @@ async function reconcileOnce(
         : record({ state: 'SYNCED' });
     } else {
       const created = await provider.create({ username: user.email, vertexUserId: user.id });
-      if (!created.ok) return fail(providerFailure(created.failure));
+      if (!created.ok) {
+        // An unknown outcome may still have changed Keycloak (a lost response).
+        if (created.failure === 'unavailable') applied.push('created');
+        return fail(providerFailure(created.failure));
+      }
       if (created.value.outcome === 'created') {
         steps.push('created');
         applied.push('created');
@@ -169,7 +173,11 @@ async function reconcileOnce(
   if (required === 'enabled') {
     if (!identity.enabled) {
       const enabled = await provider.setEnabled(subject, true);
-      if (!enabled.ok) return fail(providerFailure(enabled.failure));
+      if (!enabled.ok) {
+        // An unknown outcome may still have changed Keycloak (a lost response).
+        if (enabled.failure === 'unavailable') applied.push('enabled');
+        return fail(providerFailure(enabled.failure));
+      }
       if (enabled.value === 'not-found') return fail('identity-conflict');
       steps.push('enabled');
       applied.push('enabled');
@@ -177,7 +185,11 @@ async function reconcileOnce(
   } else {
     if (identity.enabled) {
       const disabled = await provider.setEnabled(subject, false);
-      if (!disabled.ok) return fail(providerFailure(disabled.failure));
+      if (!disabled.ok) {
+        // An unknown outcome may still have changed Keycloak (a lost response).
+        if (disabled.failure === 'unavailable') applied.push('disabled');
+        return fail(providerFailure(disabled.failure));
+      }
       if (disabled.value === 'not-found') return fail('identity-conflict');
       steps.push('disabled');
       applied.push('disabled');

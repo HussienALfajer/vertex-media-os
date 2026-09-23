@@ -440,6 +440,26 @@ describe('reconcileIdentity', () => {
     expect([...provider.identities.values()][0]?.enabled).toBe(false);
   });
 
+  it('records FAILED when a create with a lost response was superseded by competing changes', async () => {
+    const { iam, provider, dependencies, request } = setup();
+    provider.loseCreateResponse = true;
+    provider.onNext('create', () =>
+      iam.commit({ accessState: 'TERMINATED', identitySyncState: 'SYNCED' }),
+    );
+    let races = 3;
+    iam.beforeRun = () => {
+      if (races > 0) {
+        races -= 1;
+        iam.commit({});
+      }
+    };
+
+    const result = await reconcileIdentity(dependencies, request);
+
+    expect(result).toMatchObject({ outcome: 'failed', failure: 'identity-out-of-sync' });
+    expect(iam.get()).toMatchObject({ accessState: 'TERMINATED', identitySyncState: 'FAILED' });
+  });
+
   it('rolls the state write back when the Audit append fails', async () => {
     const { iam, dependencies, request } = setup();
     iam.failAuditOnAction = 'iam.user.identity-bound';
