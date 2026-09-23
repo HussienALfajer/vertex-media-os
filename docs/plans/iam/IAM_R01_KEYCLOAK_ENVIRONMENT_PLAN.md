@@ -71,6 +71,14 @@ Carried-forward items and their resolution in this run:
 - **Failure semantics.** A missing secret stops `docker compose` before it starts anything. An unresolvable placeholder would otherwise import a literal `${…}` value. `pnpm infra:up` waits for both services' health checks, and Keycloak's check passes only after the import finishes.
 - **Test fixtures.** The integration tests act through the real clients and the account REST route. To obtain a user token for the account route, the test adds a throwaway direct-grant client to the ephemeral test realm through the bootstrap admin. That client never appears in committed configuration, and production has no test path (TESTING "Identity provider in tests").
 
+### Discoveries during the run
+
+- **Admin authorization reads the token's roles.** With `fullScopeAllowed: false`, the first provisioner token carried no roles and every Admin API call returned 403. The realm now maps `realm-management` `manage-users` into the provisioner's scope (`clientScopeMappings`) and gives it the `roles` default scope. Its token carries exactly `resource_access.realm-management.roles = [manage-users]` and no realm roles, which the tests assert.
+- **Omitted flows survive import.** A realm file that declares only the custom browser flow still gets Keycloak's built-in flows (direct grant, registration, reset credentials, clients, first broker login) bound as defaults.
+- **Keycloak response shapes.** A wrong client secret returns `401 unauthorized_client`, not `invalid_client`. Logout with a registered post-logout URI and no session redirects (302) to it at once. An unregistered one gets `400` with no `Location`. After a password, the first step lands on Keycloak's own required-action page by redirect.
+- **A masked test, found by mutation.** The first account-route test submitted username and email changes in one request. Once `email` was made user-editable in the realm, that test still passed, because the username refusal rejected the whole request. Each protected field is now attempted alone. A mutation run (email `edit: [admin, user]`, PKCE attribute removed) fails the account-route, profile-declaration, PKCE and client-configuration tests.
+- **Server option names.** `KC_SPI_PASSWORD_HASHING__ARGON2__<OPTION>` is honoured in 26.7.4. A probe with `HASH_LENGTH=64` changed the stored `hashLength` accordingly.
+
 ## 6. Done means
 
 1. `pnpm infra:up` on a fresh volume starts PostgreSQL and Keycloak healthy. Both publish on 127.0.0.1 only, and the `vertex` realm exists. `pnpm infra:down` keeps both volumes, and `pnpm infra:reset` removes both. PostgreSQL development behaviour is unchanged. *(MP exit: harness starts deterministically; PostgreSQL intact.)*
@@ -104,8 +112,8 @@ Carried-forward items and their resolution in this run:
 ## 9. Checklist
 
 - [x] M1 Plan committed
-- [ ] M2 `infra/keycloak` realm and server options; Compose service; `.env.example`; `env:setup` upgrade path
-- [ ] M3 Harness and integration tests green against real Keycloak; unit configuration tests
+- [x] M2 `infra/keycloak` realm and server options; Compose service; `.env.example`; `env:setup` upgrade path
+- [x] M3 Harness and integration tests green against real Keycloak; unit configuration tests
 - [ ] M4 Boundary lint (A-02, A2-02, A2-03) and probes
 - [ ] M5 README; local compose verification
 - [ ] M6 `pnpm verify` and integration suites green
