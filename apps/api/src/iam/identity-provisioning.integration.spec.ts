@@ -578,15 +578,14 @@ describe('invitation delivery', () => {
       clientSecret: config.provisioner.clientSecret,
     });
 
-    expect(
-      await adapter.sendInvitation(subject, { actions: ['VERIFY_EMAIL'], lifespanSeconds: 300 }),
-    ).toEqual({ ok: true, value: 'refused' });
-    expect(
-      await adapter.sendInvitation(randomUUID(), {
-        actions: ['VERIFY_EMAIL'],
-        lifespanSeconds: 300,
-      }),
-    ).toEqual({ ok: true, value: 'not-found' });
+    expect(await adapter.sendInvitation(subject, { lifespanSeconds: 300 })).toEqual({
+      ok: true,
+      value: 'refused',
+    });
+    expect(await adapter.sendInvitation(randomUUID(), { lifespanSeconds: 300 })).toEqual({
+      ok: true,
+      value: 'not-found',
+    });
   });
 
   it('records an SMTP failure as a failed dispatch without touching the identity', async () => {
