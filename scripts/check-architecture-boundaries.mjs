@@ -286,6 +286,12 @@ const violations = [
     syntaxRule,
     rawEnvironment,
   ],
+  // Review AB-3: the template form of `process` in every destructuring position.
+  ...[
+    'const { env } = globalThis[`process`]; void env;',
+    'let env; ({ env } = globalThis[`process`]); void env;',
+    'function f({ env } = globalThis[`process`]) { return env; } void f;',
+  ].map((code, index) => [`V${107 + index}`, 'domains/iam', code, syntaxRule, rawEnvironment]),
   // IAM-R04 D-12 (CP1-05): the composition entry is for the API's composition roots only.
   [
     'V102',

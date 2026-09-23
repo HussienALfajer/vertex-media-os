@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DisplayName, NormalizedEmail, UserId } from '@vertex-os/iam/persistence';
 import { createApplicationUserRepository, createAuthorizationReader } from './index.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../test-support/postgres.js';
@@ -136,6 +136,20 @@ describe('AuthorizationReader against real PostgreSQL', () => {
         { roleState: 'INACTIVE', permissionCode: 'iam.users.read', permissionState: 'ACTIVE' },
       ].sort(byGrant),
     );
+  });
+
+  it('reads everything in one statement, so the facts are one snapshot (D-07)', async () => {
+    const id = await user('snapshot@example.invalid');
+    const queries = vi.spyOn(postgres.client, '$queryRaw');
+    const executions = vi.spyOn(postgres.client, '$executeRaw');
+    try {
+      await reader().readAuthorizationFacts(id);
+      expect(queries).toHaveBeenCalledTimes(1);
+      expect(executions).not.toHaveBeenCalled();
+    } finally {
+      queries.mockRestore();
+      executions.mockRestore();
+    }
   });
 
   it('reads committed state on every call', async () => {

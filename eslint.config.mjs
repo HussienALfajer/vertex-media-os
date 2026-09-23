@@ -138,10 +138,10 @@ const RAW_ENVIRONMENT_MESSAGE =
  */
 export const restrictedEnvSyntax = [
   `MemberExpression${named('property', 'env')}:matches([object.name='process'], [object.property.name='process'], [object.property.value='process'], [object.property.quasis.0.value.raw='process'])`,
-  `VariableDeclarator:matches([init.name='process'], [init.property.name='process'], [init.property.value='process']) > ObjectPattern > Property${named('key', 'env')}`,
+  `VariableDeclarator:matches([init.name='process'], [init.property.name='process'], [init.property.value='process'], [init.property.quasis.0.value.raw='process']) > ObjectPattern > Property${named('key', 'env')}`,
   `Property${named('key', 'process')} > ObjectPattern > Property${named('key', 'env')}`,
   // Destructuring by assignment and through a parameter default (CP1-04).
-  `:matches(AssignmentExpression, AssignmentPattern):matches([right.name='process'], [right.property.name='process'], [right.property.value='process']) > ObjectPattern > Property${named('key', 'env')}`,
+  `:matches(AssignmentExpression, AssignmentPattern):matches([right.name='process'], [right.property.name='process'], [right.property.value='process'], [right.property.quasis.0.value.raw='process']) > ObjectPattern > Property${named('key', 'env')}`,
   ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression)[source.value=/^(node:)?process$/]',
   'ImportExpression > TemplateLiteral.source[quasis.0.value.raw=/^(node:)?process$/]',
   'TSExternalModuleReference[expression.value=/^(node:)?process$/]',

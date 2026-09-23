@@ -1,17 +1,15 @@
 import type { AuditRecorder } from '@vertex-os/audit';
 import { createAuditRecorder } from '@vertex-os/audit-persistence';
 import type { DatabaseClient, DatabaseTransaction } from '@vertex-os/database';
-import type {
-  IdentityProvisioningRequest,
-  InvitationDispatchResult,
-  ProvisionIdentityResult,
-  ReconcileIdentityResult,
-} from '@vertex-os/iam';
+import type { IdentityProvisioningRequest } from '@vertex-os/iam';
 import {
   provisionIdentity,
   reconcileIdentity,
   resendInvitation,
   type IdentityProvisioningDependencies,
+  type InvitationDispatchResult,
+  type ProvisionIdentityResult,
+  type ReconcileIdentityResult,
 } from '@vertex-os/iam/composition';
 import { createKeycloakIdentityProvider } from '@vertex-os/iam-keycloak';
 import {

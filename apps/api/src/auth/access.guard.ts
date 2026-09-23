@@ -7,13 +7,32 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { hasPermission, type PermissionCode } from '@vertex-os/iam';
+import { hasPermission, type AuthorizationContext, type PermissionCode } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthRuntime } from './auth-runtime.js';
 import { requireAuthorization, requireSession, traceIdOf } from './request-session.js';
 
-/** Injection token of the composed {@link AuthRuntime}. */
+/** Injection token of the composed {@link AuthRuntime}; private to the authentication module. */
 export const AUTH_RUNTIME = Symbol('AUTH_RUNTIME');
+
+/**
+ * The current-user capability (IAM-R04 D-10): the only authentication service other modules can
+ * inject. It yields the current actor's authorization context, never the runtime, its secrets or
+ * its session operations.
+ */
+export interface CurrentActor {
+  require(request: FastifyRequest, reply: FastifyReply): Promise<AuthorizationContext>;
+}
+
+/** Injection token of {@link CurrentActor}. */
+export const CURRENT_ACTOR = Symbol('CURRENT_ACTOR');
+
+export function createCurrentActor(runtime: AuthRuntime): CurrentActor {
+  return Object.freeze({
+    require: (request: FastifyRequest, reply: FastifyReply) =>
+      requireAuthorization(runtime, request, reply),
+  });
+}
 
 /** Metadata key of {@link Public}; tests read it to pin the public set (D-02). */
 export const PUBLIC_ROUTE = 'vertex:public';
@@ -28,10 +47,22 @@ export const Public = (): MethodDecorator => SetMetadata(PUBLIC_ROUTE, true);
 
 /**
  * Requires a coarse capability on a protected route (spec Section 16.1; IAM-R04 D-04). The owning
- * module still decides access to the specific resource (spec Section 16.3).
+ * module still decides access to the specific resource (spec Section 16.3). One code per handler:
+ * a second one would silently replace the first, so declaring it fails at load (review S-1).
  */
-export const RequirePermission = (code: PermissionCode): MethodDecorator =>
-  SetMetadata(REQUIRED_PERMISSION, code);
+export const RequirePermission =
+  (code: PermissionCode): MethodDecorator =>
+  (target, key, descriptor) => {
+    if (
+      new Reflector().get<unknown>(
+        REQUIRED_PERMISSION,
+        descriptor.value as unknown as () => unknown,
+      ) !== undefined
+    ) {
+      throw new Error(`Handler ${String(key)} declares more than one required permission.`);
+    }
+    SetMetadata(REQUIRED_PERMISSION, code)(target, key, descriptor);
+  };
 
 /**
  * The global access guard (spec Sections 15, 16.4, 24): every route requires a valid application

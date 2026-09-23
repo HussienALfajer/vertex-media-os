@@ -15,12 +15,6 @@ export {
 export type { PermissionCode } from './domain/codes.js';
 export type { ReferenceSyncRefusalReason } from './domain/reference-sync-plan.js';
 export type {
-  ReconcileIdentityResult,
-  ReconciliationStep,
-} from './application/reconcile-identity.js';
-export type { InvitationDispatchResult } from './application/invitation-dispatch.js';
-export type { ProvisionIdentityResult } from './application/provision-identity.js';
-export type {
   IdentityFailure,
   IdentityProvisioningRequest,
 } from './application/identity-provisioning-dependencies.js';

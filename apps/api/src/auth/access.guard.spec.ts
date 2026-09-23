@@ -1,4 +1,9 @@
-import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
+import {
+  ForbiddenException,
+  SetMetadata,
+  UnauthorizedException,
+  type ExecutionContext,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type {
   AuthorizationContext,
@@ -8,7 +13,7 @@ import type {
 } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AccessGuard, RequirePermission } from './access.guard.js';
+import { AccessGuard, PUBLIC_ROUTE, RequirePermission } from './access.guard.js';
 import type { AuthRuntime } from './auth-runtime.js';
 import { requireAuthorization, requireSession } from './request-session.js';
 import { csrfTokenFor, hashSecret } from './secrets.js';
@@ -99,10 +104,15 @@ function fakeRequest(method = 'GET', headers: Record<string, string> = {}) {
   return { request, reply, logs, cookies };
 }
 
-function executionContext(handler: () => unknown, request: FastifyRequest, reply: FastifyReply) {
+function executionContext(
+  handler: () => unknown,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  owner: object = Object,
+) {
   return {
     getHandler: () => handler,
-    getClass: () => Object,
+    getClass: () => owner,
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => reply }),
   } as unknown as ExecutionContext;
 }
@@ -185,6 +195,40 @@ describe('AccessGuard', () => {
     }
   }
   const handlers = new Handlers();
+
+  it('rejects a second required permission on one handler when it is declared', () => {
+    expect(() => {
+      class Stacked {
+        @RequirePermission(USERS_READ)
+        @RequirePermission(ROLES_MANAGE)
+        both(): string {
+          return 'both';
+        }
+      }
+      return Stacked;
+    }).toThrow('more than one required permission');
+  });
+
+  it('reads the public marker on the handler only, never on its controller', async () => {
+    @SetMetadata(PUBLIC_ROUTE, true)
+    class MarkedController {
+      open(): string {
+        return 'open';
+      }
+    }
+    const observed = { resolutions: 0, revoked: [], denials: [] };
+    const guard = new AccessGuard(
+      fakeRuntime(observed, () => ({ outcome: 'active', context })),
+      new Reflector(),
+    );
+    const { request, reply } = fakeRequest('GET', { cookie: '' });
+    const failure = await guard
+      .canActivate(
+        executionContext(MarkedController.prototype.open, request, reply, MarkedController),
+      )
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(UnauthorizedException);
+  });
 
   it('lets a held permission through and records nothing', async () => {
     const observed = { resolutions: 0, revoked: [], denials: [] };

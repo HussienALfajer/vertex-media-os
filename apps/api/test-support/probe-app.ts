@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Inject,
   Module,
   Post,
   Req,
@@ -14,28 +15,29 @@ import type { AuthorizationContext, PermissionCode } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { API_PREFIX } from '../src/app.factory.js';
 import { AppModule } from '../src/app.module.js';
-import { AUTH_RUNTIME, Public, RequirePermission } from '../src/auth/access.guard.js';
-import type { AuthRuntime, AuthRuntimeOptions } from '../src/auth/auth-runtime.js';
-import { requireAuthorization } from '../src/auth/request-session.js';
+import {
+  CURRENT_ACTOR,
+  Public,
+  RequirePermission,
+  type CurrentActor,
+} from '../src/auth/access.guard.js';
+import type { AuthRuntimeOptions } from '../src/auth/auth-runtime.js';
 import type { AppConfig } from '../src/config/app-config.js';
 import type { AuthConfig } from '../src/config/auth-config.js';
 import { ProblemDetailsFilter } from '../src/http/problem-details.js';
 
 export const PROBE_PERMISSION = 'iam.users.read' as PermissionCode;
 
-let runtime: AuthRuntime | undefined;
-
-function runtimeOf(): AuthRuntime {
-  if (!runtime) throw new Error('The probe application has no runtime.');
-  return runtime;
-}
-
 /**
  * Routes a later module could add, next to the real application (IAM-R04). None is annotated
- * unless the case needs it: that is what protected-by-default has to catch.
+ * unless the case needs it: that is what protected-by-default has to catch. It lives in its own
+ * module and reaches the current actor only through the injectable capability, as a later
+ * module's controller would.
  */
 @Controller('probe')
 class ProbeController {
+  constructor(@Inject(CURRENT_ACTOR) private readonly actors: CurrentActor) {}
+
   @Get('unmarked')
   unmarked(): { reached: true } {
     return { reached: true };
@@ -53,7 +55,7 @@ class ProbeController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<AuthorizationContext> {
-    return requireAuthorization(runtimeOf(), request, reply);
+    return this.actors.require(request, reply);
   }
 
   @Get('guarded')
@@ -62,7 +64,7 @@ class ProbeController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<AuthorizationContext> {
-    return requireAuthorization(runtimeOf(), request, reply);
+    return this.actors.require(request, reply);
   }
 
   @Post('guarded')
@@ -117,6 +119,5 @@ export async function createProbeApp(
   app.useGlobalFilters(new ProblemDetailsFilter());
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  runtime = app.get<AuthRuntime>(AUTH_RUNTIME, { strict: false });
   return app;
 }

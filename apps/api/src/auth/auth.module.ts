@@ -5,7 +5,8 @@ import type { AuthConfig } from '../config/auth-config.js';
 import { DATABASE_CLIENT, DatabaseModule } from '../database/database.module.js';
 import { AuthController } from './auth.controller.js';
 import { createAuthRuntime, type AuthRuntimeOptions } from './auth-runtime.js';
-import { AccessGuard, AUTH_RUNTIME } from './access.guard.js';
+import { AccessGuard, AUTH_RUNTIME, createCurrentActor, CURRENT_ACTOR } from './access.guard.js';
+import type { AuthRuntime } from './auth-runtime.js';
 
 /**
  * Browser authentication (IAM-R03): the BFF endpoints and the global access guard (IAM-R04),
@@ -16,6 +17,8 @@ export class AuthModule {
   static forRoot(config: AuthConfig, options: AuthRuntimeOptions = {}): DynamicModule {
     return {
       module: AuthModule,
+      // Global for its one export: any module's handlers can inject the current actor (D-10).
+      global: true,
       imports: [DatabaseModule],
       controllers: [AuthController],
       providers: [
@@ -24,8 +27,14 @@ export class AuthModule {
           inject: [DATABASE_CLIENT],
           useFactory: (database: DatabaseClient) => createAuthRuntime(config, database, options),
         },
+        {
+          provide: CURRENT_ACTOR,
+          inject: [AUTH_RUNTIME],
+          useFactory: (runtime: AuthRuntime) => createCurrentActor(runtime),
+        },
         { provide: APP_GUARD, useClass: AccessGuard },
       ],
+      exports: [CURRENT_ACTOR],
     };
   }
 }
