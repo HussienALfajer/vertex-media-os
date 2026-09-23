@@ -321,6 +321,7 @@ describe('vertex-web client', () => {
       'backchannel.logout.session.required': 'true',
       'oauth2.device.authorization.grant.enabled': 'false',
       'oidc.ciba.grant.enabled': 'false',
+      'standard.token.exchange.enabled': 'false',
     });
 
     const id = String(client['id']);
@@ -401,12 +402,43 @@ describe('vertex-provisioner client', () => {
     expect(refused.map((response) => response.status)).toEqual([403, 403, 403, 403, 403, 403, 403]);
   });
 
+  it('is configured as a confidential service account with every interactive flow off', async () => {
+    const [client] = await json<Record<string, unknown>[]>(
+      keycloak.admin('/clients?clientId=vertex-provisioner'),
+    );
+    expect(client).toMatchObject({
+      publicClient: false,
+      standardFlowEnabled: false,
+      implicitFlowEnabled: false,
+      directAccessGrantsEnabled: false,
+      serviceAccountsEnabled: true,
+      fullScopeAllowed: false,
+      redirectUris: [],
+    });
+    expect(client?.['attributes']).toMatchObject({
+      'oauth2.device.authorization.grant.enabled': 'false',
+      'oidc.ciba.grant.enabled': 'false',
+      'standard.token.exchange.enabled': 'false',
+    });
+  });
+
   it('has no interactive flow', async () => {
     const browserFlow = await new Browser().request(
       authorizationUrl({ client_id: 'vertex-provisioner' }),
     );
     expect(browserFlow.status).toBe(400);
     expect(await browserFlow.text()).not.toContain('id="kc-form-login"');
+
+    // The device grant is interactive and needs no redirect URI.
+    const device = await fetch(`${keycloak.issuer}/protocol/openid-connect/auth/device`, {
+      method: 'POST',
+      body: new URLSearchParams({
+        client_id: 'vertex-provisioner',
+        client_secret: keycloak.secrets.provisionerClient,
+      }),
+    });
+    expect(device.ok).toBe(false);
+    expect(((await device.json()) as TokenResponse).error).toBe('unauthorized_client');
 
     const password = await tokenRequest({
       grant_type: 'password',
@@ -537,8 +569,14 @@ describe('user profile', () => {
 });
 
 describe('credential policy', () => {
-  it('enforces the password length policy and hashes with the configured Argon2id', async () => {
-    const user = await provisionUser(uniqueEmail('password'));
+  it('enforces the password policy and hashes with the configured Argon2id', async () => {
+    const realm = await json<Record<string, unknown>>(keycloak.admin(''));
+    expect(realm['passwordPolicy']).toBe(
+      'length(15) and maxLength(128) and notUsername and notEmail and hashAlgorithm(argon2) and hashIterations(2)',
+    );
+
+    const email = uniqueEmail('password-policy');
+    const user = await provisionUser(email);
     const reset = (value: string) =>
       keycloak.admin(`/users/${user.id}/reset-password`, {
         method: 'PUT',
@@ -548,7 +586,14 @@ describe('credential policy', () => {
     const tooShort = await reset('fourteen-chars');
     expect(tooShort.status).toBe(400);
     expect(await tooShort.text()).toContain('invalidPasswordMinLengthMessage');
-    expect((await reset('p'.repeat(129))).status).toBe(400);
+    const tooLong = await reset('p'.repeat(129));
+    expect(tooLong.status).toBe(400);
+    expect(await tooLong.text()).toContain('invalidPasswordMaxLengthMessage');
+    // The username is the email address, so this also covers notEmail.
+    const sameAsUsername = await reset(email);
+    expect(sameAsUsername.status).toBe(400);
+    expect(await sameAsUsername.text()).toMatch(/invalidPasswordNot(Username|Email)Message/);
+    // No composition rule: a long lower-case passphrase of 64 characters or more is accepted.
     expect((await reset(`${'long passphrase '.repeat(6)}ok`)).status).toBe(204);
 
     const [credential] = await json<{ type: string; credentialData: string }[]>(
@@ -583,8 +628,10 @@ describe('credential policy', () => {
     expect(realm).toMatchObject({
       browserFlow: 'vertex browser',
       otpPolicyType: 'totp',
+      otpPolicyAlgorithm: 'HmacSHA1',
       otpPolicyDigits: 6,
       otpPolicyPeriod: 30,
+      otpPolicyLookAheadWindow: 1,
       otpPolicyCodeReusable: false,
     });
     const executions = await json<{ providerId?: string; requirement: string }[]>(
@@ -597,21 +644,41 @@ describe('credential policy', () => {
 });
 
 describe('brute-force protection and events', () => {
-  it('locks an identity temporarily after repeated failures and records the failures', async () => {
+  it('is configured with the D-09 temporary lockout policy', async () => {
+    const realm = await json<Record<string, unknown>>(keycloak.admin(''));
+    expect(realm).toMatchObject({
+      bruteForceProtected: true,
+      bruteForceStrategy: 'MULTIPLE',
+      permanentLockout: false,
+      maxTemporaryLockouts: 0,
+      failureFactor: 5,
+      waitIncrementSeconds: 60,
+      maxFailureWaitSeconds: 900,
+      maxDeltaTimeSeconds: 43_200,
+      quickLoginCheckMilliSeconds: 1000,
+      minimumQuickLoginWaitSeconds: 60,
+    });
+  });
+
+  const lockout = (userId: string) =>
+    json<{ disabled: boolean; numFailures: number }>(
+      keycloak.admin(`/attack-detection/brute-force/users/${userId}`),
+    );
+
+  it('locks an identity after the fifth spaced failure, not before, and records the failures', async () => {
     const email = uniqueEmail('brute');
     const user = await provisionUser(email);
     await setTestPassword(user.id);
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const response = await submitPassword(email, `wrong password attempt ${attempt}`);
-      expect(response.status).toBe(200);
+    // Failures spaced beyond the quick-login window (1000 ms) count only towards failureFactor.
+    const beyondQuickLoginWindow = 1_200;
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, beyondQuickLoginWindow));
+      expect((await submitPassword(email, `wrong password attempt ${attempt}`)).status).toBe(200);
+      const status = await lockout(user.id);
+      expect(status.numFailures).toBe(attempt);
+      expect(status.disabled).toBe(attempt === 5);
     }
-
-    const status = await json<{ disabled: boolean; numFailures: number }>(
-      keycloak.admin(`/attack-detection/brute-force/users/${user.id}`),
-    );
-    expect(status.disabled).toBe(true);
-    expect(status.numFailures).toBeGreaterThanOrEqual(1);
 
     // Temporary lockout: the identity itself stays enabled (no permanent lockout).
     expect((await json<UserRepresentation>(keycloak.admin(`/users/${user.id}`))).enabled).toBe(
@@ -621,7 +688,19 @@ describe('brute-force protection and events', () => {
     const events = await json<{ type: string; userId?: string }[]>(
       keycloak.admin(`/events?type=LOGIN_ERROR&user=${user.id}`),
     );
-    expect(events.length).toBeGreaterThan(0);
+    expect(events.length).toBeGreaterThanOrEqual(5);
+  }, 60_000);
+
+  it('locks an identity at once when failures arrive faster than the quick-login window', async () => {
+    const email = uniqueEmail('quick');
+    const user = await provisionUser(email);
+    await setTestPassword(user.id);
+
+    await submitPassword(email, 'wrong password, first');
+    await submitPassword(email, 'wrong password, second');
+    const status = await lockout(user.id);
+    expect(status.numFailures).toBe(2);
+    expect(status.disabled).toBe(true);
   });
 
   it('records administrative changes made by the provisioner without their payloads', async () => {
@@ -684,6 +763,9 @@ describe('sessions, tokens and realm entry points', () => {
     expect(Number(realm['ssoSessionMaxLifespan'])).toBeLessThanOrEqual(86_400);
     expect(realm).toMatchObject({
       accessTokenLifespan: 300,
+      actionTokenGeneratedByAdminLifespan: 43_200,
+      actionTokenGeneratedByUserLifespan: 300,
+      duplicateEmailsAllowed: false,
       revokeRefreshToken: true,
       refreshTokenMaxReuse: 0,
       rememberMe: false,

@@ -37,10 +37,25 @@ describe('Keycloak image', () => {
 
 describe('local exposure', () => {
   it('publishes every Compose port on the loopback interface only', () => {
-    const published = [...compose.matchAll(/^\s+-\s+'([^']*:\d+)'\s*$/gm)].map((match) => match[1]);
-    expect(published.length).toBeGreaterThanOrEqual(2);
-    for (const port of published) expect(port).toMatch(/^127\.0\.0\.1:/);
-    expect(compose).not.toMatch(/:9000['"]/);
+    // Every list entry under any `ports:` key, quoted or not.
+    const published: string[] = [];
+    const lines = compose.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const key = /^(\s*)ports:\s*$/.exec(line);
+      if (!key) return;
+      const indent = key[1]?.length ?? 0;
+      for (const entry of lines.slice(index + 1)) {
+        if (entry.trim() === '' || entry.trim().startsWith('#')) continue;
+        if (entry.search(/\S/) <= indent) break;
+        const item = /^\s*-\s*(.+?)\s*$/.exec(entry);
+        if (item?.[1]) published.push(item[1].replace(/^['"]|['"]$/g, ''));
+      }
+    });
+    expect(published).toEqual([
+      '127.0.0.1:${POSTGRES_PORT:-5432}:5432',
+      '127.0.0.1:${KEYCLOAK_PORT:-8080}:8080',
+    ]);
+    expect(compose).not.toMatch(/:9000\b/);
   });
 
   it('runs Keycloak in development mode with the realm import', () => {
