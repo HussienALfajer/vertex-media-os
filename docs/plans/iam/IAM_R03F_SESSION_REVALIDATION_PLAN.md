@@ -72,7 +72,7 @@ No owner decision is needed: D-01 takes the route the canonical documents alread
 - **Session row additions:** `refresh_token_ciphertext text NULL`, `refresh_token_key_version int NULL`, check `auth_session_refresh_token_ck` (both null or both set); enum value `PROVIDER_SESSION_ENDED`.
 - **Store operations:** `claimRevalidation({ id, now, seenBefore })` → boolean (sets `last_seen_at` only); `applyRevalidation({ id, now, idleExpiresAt, refreshToken, idToken })` → boolean, conditional on the row being live at `now`. They replace `touch`: no session slides without a refresh.
 - **OIDC client:** `refreshSession(refreshToken)` → `OidcResult<{ refreshToken, idToken, idpSessionId }>` using `openid-client`'s refresh-token grant with the discovery configuration of R03 D-07 (signature checks on the returned ID token); failures map through the existing `unavailable`/`rejected` categories. `completeAuthorization` also returns the refresh token.
-- **Failure semantics:** see D-05. Structured log fields carry categories only (`auth: 'session-revalidated' | 'session-revalidation-refused' | 'session-revalidation-unavailable'`), never a token, session identifier or subject.
+- **Failure semantics:** see D-05. Structured log fields carry categories only, never a token, session identifier or subject: a refusal logs `auth: 'session-revoked'` with `reason: 'provider-session-ended'` (the same category as the other revocations of `requireSession`), an outage logs `auth: 'session-revalidation-unavailable'`; a successful refresh logs nothing.
 
 ### Discoveries during the run
 
@@ -109,8 +109,8 @@ No owner decision is needed: D-01 takes the route the canonical documents alread
 - [x] M1 Plan committed
 - [x] M2 Migration, schema, store (claim, apply, token discard), cipher purpose; PostgreSQL tests
 - [x] M3 OIDC refresh operation, session-service re-validation, `requireSession` outcome; unit and fake-provider tests
-- [ ] M4 Real-Keycloak re-validation spec (D-10)
-- [ ] M5 Evidence scans (CP1-02, CP1-12), realm SSO limits (CP1-10), brute-force flake (D-12)
+- [x] M4 Real-Keycloak re-validation spec (D-10)
+- [x] M5 Evidence scans (CP1-02, CP1-12), realm SSO limits (CP1-10), brute-force flake (D-12)
 - [ ] M6 Documentation (CP1-16, R03 revision notes, README, `.env.example`); `pnpm verify` and integration suites green
 - [ ] M7 In-run review (three reviewers); findings resolved
 - [ ] M8 Master Plan ledger, hand-off, pull request, CI green
