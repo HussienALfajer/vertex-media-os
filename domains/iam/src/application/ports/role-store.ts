@@ -1,3 +1,4 @@
+import type { AuthorizationFacts } from '../../domain/authorization-context.js';
 import type { PermissionCode, RoleCode } from '../../domain/codes.js';
 import type { RoleId, UserId } from '../../domain/identifiers.js';
 import type { RoleView } from '../../domain/roles.js';
@@ -52,4 +53,15 @@ export interface RoleStore {
   deleteAssignment(assignment: { readonly userId: UserId; readonly roleId: RoleId }): Promise<void>;
   /** ACTIVE users holding the System Administrator role; meaningful only under its lock. */
   countActiveSystemAdministrators(): Promise<number>;
+  /** The role's mapped codes that are ACTIVE permissions, read under the role's lock. */
+  readActivePermissionCodes(roleId: RoleId): Promise<readonly PermissionCode[]>;
+  /**
+   * The grant ceiling's view of an actor (spec Section 23.1; IAM-R06 D-12): their committed
+   * authorization facts and whether they hold the System Administrator role, read without locking
+   * their row, so no lock-order cycle can form. `facts` is `undefined` when no such user exists.
+   */
+  readActorAuthority(userId: UserId): Promise<{
+    readonly facts: AuthorizationFacts | undefined;
+    readonly holdsSystemAdministratorRole: boolean;
+  }>;
 }

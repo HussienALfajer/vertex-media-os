@@ -1,13 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AuditEntry, AuditRecorder } from '@vertex-os/audit';
-import type {
-  DisplayName,
-  IamTransactionRunner,
-  NormalizedEmail,
-  UserId,
-} from '@vertex-os/iam/persistence';
+import type { IamTransactionRunner, UserId } from '@vertex-os/iam/persistence';
 import { createApplicationUserRepository, createIamTransactionRunner } from './index.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../test-support/postgres.js';
+import { seedInvitedUser } from '../test-support/users.js';
 
 const ISSUER = 'http://127.0.0.1:8080/realms/vertex';
 const missingId = '00000000-0000-4000-8000-000000000099' as UserId;
@@ -36,17 +32,7 @@ describe('UserIdentityStore against real PostgreSQL', () => {
   async function invitedUser(
     email = 'store@example.invalid',
   ): Promise<{ id: UserId; version: number }> {
-    const created = await createApplicationUserRepository(postgres.database).create({
-      email: email as NormalizedEmail,
-      displayName: 'Synthetic User' as DisplayName,
-      accessState: 'INVITED',
-      identitySyncState: 'PENDING',
-      invitationDeliveryState: 'NOT_SENT',
-      memberships: [],
-      roleIds: [],
-    });
-    if (created.outcome !== 'created') throw new Error('seed user');
-    return { id: created.user.id, version: created.user.version };
+    return seedInvitedUser(postgres.client, email);
   }
 
   async function row(id: UserId) {

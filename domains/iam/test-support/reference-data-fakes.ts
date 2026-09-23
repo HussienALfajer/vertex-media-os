@@ -148,6 +148,7 @@ export function fakeRunner(
         users: undefined as never,
         organization: undefined as never,
         roles: undefined as never,
+        lifecycle: undefined as never,
         audit,
       });
     },

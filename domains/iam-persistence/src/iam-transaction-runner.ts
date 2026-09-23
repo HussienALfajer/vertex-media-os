@@ -6,6 +6,7 @@ import { createOrganizationStore } from './organization-store.js';
 import { createReferenceDataStore } from './reference-data-store.js';
 import { createRoleStore } from './role-store.js';
 import { createUserIdentityStore } from './user-identity-store.js';
+import { createUserLifecycleStore } from './user-lifecycle-store.js';
 
 export interface IamTransactionRunnerOptions {
   /**
@@ -37,6 +38,7 @@ export function createIamTransactionRunner(
               users: createUserIdentityStore(client),
               organization: createOrganizationStore(client),
               roles: createRoleStore(client),
+              lifecycle: createUserLifecycleStore(client),
               audit: options.auditRecorderFor(transaction),
             }),
           );

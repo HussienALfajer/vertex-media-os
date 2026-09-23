@@ -23,6 +23,7 @@ import {
   parseExpectedVersion,
   requireIamEvidence,
 } from './administration-evidence.js';
+import { grantExceedsActor, recordGrantRefusal, roleGrant } from './grant-ceiling.js';
 import type { IamTransactionRunner } from './ports/iam-transaction.js';
 
 /** What role administration needs; composition supplies it. */
@@ -61,7 +62,10 @@ export interface RoleStateRequest {
 
 export type RoleChangeResult =
   | { readonly outcome: 'updated' | 'unchanged'; readonly role: RoleView }
-  | { readonly outcome: 'role-not-found' | 'version-conflict' | 'system-role-protected' }
+  | {
+      readonly outcome:
+        'role-not-found' | 'version-conflict' | 'system-role-protected' | 'grant-exceeds-actor';
+    }
   | Invalid<'roleId' | 'expectedVersion' | 'name' | 'description'>;
 
 export interface ReplaceRolePermissionsRequest {
@@ -76,7 +80,10 @@ export type ReplaceRolePermissionsResult =
       readonly role: RoleView;
       readonly permissionCodes: readonly PermissionCode[];
     }
-  | { readonly outcome: 'role-not-found' | 'version-conflict' | 'system-role-protected' }
+  | {
+      readonly outcome:
+        'role-not-found' | 'version-conflict' | 'system-role-protected' | 'grant-exceeds-actor';
+    }
   | {
       readonly outcome: 'unknown-permission' | 'permission-not-assignable';
       readonly permissionCodes: readonly PermissionCode[];
@@ -92,7 +99,11 @@ export type AssignRoleResult =
   | { readonly outcome: 'assigned' }
   | {
       readonly outcome:
-        'user-not-found' | 'role-not-found' | 'role-inactive' | 'duplicate-assignment';
+        | 'user-not-found'
+        | 'role-not-found'
+        | 'role-inactive'
+        | 'duplicate-assignment'
+        | 'grant-exceeds-actor';
     }
   | Invalid<'userId' | 'roleId'>;
 
@@ -175,6 +186,14 @@ async function changeRole(
     }
     if (decision.kind === 'version-conflict') return { outcome: 'version-conflict' };
     if (decision.kind === 'unchanged') return { outcome: 'unchanged', role };
+    // Activating a role grants its permissions to every holder (spec Section 23.1).
+    if (
+      decision.changes.state === 'ACTIVE' &&
+      (await grantExceedsActor(roles, attribution, await roleGrant(roles, role)))
+    ) {
+      await recordGrantRefusal(audit, attribution, action, { type: 'iam.role', id: id.value });
+      return { outcome: 'grant-exceeds-actor' };
+    }
     // Built before the write: only a long description in 4-byte characters on both sides can
     // exceed Audit's size limit, and that is refused instead of failing after the write.
     const evidence = buildIamEvidence(attribution, {
@@ -216,7 +235,10 @@ export async function updateRole(
   return changeRole(dependencies, request, requested, 'iam.role.updated', attribution);
 }
 
-/** Makes a custom role ACTIVE; its mappings count again on the next authorization evaluation. */
+/**
+ * Makes a custom role ACTIVE; its mappings count again on the next authorization evaluation. The
+ * actor must hold every ACTIVE permission it maps (spec Section 23.1).
+ */
 export function activateRole(
   dependencies: RoleAdministrationDependencies,
   request: RoleStateRequest,
@@ -246,7 +268,8 @@ export function deactivateRole(
 /**
  * Replaces a custom role's permission mappings with the requested set (spec Sections 9.6, 18,
  * 25.7; IAM-R05 D-14, D-15). Only registered ACTIVE codes can be mapped; the system role's
- * mappings are code-controlled. A changed set raises the role's version once.
+ * mappings are code-controlled. A changed set raises the role's version once. Added codes must be
+ * among the actor's effective permissions (spec Section 23.1).
  */
 export async function replaceRolePermissions(
   dependencies: RoleAdministrationDependencies,
@@ -298,6 +321,17 @@ export async function replaceRolePermissions(
       case 'unchanged':
         return { outcome: 'unchanged', role, permissionCodes: current };
       case 'replace': {
+        // Only added codes are grants; removals are never limited (spec Section 23.1).
+        if (await grantExceedsActor(roles, attribution, { kind: 'permissions', codes: plan.add })) {
+          await recordGrantRefusal(
+            audit,
+            attribution,
+            'iam.role.permissions-replaced',
+            { type: 'iam.role', id: id.value },
+            { permissionCodes: plan.add },
+          );
+          return { outcome: 'grant-exceeds-actor' };
+        }
         // The evidence is the change, as reference synchronization records it: removed codes
         // before, added codes after. It is built before the write, so a change too large for
         // Audit is refused instead of failing after the write (IAM-R05 D-16).
@@ -323,7 +357,8 @@ export async function replaceRolePermissions(
 
 /**
  * Assigns an ACTIVE role to a user (spec Sections 9.7, 23). Locks the role row, then the user row
- * (IAM-R05 D-05, D-07); for the System Administrator role the role lock is the D-06 lock.
+ * (IAM-R05 D-05, D-07); for the System Administrator role the role lock is the D-06 lock. The
+ * grant ceiling applies (spec Section 23.1).
  */
 export async function assignRole(
   dependencies: RoleAdministrationDependencies,
@@ -341,6 +376,16 @@ export async function assignRole(
     const assignment = { userId: userId.value, roleId: roleId.value };
     const decision = decideRoleAssignment(role, await roles.hasAssignment(assignment));
     if (decision.kind === 'refuse') return { outcome: decision.reason };
+    if (await grantExceedsActor(roles, attribution, await roleGrant(roles, role))) {
+      await recordGrantRefusal(
+        audit,
+        attribution,
+        'iam.user.role-assigned',
+        { type: 'iam.user', id: userId.value },
+        { roleId: role.id, roleCode: role.code },
+      );
+      return { outcome: 'grant-exceeds-actor' };
+    }
     await roles.insertAssignment(assignment);
     await audit.append(
       requireIamEvidence(attribution, {

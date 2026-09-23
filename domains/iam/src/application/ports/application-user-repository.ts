@@ -1,28 +1,15 @@
-import type { ApplicationUser, NewApplicationUser } from '../../domain/application-user.js';
+import type { ApplicationUser } from '../../domain/application-user.js';
 import type { UserId } from '../../domain/identifiers.js';
-import type { DisplayName } from '../../domain/text.js';
 
-export type CreateApplicationUserResult =
-  | { readonly outcome: 'created'; readonly user: ApplicationUser }
-  | { readonly outcome: 'email-conflict' }
-  | { readonly outcome: 'unknown-reference' };
-
-export type UpdateDisplayNameResult =
-  | { readonly outcome: 'updated'; readonly user: ApplicationUser }
-  | { readonly outcome: 'not-found' }
-  | { readonly outcome: 'version-conflict' };
-
+/**
+ * Reads of committed users outside any transaction. Users are created and changed only inside
+ * IAM transactions, together with their Audit evidence (IAM-R06 D-04).
+ */
 export interface ApplicationUserRepository {
-  create(draft: NewApplicationUser): Promise<CreateApplicationUserResult>;
   findById(id: UserId): Promise<ApplicationUser | undefined>;
   /** The committed user bound to exactly this issuer and subject (spec Section 13 step 8). */
   findByIdentity(identity: {
     readonly issuer: string;
     readonly subject: string;
   }): Promise<ApplicationUser | undefined>;
-  updateDisplayName(change: {
-    readonly id: UserId;
-    readonly expectedVersion: number;
-    readonly displayName: DisplayName;
-  }): Promise<UpdateDisplayNameResult>;
 }

@@ -52,3 +52,20 @@ export {
   updateRole,
   type RoleAdministrationDependencies,
 } from './application/administer-roles.js';
+export {
+  createUser,
+  disableUser,
+  reactivateUser,
+  resendUserInvitation,
+  revokeUserSessions,
+  suspendUser,
+  syncIdentity,
+  terminateUser,
+  updateDisplayName,
+  type UserAdministrationDependencies,
+} from './application/administer-users.js';
+export { bootstrapSystemAdministrator } from './application/bootstrap.js';
+export type {
+  SessionRevocation,
+  SessionRevocationReason,
+} from './application/ports/session-revocation.js';

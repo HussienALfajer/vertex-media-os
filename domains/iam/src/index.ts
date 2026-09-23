@@ -57,3 +57,25 @@ export type {
   RoleStateRequest,
   UpdateRoleRequest,
 } from './application/administer-roles.js';
+export type { UserView } from './domain/user-lifecycle.js';
+export type {
+  CreateUserRequest,
+  CreateUserResult,
+  IdentitySyncOutcome,
+  InvitationOutcome,
+  ProviderSessionsOutcome,
+  ReactivateUserRequest,
+  ReactivateUserResult,
+  ResendUserInvitationResult,
+  RestrictUserResult,
+  RevokeUserSessionsResult,
+  SyncIdentityResult,
+  UpdateDisplayNameRequest,
+  UpdateDisplayNameResult,
+  UserRequest,
+} from './application/administer-users.js';
+export type {
+  BootstrapRefusalReason,
+  BootstrapRequest,
+  BootstrapResult,
+} from './application/bootstrap.js';
