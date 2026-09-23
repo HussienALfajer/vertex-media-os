@@ -116,7 +116,7 @@ Carried-forward items and their resolution in this run:
 - [x] M3 Harness and integration tests green against real Keycloak; unit configuration tests
 - [x] M4 Boundary lint (A-02, A2-02, A2-03) and probes
 - [x] M5 README; local compose verification
-- [ ] M6 `pnpm verify` and integration suites green
+- [x] M6 `pnpm verify` and integration suites green
 - [ ] M7 In-run review (three reviewers); findings resolved
 - [ ] M8 Master Plan ledger, hand-off, pull request, CI green
 
