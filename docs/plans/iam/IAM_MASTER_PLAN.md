@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** the `IAM-CP1` deep audit (authentication, IAM-MP-03 to IAM-MP-06) — `READY` once run `IAM-R03` is merged; start it with `/audit IAM-CP1`. `IAM-R04` (IAM-MP-07) waits for its acceptance  
+**Next step:** fix run `IAM-R03F` — the `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (record `audits/IAM-CP1.md`); start it with `/stage IAM-R03F`, then re-check with `/audit IAM-CP1`. `IAM-R04` (IAM-MP-07) waits for `IAM-CP1 ACCEPTED`  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -470,6 +470,7 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R01` | IAM-MP-03 | A | security; architecture and boundaries; tests and verification | — |
 | `IAM-R02` | IAM-MP-04 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R03` | IAM-MP-05, IAM-MP-06 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP1` deep audit** — authentication (MP-03 to MP-06) |
+| `IAM-R03F` | fix run for the `IAM-CP1` blocking finding (IAM-MP-05, IAM-MP-06 scope; `docs/PLANNING.md` Section 9) | A | security; data and concurrency; tests and verification | `IAM-CP1` re-check of its blocking finding |
 | `IAM-R04` | IAM-MP-07 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R05` | IAM-MP-08, IAM-MP-09 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP2` deep audit** — authorization and administration core (MP-07 to MP-10) |
@@ -1596,9 +1597,9 @@ Run `IAM-R01` delivered IAM-MP-03 (plan `IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md`).
 
 Run `IAM-R02` delivered IAM-MP-04 (plan `IAM_R02_IDENTITY_RECONCILIATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed the Keycloak Admin error item, typed provisioner configuration (R01 D-11; a separate `loadIdentityProvisioningConfig` beside `AppConfig`, so the HTTP runtime needs no Keycloak value before a stage consumes it there, R02 D-13), email delivery (Mailpit, owner decision OD-1), self-service recovery (R01 S-01), the provisioner residual (R01 D-14, operation set pinned by a test) and the harness location (R01 AB-5). A-04 was again not triggered (no Keycloak package; the adapter uses `fetch`) and stays with IAM-MP-06. A2-01 passes on unchanged. Its new carried-forward items are attached to IAM-MP-05, IAM-MP-06, IAM-MP-10 and IAM-MP-11.
 
-Run `IAM-R03` delivered IAM-MP-05 and IAM-MP-06 (plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed A2-01 and the API statement-timeout item (R03 D-20, D-21), A-04 (OIDC libraries banned in the domain core and in web code, subpaths included), the request-URL logging item, typed OIDC configuration, audience binding, back-channel reachability (Testcontainers host exposure; Docker Desktop locally), MFA in browser tests (TOTP through the real invitation flow), security events (Audit records), the SSO limits (application defaults equal the realm's) and the recovery signal (Keycloak's back-channel logout, R03 D-15). Cookie scoping was decided by R03 D-06: spec Section 14 fixes `Path=/` and the host prefix, so the cookies also reach a Keycloak on the same host locally; production must give Keycloak its own host (listed below). Its new carried-forward items are attached to IAM-MP-07, IAM-MP-10, IAM-MP-12 and IAM-MP-15.
+Run `IAM-R03` delivered IAM-MP-05 and IAM-MP-06 (plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed A2-01 and the API statement-timeout item (R03 D-20, D-21), A-04 (OIDC libraries banned in the domain core and in web code, subpaths included), the request-URL logging item, typed OIDC configuration, audience binding, back-channel reachability (Testcontainers host exposure on Linux CI; locally only a container-to-loopback probe on Docker Desktop, the end-to-end Compose probe was not run, `IAM-CP1` CP1-17), MFA in browser tests (TOTP through the real invitation flow), security events (Audit records), the SSO limits (application defaults equal the realm's) and the recovery signal (Keycloak's back-channel logout, R03 D-15; `IAM-CP1` CP1-01 found that it reaches Vertex only while the Keycloak SSO session lives, about 30 minutes after sign-in, and fix run `IAM-R03F` owns it). Cookie scoping was decided by R03 D-06: spec Section 14 fixes `Path=/` and the host prefix, so the cookies also reach a Keycloak on the same host locally; production must give Keycloak its own host (listed below). Its new carried-forward items are attached to IAM-MP-07, IAM-MP-10, IAM-MP-12 and IAM-MP-15.
 
-The next step is the `IAM-CP1` deep audit of authentication (IAM-MP-03 to IAM-MP-06), `READY` once IAM-R03 is merged. `IAM-R04` (IAM-MP-07) starts after the owner accepts it.
+The `IAM-CP1` deep audit of `48ff7cc` (record `audits/IAM-CP1.md`) returned `IAM-CP1 FIXES REQUIRED`. It found one blocking finding, CP1-01: logout, recovery and disablement on the Keycloak side stop reaching the Vertex session once the Keycloak SSO session idles out (SECURITY Section 11). Fix run `IAM-R03F` resolves it together with the non-blocking items the record assigns to it; `/audit IAM-CP1` then re-checks CP1-01. The record's other non-blocking findings name their owner stages (IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12, IAM-MP-15) and are attached to those stages when the re-check accepts `IAM-CP1`. `IAM-R04` (IAM-MP-07) starts only after `IAM-CP1 ACCEPTED`.
 
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
@@ -1624,7 +1625,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-04 Identity Reconciliation & Invitations | R02 | COMPLETE | R01 merged (satisfied) |
 | IAM-MP-05 Application Session Foundation | R03 | COMPLETE | R02 merged (satisfied) |
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | COMPLETE | R02 merged (satisfied) |
-| `IAM-CP1` Deep audit: authentication | — | READY | R03 merged |
+| `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | READY | `IAM-CP1` record merged |
+| `IAM-CP1` Deep audit: authentication | — | READY | R03 merged (audited: FIXES REQUIRED); re-check after R03F merged |
 | IAM-MP-07 Default Protection & Authorization Context | R04 | PLANNED | `IAM-CP1 ACCEPTED` |
 | IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | PLANNED | R04 merged |
@@ -1645,6 +1647,13 @@ The ledger changes only through the pull request of the run or audit that produc
 - **Why:** evidence from IAM-MP-00 to IAM-MP-02. Every stage took three separate sessions: plan, implementation, and audit with acceptance. All three audits returned ACCEPTED with no blocking finding and no implementation fix. The full verification gate ran three times per stage (implementer, auditor, CI). Documentation added in IAM-01 and IAM-02 was about 2.8 times the production code by size. The owner delegated the flagged plan decisions to the planning agent, so the separate planning session added a cold start without adding an owner decision.
 - **Stages affected:** IAM-MP-03 to IAM-MP-15 (run grouping only).
 - **Accepted baselines:** IAM-MP-00, IAM-MP-01 and IAM-MP-02 remain valid.
+
+### Amendment record — `IAM-CP1` fix run (2026-09-23)
+
+- **What changed:** run `IAM-R03F` (Tier A) was added between `IAM-R03` and the `IAM-CP1` re-check (Section 8.3 and the ledger).
+- **Why:** `IAM-CP1 FIXES REQUIRED` (`audits/IAM-CP1.md`, blocking finding CP1-01). `docs/PLANNING.md` Section 9 requires a dedicated fix run, and `/stage` starts only runs listed here.
+- **Stages affected:** IAM-MP-05 and IAM-MP-06 stay `COMPLETE` (merged); their session behavior is corrected by `IAM-R03F`. IAM-MP-07 still waits for `IAM-CP1 ACCEPTED`. Stage order and ownership are unchanged.
+- **Accepted baselines:** unchanged. `IAM-CP1` is not accepted.
 
 The records below were written under the previous method and are kept as history. Under the current method, a record is added only when the roadmap changes.
 
@@ -1886,13 +1895,13 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-06 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, and IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-The next step is the `IAM-CP1` deep audit of authentication (IAM-MP-03 to IAM-MP-06). Start it in a new Claude Code session after the `IAM-R03` pull request is merged:
+The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`). The next step is fix run `IAM-R03F`. Start it in a new Claude Code session after the audit's pull request is merged:
 
 ```text
-/audit IAM-CP1
+/stage IAM-R03F
 ```
 
-The audit writes its record under `docs/plans/iam/audits/`. Run `IAM-R04` (IAM-MP-07) starts only after the owner accepts it.
+Its plan is built from the audit record. After it merges, a new session re-checks the blocking finding with `/audit IAM-CP1`. Run `IAM-R04` (IAM-MP-07) starts only after `IAM-CP1 ACCEPTED`.
 
 Do **not** plan later runs in detail now.
 
