@@ -70,8 +70,8 @@ describe('cookies', () => {
   });
 });
 
-describe('ID-token cipher', () => {
-  const cipher = createTokenCipher('sentinel-token-encryption-secret-000000');
+describe('token ciphers', () => {
+  const cipher = createTokenCipher('sentinel-token-encryption-secret-000000', 'id-token');
   const sessionId = '6a1f2b3c-4d5e-4f60-8a1b-2c3d4e5f6a7b';
 
   it('round-trips, with a fresh IV each time and no plaintext in the ciphertext', () => {
@@ -87,12 +87,22 @@ describe('ID-token cipher', () => {
     expect(cipher.decrypt(sealed, cipher.keyVersion, '00000000-0000-4000-8000-000000000000')).toBe(
       undefined,
     );
-    const other = createTokenCipher('another-token-encryption-secret-0000000');
+    const other = createTokenCipher('another-token-encryption-secret-0000000', 'id-token');
     expect(other.decrypt(sealed, other.keyVersion, sessionId)).toBeUndefined();
     expect(cipher.decrypt(sealed, cipher.keyVersion + 1, sessionId)).toBeUndefined();
     const raw = Buffer.from(sealed, 'base64url');
     raw[raw.length - 1] = (raw[raw.length - 1] ?? 0) ^ 1;
     expect(cipher.decrypt(raw.toString('base64url'), cipher.keyVersion, sessionId)).toBeUndefined();
     expect(cipher.decrypt('', cipher.keyVersion, sessionId)).toBeUndefined();
+  });
+
+  it('derives one key per token purpose (IAM-R03F D-06)', () => {
+    const refresh = createTokenCipher('sentinel-token-encryption-secret-000000', 'refresh-token');
+    const sealed = refresh.encrypt('refresh', sessionId);
+    expect(refresh.decrypt(sealed, refresh.keyVersion, sessionId)).toBe('refresh');
+    expect(cipher.decrypt(sealed, cipher.keyVersion, sessionId)).toBeUndefined();
+    expect(refresh.decrypt(cipher.encrypt('id', sessionId), refresh.keyVersion, sessionId)).toBe(
+      undefined,
+    );
   });
 });

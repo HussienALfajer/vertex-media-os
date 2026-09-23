@@ -6,7 +6,7 @@ import { createIamSignIn, type IamSignIn } from '../iam/sign-in.js';
 import { createOidcClient, type OidcClient } from './oidc.js';
 import { createSessionStore } from './session-store.js';
 import { createSessionService, type SessionService } from './sessions.js';
-import { createTokenCipher } from './token-cipher.js';
+import { createTokenCiphers } from './token-cipher.js';
 
 /** Everything the authentication endpoints and the CSRF guard use, bound to its adapters. */
 export interface AuthRuntime {
@@ -37,18 +37,20 @@ export function createAuthRuntime(
   options: AuthRuntimeOptions = {},
 ): AuthRuntime {
   const auditRecorderFor = options.auditRecorderFor ?? createAuditRecorder;
+  const oidc = createOidcClient(
+    config.oidc,
+    options.oidcFetch === undefined ? {} : { fetch: options.oidcFetch },
+  );
   return Object.freeze({
     config,
     sessions: createSessionService({
       store: createSessionStore(database, { auditRecorderFor }),
-      cipher: createTokenCipher(config.tokenEncryptionSecret),
+      ciphers: createTokenCiphers(config.tokenEncryptionSecret),
+      provider: oidc,
       limits: config.session,
       ...(options.now === undefined ? {} : { now: options.now }),
     }),
-    oidc: createOidcClient(
-      config.oidc,
-      options.oidcFetch === undefined ? {} : { fetch: options.oidcFetch },
-    ),
+    oidc,
     iam: createIamSignIn(database, { auditRecorderFor }),
   });
 }

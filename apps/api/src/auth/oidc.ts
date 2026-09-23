@@ -33,6 +33,15 @@ export interface OidcClient {
    * confirm; or the post-logout URI when Keycloak cannot be reached at all.
    */
   endProviderSession(idTokenHint: string | undefined): Promise<ProviderLogout>;
+  /**
+   * Refreshes the Keycloak session behind an application session (IAM-R03F D-01): keeps it alive
+   * while the application session is used, and proves it still exists. A refreshed ID token must
+   * pass the D-08 claim checks and name the same identity-provider session.
+   */
+  refreshSession(input: {
+    readonly refreshToken: string;
+    readonly idpSessionId: string | undefined;
+  }): Promise<OidcResult<RefreshedSession>>;
   verifyLogoutToken(token: string): Promise<OidcResult<LogoutTarget>>;
 }
 
@@ -43,12 +52,22 @@ export interface AuthorizationRequest {
   readonly codeVerifier: string;
 }
 
-/** A validated identity. `idToken` is kept only encrypted, for `id_token_hint` (D-17). */
+/**
+ * A validated identity. `idToken` is kept only encrypted, for `id_token_hint` (D-17), and
+ * `refreshToken` only encrypted, for re-validation (IAM-R03F D-06).
+ */
 export interface AuthenticatedIdentity {
   readonly issuer: string;
   readonly subject: string;
   readonly idpSessionId: string | undefined;
   readonly idToken: string;
+  readonly refreshToken: string | undefined;
+}
+
+/** The tokens of a refreshed session: the rotated refresh token and, when issued, a new ID token. */
+export interface RefreshedSession {
+  readonly refreshToken: string;
+  readonly idToken: string | undefined;
 }
 
 export interface ProviderLogout {
@@ -232,7 +251,8 @@ export function createOidcClient(
         ) {
           return { ok: false, failure: 'rejected', code: 'ID_TOKEN_CLAIMS' };
         }
-        // Access and refresh tokens are dropped here: the API never uses them (D-17).
+        // The access token is dropped here: the API never uses it (D-17). The refresh token is kept
+        // for re-validation (IAM-R03F D-01).
         return {
           ok: true,
           value: {
@@ -240,6 +260,7 @@ export function createOidcClient(
             subject: claims.sub,
             idpSessionId: bounded(claims['sid']),
             idToken,
+            refreshToken: tokens.refresh_token,
           },
         };
       } catch (error) {
@@ -292,6 +313,32 @@ export function createOidcClient(
           post_logout_redirect_uri: config.postLogoutRedirectUri,
         }).href,
       };
+    },
+
+    async refreshSession({ refreshToken, idpSessionId }) {
+      try {
+        const oidc = await configuration();
+        const tokens = await client.refreshTokenGrant(oidc, refreshToken);
+        const idToken = tokens.id_token;
+        if (idToken !== undefined) {
+          const claims = tokens.claims();
+          if (
+            claims === undefined ||
+            !checkIdTokenClaims(claims, { issuer: config.issuer, clientId: config.clientId }) ||
+            bounded(claims['sid']) !== idpSessionId
+          ) {
+            return { ok: false, failure: 'rejected', code: 'ID_TOKEN_CLAIMS' };
+          }
+        }
+        return {
+          ok: true,
+          // A provider that does not rotate refresh tokens leaves the current one valid (RFC 6749
+          // Section 6); Keycloak rotates them (the realm's revokeRefreshToken).
+          value: { refreshToken: tokens.refresh_token ?? refreshToken, idToken },
+        };
+      } catch (error) {
+        return failureOf(error);
+      }
     },
 
     async verifyLogoutToken(token: string) {

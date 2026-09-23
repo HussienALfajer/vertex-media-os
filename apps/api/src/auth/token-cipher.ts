@@ -1,10 +1,12 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 
 /**
- * Encryption of the one token the API keeps, the ID token used as `id_token_hint` for RP-initiated
- * logout (IAM-R03 D-17). AES-256-GCM with a key derived by HKDF-SHA256 from the configured secret,
- * a random 96-bit IV per value, and the session row ID as additional authenticated data, so a
- * ciphertext copied to another session does not decrypt.
+ * Encryption of the identity-provider tokens a session keeps server-side: the ID token, used as
+ * `id_token_hint` for RP-initiated logout (IAM-R03 D-17), and the refresh token, used to re-validate
+ * the session against the identity provider (IAM-R03F D-06). AES-256-GCM with a key derived by
+ * HKDF-SHA256 from the configured secret under a purpose-bound `info`, a random 96-bit IV per
+ * value, and the session row ID as additional authenticated data, so a ciphertext copied to another
+ * session, or to the other token's column, does not decrypt.
  */
 export interface TokenCipher {
   readonly keyVersion: number;
@@ -13,14 +15,22 @@ export interface TokenCipher {
   decrypt(ciphertext: string, keyVersion: number, sessionId: string): string | undefined;
 }
 
+/** One cipher per stored token, each with its own derived key. */
+export interface TokenCiphers {
+  readonly idToken: TokenCipher;
+  readonly refreshToken: TokenCipher;
+}
+
+export type TokenPurpose = 'id-token' | 'refresh-token';
+
 const KEY_VERSION = 1;
 const HKDF_SALT = 'vertex-os/auth';
-const HKDF_INFO = 'vertex-os/auth/id-token/v1';
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
-export function createTokenCipher(secret: string): TokenCipher {
-  const key = Buffer.from(hkdfSync('sha256', secret, HKDF_SALT, HKDF_INFO, 32));
+export function createTokenCipher(secret: string, purpose: TokenPurpose): TokenCipher {
+  const info = `vertex-os/auth/${purpose}/v${KEY_VERSION}`;
+  const key = Buffer.from(hkdfSync('sha256', secret, HKDF_SALT, info, 32));
 
   return Object.freeze({
     keyVersion: KEY_VERSION,
@@ -45,5 +55,12 @@ export function createTokenCipher(secret: string): TokenCipher {
         return undefined;
       }
     },
+  });
+}
+
+export function createTokenCiphers(secret: string): TokenCiphers {
+  return Object.freeze({
+    idToken: createTokenCipher(secret, 'id-token'),
+    refreshToken: createTokenCipher(secret, 'refresh-token'),
   });
 }

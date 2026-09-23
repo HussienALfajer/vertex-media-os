@@ -6,29 +6,33 @@ enum AuthSessionRevocationReason {
   BACKCHANNEL_LOGOUT
   ACCESS_REVOKED
   REPLACED
+  PROVIDER_SESSION_ENDED
 
   @@map("auth_session_revocation_reason")
 }
 
 /// One application session. Only one-way hashes of the session secret and of its CSRF token are
-/// stored; the ID token (for RP-initiated logout) only encrypted. No foreign key to IAM (D-02).
+/// stored; the ID token (for RP-initiated logout) and the refresh token (for re-validation against
+/// the identity provider, IAM-R03F D-06) only encrypted. No foreign key to IAM (D-02).
 /// Database-only checks: auth_session_token_hash_ck, auth_session_csrf_token_hash_ck,
 /// auth_session_expiry_ck, auth_session_revocation_ck, auth_session_id_token_ck,
-/// auth_session_idp_session_id_ck.
+/// auth_session_idp_session_id_ck, auth_session_refresh_token_ck.
 model AuthSession {
-  id                String                       @id(map: "auth_session_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tokenHash         String                       @unique(map: "auth_session_token_hash_key") @map("token_hash") @db.Text
-  csrfTokenHash     String                       @map("csrf_token_hash") @db.Text
-  userId            String                       @map("user_id") @db.Uuid
-  idpSessionId      String?                      @map("idp_session_id") @db.Text
-  createdAt         DateTime                     @map("created_at") @db.Timestamptz(3)
-  lastSeenAt        DateTime                     @map("last_seen_at") @db.Timestamptz(3)
-  idleExpiresAt     DateTime                     @map("idle_expires_at") @db.Timestamptz(3)
-  absoluteExpiresAt DateTime                     @map("absolute_expires_at") @db.Timestamptz(3)
-  revokedAt         DateTime?                    @map("revoked_at") @db.Timestamptz(3)
-  revocationReason  AuthSessionRevocationReason? @map("revocation_reason")
-  idTokenCiphertext String?                      @map("id_token_ciphertext") @db.Text
-  idTokenKeyVersion Int?                         @map("id_token_key_version")
+  id                     String                       @id(map: "auth_session_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash              String                       @unique(map: "auth_session_token_hash_key") @map("token_hash") @db.Text
+  csrfTokenHash          String                       @map("csrf_token_hash") @db.Text
+  userId                 String                       @map("user_id") @db.Uuid
+  idpSessionId           String?                      @map("idp_session_id") @db.Text
+  createdAt              DateTime                     @map("created_at") @db.Timestamptz(3)
+  lastSeenAt             DateTime                     @map("last_seen_at") @db.Timestamptz(3)
+  idleExpiresAt          DateTime                     @map("idle_expires_at") @db.Timestamptz(3)
+  absoluteExpiresAt      DateTime                     @map("absolute_expires_at") @db.Timestamptz(3)
+  revokedAt              DateTime?                    @map("revoked_at") @db.Timestamptz(3)
+  revocationReason       AuthSessionRevocationReason? @map("revocation_reason")
+  idTokenCiphertext      String?                      @map("id_token_ciphertext") @db.Text
+  idTokenKeyVersion      Int?                         @map("id_token_key_version")
+  refreshTokenCiphertext String?                      @map("refresh_token_ciphertext") @db.Text
+  refreshTokenKeyVersion Int?                         @map("refresh_token_key_version")
 
   @@index([userId], map: "auth_session_user_id_idx")
   @@index([idpSessionId], map: "auth_session_idp_session_id_idx")

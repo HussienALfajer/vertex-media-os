@@ -10,7 +10,7 @@ import {
 } from '@vertex-os/iam-persistence';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { testAuthConfig } from '../../test-support/auth-config.js';
+import { TEST_AUTH_ENVIRONMENT, testAuthConfig } from '../../test-support/auth-config.js';
 import {
   FAKE_CLIENT_SECRET,
   FAKE_ISSUER,
@@ -32,8 +32,12 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
   let database: DatabaseClient;
   let provider: FakeOidcProvider;
   let app: NestFastifyApplication;
+  /** Every log line the application wrote during the whole suite (CP1-02). */
   const lines: string[] = [];
+  /** Every secret the suite handled: none of them may appear in any log line. */
   const secrets: string[] = [];
+  /** Moves the API's clock ahead of real time, to cross the re-validation interval. */
+  let clockOffset = 0;
 
   beforeAll(async () => {
     postgres = await startMigratedPostgres();
@@ -45,22 +49,41 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
         KEYCLOAK_ISSUER_URL: FAKE_ISSUER,
         KEYCLOAK_WEB_CLIENT_SECRET: FAKE_CLIENT_SECRET,
       }),
-      { logStream: { write: (line: string) => lines.push(line) }, oidcFetch: provider.fetch },
+      {
+        logStream: { write: (line: string) => lines.push(line) },
+        oidcFetch: provider.fetch,
+        now: () => new Date(Date.now() + clockOffset),
+      },
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   }, 180_000);
 
   afterAll(async () => {
-    // Nothing secret this suite handled may appear in any log line.
+    // Clean up first, so a failing scan leaves nothing running (CP1-12); then scan the whole
+    // suite's capture, whatever order the tests ran in (CP1-02).
+    try {
+      await app?.close();
+      await database?.disconnect();
+    } finally {
+      await postgres?.stop();
+    }
     const output = lines.join('');
-    for (const secret of [...secrets, ...provider.issued]) expect(output).not.toContain(secret);
-    await app?.close();
-    await database?.disconnect();
-    await postgres?.stop();
+    expect(output).toContain('"auth":"sign-in"');
+    const handled = [
+      ...secrets,
+      ...provider.issued,
+      ...provider.verifiers,
+      FAKE_CLIENT_SECRET,
+      TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET,
+    ];
+    expect(secrets.length).toBeGreaterThan(0);
+    expect(provider.verifiers.length).toBeGreaterThan(0);
+    for (const secret of handled) expect(output).not.toContain(secret);
   });
 
   beforeEach(async () => {
+    clockOffset = 0;
     await postgres.sql(
       'TRUNCATE auth_session, auth_login_attempt, audit_record, iam_application_user CASCADE',
     );
@@ -117,6 +140,8 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
     expect(login.statusCode).toBe(302);
     const handle = cookieOf(login, LOGIN_COOKIE);
     if (handle) secrets.push(handle);
+    const authorization = new URL(String(login.headers['location'])).searchParams;
+    for (const name of ['state', 'nonce']) secrets.push(authorization.get(name) ?? '');
     const callback = new URL(provider.authorize(String(login.headers['location']), options));
     const cookies = [`${LOGIN_COOKIE}=${handle}`];
     if (previousSession) cookies.push(`${SESSION_COOKIE}=${previousSession}`);
@@ -397,6 +422,69 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
     expect(stillRevoked.json()).toMatchObject({ code: 'AUTH_SESSION_INVALID' });
   });
 
+  describe('re-validation against the provider (IAM-R03F)', () => {
+    async function sessionAfterInterval(session: string) {
+      clockOffset += 61_000;
+      return app.inject({ method: 'GET', url: '/api/auth/session', headers: withSession(session) });
+    }
+
+    it('refreshes the provider session once the interval has passed, and slides the deadline', async () => {
+      const user = await seedUser('ACTIVE');
+      const { session } = await signIn({ subject: user.subject });
+      const before = provider.refreshed;
+      const response = await sessionAfterInterval(session ?? '');
+      expect(response.statusCode).toBe(200);
+      expect(provider.refreshed).toBe(before + 1);
+      const { session: deadlines } = response.json() as { session: { idleExpiresAt: string } };
+      expect(new Date(deadlines.idleExpiresAt).getTime()).toBeGreaterThan(
+        Date.now() + clockOffset + 29 * 60_000,
+      );
+      // Within the interval, no further refresh.
+      await app.inject({
+        method: 'GET',
+        url: '/api/auth/session',
+        headers: withSession(session ?? ''),
+      });
+      expect(provider.refreshed).toBe(before + 1);
+    });
+
+    it('revokes the session when the provider session ended without a back-channel call', async () => {
+      const user = await seedUser('ACTIVE');
+      const { session } = await signIn({ subject: user.subject, sessionId: 'kc-silently-ended' });
+      provider.endedProviderSessions.add('kc-silently-ended');
+      const response = await sessionAfterInterval(session ?? '');
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({ code: 'AUTH_SESSION_INVALID' });
+      expect(String(response.headers['set-cookie'])).toMatch(/^__Host-vertex-session=;/);
+      expect(
+        await postgres.sql(
+          'SELECT revocation_reason, refresh_token_ciphertext IS NULL, id_token_ciphertext IS NULL FROM auth_session',
+        ),
+      ).toBe('PROVIDER_SESSION_ENDED|t|t');
+      expect(
+        await postgres.sql(
+          "SELECT actor_process FROM audit_record WHERE action = 'iam.session.revoked'",
+        ),
+      ).toBe('iam.session-check');
+      expect(lines.join('')).toContain('"reason":"provider-session-ended"');
+    });
+
+    it('keeps the session, without extending it, while the provider is unreachable', async () => {
+      const user = await seedUser('ACTIVE');
+      const { session } = await signIn({ subject: user.subject });
+      const idle = await postgres.sql('SELECT idle_expires_at FROM auth_session');
+      provider.offline = true;
+      try {
+        const response = await sessionAfterInterval(session ?? '');
+        expect(response.statusCode).toBe(200);
+      } finally {
+        provider.offline = false;
+      }
+      expect(await postgres.sql('SELECT idle_expires_at FROM auth_session')).toBe(idle);
+      expect(lines.join('')).toContain('"auth":"session-revalidation-unavailable"');
+    });
+  });
+
   describe('back-channel logout (spec Section 33)', () => {
     const post = (payload: string) =>
       app.inject({
@@ -479,9 +567,11 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       failure = error;
     }
     expect(String(failure)).toContain('sentinel-input-4d2a');
-    lines.length = 0;
+    // Inspects its own lines only: the suite-wide capture stays whole for the final scan.
+    const start = lines.length;
     new Logger('A2-01').error(failure);
-    expect(lines.join('')).not.toContain('sentinel-input-4d2a');
-    expect(lines.join('')).toContain('Database error; only its allowlisted description is logged.');
+    const own = lines.slice(start).join('');
+    expect(own).not.toContain('sentinel-input-4d2a');
+    expect(own).toContain('Database error; only its allowlisted description is logged.');
   });
 });

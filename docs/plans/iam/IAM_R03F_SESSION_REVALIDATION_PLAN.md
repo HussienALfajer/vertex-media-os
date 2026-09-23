@@ -104,9 +104,9 @@ No owner decision is needed: D-01 takes the route the canonical documents alread
 
 ## 9. Checklist
 
-- [ ] M1 Plan committed
-- [ ] M2 Migration, schema, store (claim, apply, token discard), cipher purpose; PostgreSQL tests
-- [ ] M3 OIDC refresh operation, session-service re-validation, `requireSession` outcome; unit and fake-provider tests
+- [x] M1 Plan committed
+- [x] M2 Migration, schema, store (claim, apply, token discard), cipher purpose; PostgreSQL tests
+- [x] M3 OIDC refresh operation, session-service re-validation, `requireSession` outcome; unit and fake-provider tests
 - [ ] M4 Real-Keycloak re-validation spec (D-10)
 - [ ] M5 Evidence scans (CP1-02, CP1-12), realm SSO limits (CP1-10), brute-force flake (D-12)
 - [ ] M6 Documentation (CP1-16, R03 revision notes, README, `.env.example`); `pnpm verify` and integration suites green

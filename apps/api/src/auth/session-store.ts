@@ -11,6 +11,12 @@ import {
 /** Why a session ended early. Later stages add reasons (suspension, administrator action). */
 export type RevocationReason = keyof typeof AuthSessionRevocationReason;
 
+/** An identity-provider token encrypted for one session row (IAM-R03 D-17, IAM-R03F D-06). */
+export interface SealedToken {
+  readonly ciphertext: string;
+  readonly keyVersion: number;
+}
+
 /** A stored session as the authentication area sees it. It never holds the raw secret. */
 export interface StoredSession {
   readonly id: string;
@@ -22,7 +28,14 @@ export interface StoredSession {
   readonly idleExpiresAt: Date;
   readonly absoluteExpiresAt: Date;
   readonly revokedAt: Date | undefined;
-  readonly idToken: { readonly ciphertext: string; readonly keyVersion: number } | undefined;
+  readonly idToken: SealedToken | undefined;
+  readonly refreshToken: SealedToken | undefined;
+}
+
+/** The tokens a session keeps, sealed for its row ID; an absent token is not stored. */
+export interface SealedTokens {
+  readonly idToken?: SealedToken | undefined;
+  readonly refreshToken?: SealedToken | undefined;
 }
 
 export interface LoginAttemptSecrets {
@@ -44,8 +57,8 @@ export interface NewSession {
   readonly createdAt: Date;
   readonly idleExpiresAt: Date;
   readonly absoluteExpiresAt: Date;
-  /** Encrypts the ID token for the new row's ID (D-17); `undefined` stores none. */
-  readonly sealIdToken: (sessionId: string) => StoredSession['idToken'];
+  /** Encrypts the session's tokens for the new row's ID (IAM-R03 D-17, IAM-R03F D-06). */
+  readonly sealTokens: (sessionId: string) => SealedTokens;
   readonly attribution: AuditAttribution;
 }
 
@@ -66,17 +79,28 @@ export interface SessionStore {
   createSession(session: NewSession): Promise<StoredSession>;
   findByTokenHash(tokenHash: string): Promise<StoredSession | undefined>;
   /**
-   * Slides the idle deadline of a session that is still valid at `now` and was last seen at or
-   * before `seenBefore`. Never revives a revoked or expired session. `true` when it wrote.
+   * Claims the re-validation of a session that is still valid at `now` and was last seen at or
+   * before `seenBefore` (IAM-R03F D-04): moves `last_seen_at` only, so of concurrent requests
+   * exactly one wins. Never touches a revoked or expired session. `true` for the winner.
    */
-  touch(change: {
+  claimRevalidation(change: {
     readonly id: string;
     readonly now: Date;
     readonly seenBefore: Date;
-    readonly idleExpiresAt: Date;
   }): Promise<boolean>;
-  /** Discards the ID token of a session that has expired (SECURITY Section 11). */
-  discardExpiredIdToken(change: { readonly id: string; readonly now: Date }): Promise<void>;
+  /**
+   * Applies a successful re-validation: the slid idle deadline and the rotated tokens, only while
+   * the session is still valid at `now`. Never revives a revoked or expired session or writes token
+   * material into it. An absent ID token keeps the stored one. `true` when it wrote.
+   */
+  applyRevalidation(change: {
+    readonly id: string;
+    readonly now: Date;
+    readonly idleExpiresAt: Date;
+    readonly tokens: SealedTokens & { readonly refreshToken: SealedToken };
+  }): Promise<boolean>;
+  /** Discards the tokens of a session that has expired (SECURITY Section 11). */
+  discardExpiredTokens(change: { readonly id: string; readonly now: Date }): Promise<void>;
   /** Revokes one live session; `false` when it was already revoked or expired. */
   revoke(change: {
     readonly id: string;
@@ -124,6 +148,8 @@ const sessionSelect = {
   revokedAt: true,
   idTokenCiphertext: true,
   idTokenKeyVersion: true,
+  refreshTokenCiphertext: true,
+  refreshTokenKeyVersion: true,
 } as const;
 
 type SessionRow = {
@@ -138,7 +164,21 @@ type SessionRow = {
   readonly revokedAt: Date | null;
   readonly idTokenCiphertext: string | null;
   readonly idTokenKeyVersion: number | null;
+  readonly refreshTokenCiphertext: string | null;
+  readonly refreshTokenKeyVersion: number | null;
 };
+
+function sealed(ciphertext: string | null, keyVersion: number | null): SealedToken | undefined {
+  return ciphertext === null || keyVersion === null ? undefined : { ciphertext, keyVersion };
+}
+
+/** Column values that discard every stored token (SECURITY Section 11). */
+const NO_TOKENS = {
+  idTokenCiphertext: null,
+  idTokenKeyVersion: null,
+  refreshTokenCiphertext: null,
+  refreshTokenKeyVersion: null,
+} as const;
 
 function mapSession(row: SessionRow): StoredSession {
   return {
@@ -151,10 +191,8 @@ function mapSession(row: SessionRow): StoredSession {
     idleExpiresAt: row.idleExpiresAt,
     absoluteExpiresAt: row.absoluteExpiresAt,
     revokedAt: row.revokedAt ?? undefined,
-    idToken:
-      row.idTokenCiphertext === null || row.idTokenKeyVersion === null
-        ? undefined
-        : { ciphertext: row.idTokenCiphertext, keyVersion: row.idTokenKeyVersion },
+    idToken: sealed(row.idTokenCiphertext, row.idTokenKeyVersion),
+    refreshToken: sealed(row.refreshTokenCiphertext, row.refreshTokenKeyVersion),
   };
 }
 
@@ -189,7 +227,7 @@ export function createSessionStore(
 
   /**
    * Bounded housekeeping on each new sign-in (IAM-R03 review D-1, D-2): removes a batch of expired
-   * login attempts and discards the ID tokens of a batch of expired sessions (SECURITY Section 11).
+   * login attempts and discards the tokens of a batch of expired sessions (SECURITY Section 11).
    * Each is one small statement outside any transaction, so a backlog can slow the sweep down but
    * never blocks a sign-in; a failed sweep is left to the next one.
    */
@@ -198,8 +236,10 @@ export function createSessionStore(
       await client.$executeRaw`DELETE FROM auth_login_attempt WHERE id IN (
         SELECT id FROM auth_login_attempt WHERE expires_at <= ${now} LIMIT ${SWEEP_BATCH})`;
       await client.$executeRaw`UPDATE auth_session
-        SET id_token_ciphertext = NULL, id_token_key_version = NULL
-        WHERE id IN (SELECT id FROM auth_session WHERE id_token_ciphertext IS NOT NULL
+        SET id_token_ciphertext = NULL, id_token_key_version = NULL,
+          refresh_token_ciphertext = NULL, refresh_token_key_version = NULL
+        WHERE id IN (SELECT id FROM auth_session
+          WHERE (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)
           AND (idle_expires_at <= ${now} OR absolute_expires_at <= ${now}) LIMIT ${SWEEP_BATCH})`;
     } catch {
       // Housekeeping only: the attempt is already stored.
@@ -225,9 +265,8 @@ export function createSessionStore(
         data: {
           revokedAt: now,
           revocationReason: AuthSessionRevocationReason[reason],
-          // The ID token is discarded when the session ends (SECURITY Section 11).
-          idTokenCiphertext: null,
-          idTokenKeyVersion: null,
+          // Identity-provider tokens are discarded when the session ends (SECURITY Section 11).
+          ...NO_TOKENS,
         },
         select: { userId: true },
       });
@@ -275,7 +314,7 @@ export function createSessionStore(
 
     async createSession(session) {
       const id = randomUUID();
-      const idToken = session.sealIdToken(id);
+      const { idToken, refreshToken } = session.sealTokens(id);
       return runInTransaction(database, async (transaction) => {
         const row = await authPersistenceOf(transaction).authSession.create({
           data: {
@@ -290,6 +329,8 @@ export function createSessionStore(
             absoluteExpiresAt: session.absoluteExpiresAt,
             idTokenCiphertext: idToken?.ciphertext ?? null,
             idTokenKeyVersion: idToken?.keyVersion ?? null,
+            refreshTokenCiphertext: refreshToken?.ciphertext ?? null,
+            refreshTokenKeyVersion: refreshToken?.keyVersion ?? null,
           },
           select: sessionSelect,
         });
@@ -312,7 +353,7 @@ export function createSessionStore(
       return row === null ? undefined : mapSession(row);
     },
 
-    async touch({ id, now, seenBefore, idleExpiresAt }) {
+    async claimRevalidation({ id, now, seenBefore }) {
       const { count } = await client.authSession.updateMany({
         where: {
           id,
@@ -321,19 +362,41 @@ export function createSessionStore(
           absoluteExpiresAt: { gt: now },
           lastSeenAt: { lte: seenBefore },
         },
-        data: { lastSeenAt: now, idleExpiresAt },
+        data: { lastSeenAt: now },
       });
       return count === 1;
     },
 
-    async discardExpiredIdToken({ id, now }) {
+    async applyRevalidation({ id, now, idleExpiresAt, tokens }) {
+      const { count } = await client.authSession.updateMany({
+        where: { id, revokedAt: null, idleExpiresAt: { gt: now }, absoluteExpiresAt: { gt: now } },
+        data: {
+          idleExpiresAt,
+          refreshTokenCiphertext: tokens.refreshToken.ciphertext,
+          refreshTokenKeyVersion: tokens.refreshToken.keyVersion,
+          ...(tokens.idToken === undefined
+            ? {}
+            : {
+                idTokenCiphertext: tokens.idToken.ciphertext,
+                idTokenKeyVersion: tokens.idToken.keyVersion,
+              }),
+        },
+      });
+      return count === 1;
+    },
+
+    async discardExpiredTokens({ id, now }) {
       await client.authSession.updateMany({
         where: {
           id,
-          idTokenCiphertext: { not: null },
-          OR: [{ idleExpiresAt: { lte: now } }, { absoluteExpiresAt: { lte: now } }],
+          AND: [
+            {
+              OR: [{ idTokenCiphertext: { not: null } }, { refreshTokenCiphertext: { not: null } }],
+            },
+            { OR: [{ idleExpiresAt: { lte: now } }, { absoluteExpiresAt: { lte: now } }] },
+          ],
         },
-        data: { idTokenCiphertext: null, idTokenKeyVersion: null },
+        data: NO_TOKENS,
       });
     },
 

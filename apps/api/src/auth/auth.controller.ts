@@ -154,11 +154,13 @@ export class AuthController {
     const attribution = userAttribution(request, result.userId);
     const previous = await this.runtime.sessions.authenticate(
       readCookie(request.headers.cookie, SESSION_COOKIE),
+      systemAttribution(request, 'iam.session-check'),
     );
     const { secret } = await this.runtime.sessions.establish({
       userId: result.userId,
       idpSessionId: identity.value.idpSessionId,
       idToken: identity.value.idToken,
+      refreshToken: identity.value.refreshToken,
       attribution,
     });
     // A new sign-in in the same browser replaces the session it held (session rotation). The new

@@ -48,8 +48,9 @@ function failWith(reply: FastifyReply, error: Error): never {
 
 /**
  * Resolves the request's application session (IAM-R03 D-11, D-24): the cookie must name a live,
- * unrevoked session, and its user must be ACTIVE in committed IAM state. A user who is no longer
- * ACTIVE loses the session at once. The result is memoized for the request only.
+ * unrevoked session that the identity provider still backs (IAM-R03F D-05), and its user must be
+ * ACTIVE in committed IAM state. A user who is no longer ACTIVE loses the session at once. The
+ * result is memoized for the request only.
  */
 export async function requireSession(
   runtime: AuthRuntime,
@@ -65,17 +66,33 @@ export async function requireSession(
       errorCode: 'AUTHENTICATION_REQUIRED',
     });
   }
-  const lookup = await runtime.sessions.authenticate(secret);
+  const lookup = await runtime.sessions.authenticate(
+    secret,
+    systemAttribution(request, 'iam.session-check'),
+  );
+  if (lookup.outcome === 'ended') {
+    request.log.info(
+      { auth: 'session-revoked', reason: 'provider-session-ended' },
+      'session revoked',
+    );
+  }
   if (lookup.outcome === 'expired') {
     failWith(
       reply,
       new UnauthorizedException('The session has expired.', { errorCode: 'AUTH_SESSION_EXPIRED' }),
     );
   }
-  if (lookup.outcome === 'invalid') {
+  if (lookup.outcome === 'invalid' || lookup.outcome === 'ended') {
     failWith(
       reply,
       new UnauthorizedException('The session is not valid.', { errorCode: 'AUTH_SESSION_INVALID' }),
+    );
+  }
+
+  if (lookup.revalidation === 'unavailable') {
+    request.log.warn(
+      { auth: 'session-revalidation-unavailable' },
+      'identity provider unavailable; session not extended',
     );
   }
 

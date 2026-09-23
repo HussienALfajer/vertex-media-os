@@ -11,6 +11,7 @@ const IAM_01 = '20260923013708_iam_persistence_foundation';
 const AUDIT = '20260923035742_audit_foundation';
 const IAM_SYSTEM_ROLE_CODE = '20260923041312_iam_system_role_code';
 const AUTH_SESSIONS = '20260923190000_auth_sessions';
+const AUTH_REFRESH_TOKEN = '20260923210000_auth_session_refresh_token';
 const migrationsRoot = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
 const schemaRoot = fileURLToPath(new URL('../prisma/schema', import.meta.url));
 
@@ -23,14 +24,17 @@ const schemaRoot = fileURLToPath(new URL('../prisma/schema', import.meta.url));
 describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
   async function withIam01Database(
     work: (postgres: TestPostgres, client: IamPersistenceClient) => Promise<void>,
+    baseline: readonly string[] = [IAM_01],
   ): Promise<void> {
     const scratch = await mkdtemp(join(tmpdir(), 'vertex-iam02-upgrade-'));
     const postgres = await startPostgres();
     const database = createDatabaseClient({ connectionString: postgres.url });
     try {
-      await cp(join(migrationsRoot, IAM_01), join(scratch, 'migrations', IAM_01), {
-        recursive: true,
-      });
+      for (const migration of baseline) {
+        await cp(join(migrationsRoot, migration), join(scratch, 'migrations', migration), {
+          recursive: true,
+        });
+      }
       await cp(
         join(migrationsRoot, 'migration_lock.toml'),
         join(scratch, 'migrations', 'migration_lock.toml'),
@@ -98,6 +102,7 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
         { name: AUDIT, finished: true, rolledBack: false },
         { name: IAM_SYSTEM_ROLE_CODE, finished: true, rolledBack: false },
         { name: AUTH_SESSIONS, finished: true, rolledBack: false },
+        { name: AUTH_REFRESH_TOKEN, finished: true, rolledBack: false },
       ]);
       expect(await hasSystemCodeCheck(client)).toBe(true);
       expect(await roles(client)).toEqual(before);
@@ -136,5 +141,44 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
       expect(redeploy.exitCode).not.toBe(0);
       expect(redeploy.output).toContain('P3009');
     });
+  }, 180_000);
+
+  it('keeps live and revoked IAM-R03 sessions when adding refresh-token storage (IAM-R03F D-06)', async () => {
+    await withIam01Database(
+      async (postgres, client) => {
+        const hash = (label: string) => label.repeat(43).slice(0, 43);
+        await client.$executeRaw`INSERT INTO auth_session (token_hash, csrf_token_hash, user_id,
+            created_at, last_seen_at, idle_expires_at, absolute_expires_at,
+            id_token_ciphertext, id_token_key_version)
+          VALUES (${hash('a')}, ${hash('b')}, gen_random_uuid(), now(), now(),
+            now() + interval '30 minutes', now() + interval '10 hours', 'sealed', 1)`;
+        await client.$executeRaw`INSERT INTO auth_session (token_hash, csrf_token_hash, user_id,
+            created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at,
+            revocation_reason)
+          VALUES (${hash('c')}, ${hash('d')}, gen_random_uuid(), now(), now(),
+            now() + interval '30 minutes', now() + interval '10 hours', now(), 'LOGOUT')`;
+
+        await postgres.prisma(['migrate', 'deploy']);
+
+        expect((await history(client)).at(-1)).toEqual({
+          name: AUTH_REFRESH_TOKEN,
+          finished: true,
+          rolledBack: false,
+        });
+        const rows = await client.$queryRaw<
+          Array<{ refresh: boolean; idToken: boolean; revoked: boolean }>
+        >`SELECT refresh_token_ciphertext IS NULL AND refresh_token_key_version IS NULL AS refresh,
+            id_token_ciphertext IS NOT NULL AS "idToken", revoked_at IS NOT NULL AS revoked
+          FROM auth_session ORDER BY token_hash COLLATE "C"`;
+        expect(rows).toEqual([
+          { refresh: true, idToken: true, revoked: false },
+          { refresh: true, idToken: false, revoked: true },
+        ]);
+        const [reasons] = await client.$queryRaw<Array<{ values: string[] }>>`
+          SELECT enum_range(NULL::auth_session_revocation_reason)::text[] AS values`;
+        expect(reasons?.values).toContain('PROVIDER_SESSION_ENDED');
+      },
+      [IAM_01, AUDIT, IAM_SYSTEM_ROLE_CODE, AUTH_SESSIONS],
+    );
   }, 180_000);
 });
