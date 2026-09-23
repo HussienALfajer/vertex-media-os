@@ -2,7 +2,9 @@ import type { AuditRecorder } from '@vertex-os/audit';
 import type { DatabaseClient, DatabaseTransaction } from '@vertex-os/database';
 import { iamPersistenceOf, runInTransaction } from '@vertex-os/database/iam';
 import type { IamTransactionRunner, IamTransactionScope } from '@vertex-os/iam/persistence';
+import { createOrganizationStore } from './organization-store.js';
 import { createReferenceDataStore } from './reference-data-store.js';
+import { createRoleStore } from './role-store.js';
 import { createUserIdentityStore } from './user-identity-store.js';
 
 export interface IamTransactionRunnerOptions {
@@ -33,6 +35,8 @@ export function createIamTransactionRunner(
             Object.freeze({
               referenceData: createReferenceDataStore(client),
               users: createUserIdentityStore(client),
+              organization: createOrganizationStore(client),
+              roles: createRoleStore(client),
               audit: options.auditRecorderFor(transaction),
             }),
           );

@@ -1,5 +1,7 @@
 import type { AuditRecorder } from '@vertex-os/audit';
+import type { OrganizationStore } from './organization-store.js';
 import type { ReferenceDataStore } from './reference-data-store.js';
+import type { RoleStore } from './role-store.js';
 import type { UserIdentityStore } from './user-identity-store.js';
 
 /**
@@ -10,6 +12,8 @@ import type { UserIdentityStore } from './user-identity-store.js';
 export interface IamTransactionScope {
   readonly referenceData: ReferenceDataStore;
   readonly users: UserIdentityStore;
+  readonly organization: OrganizationStore;
+  readonly roles: RoleStore;
   readonly audit: AuditRecorder;
 }
 

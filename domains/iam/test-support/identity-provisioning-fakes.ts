@@ -104,6 +104,8 @@ export class InMemoryIam implements IamTransactionRunner {
     const result = await work({
       referenceData: undefined as never,
       users: this.store(staged, operations),
+      organization: undefined as never,
+      roles: undefined as never,
       audit,
     });
     for (const [id, user] of staged) this.users.set(id, user);
