@@ -1,6 +1,6 @@
 # IAM-R05 — Department, Membership, Role and Permission Administration Core
 
-**Status:** IN PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** IAM-MP-08, IAM-MP-09  
 **Risk tier:** A (reviewers: security; data and concurrency; architecture and boundaries)  
 **Branch:** `iam/r05-privilege-administration`  
@@ -62,13 +62,13 @@ Carried-forward items and their resolution:
 - **D-12 Target user state.** Memberships and assignments may be changed for a user in any access state. The spec forbids none of them, none grants access to a user who is not ACTIVE, and bootstrap recovery (spec Section 21.3) removes the role from SUSPENDED and DISABLED holders. The last-administrator rule applies only when the target is ACTIVE (spec Section 20).
 - **D-13 System role protection.** Updating, activating, deactivating or replacing the mappings of the system role returns `system-role-protected` without writing (spec Section 20). Custom roles can never hold the reserved code: creation refuses it (`code-taken`), and the `iam_role_system_code_ck` constraint backs this. Assigning and removing the system role are ordinary assignment operations under D-06.
 - **D-14 Versions.** Departments and roles carry `version`. Update, activate, deactivate and mapping replacement require the expected version; a mismatch returns `version-conflict` and writes nothing (spec Section 30). A successful change raises the version by exactly one. A request that would change nothing (same values, same state, same mapping set) returns `unchanged`, writes nothing, records no Audit evidence and raises no version (I-6). Membership and assignment rows are not versioned: add and remove are intent-explicit (a duplicate add or a missing remove is refused), so no stale screen can silently overwrite newer state. They do not raise the user's version, which guards the user record and access state (IAM-MP-10).
-- **D-15 Mappings.** Replacement is a full set (spec Section 25.7 `PUT`). Every code must be a well-formed, registered, ACTIVE permission (`unknown-permission`, `permission-not-assignable`); duplicates in the request are invalid input. Permission rows are locked `FOR SHARE`, so a concurrent reference synchronization that deprecates or retires a code is ordered with the replacement. Existing non-ACTIVE mappings stay until the next replacement, which cannot keep them. No wildcard exists (spec Section 9.5) and there are no direct user grants (spec Section 9.7).
+- **D-15 Mappings.** Replacement is a full set (spec Section 25.7 `PUT`). Every code must be a well-formed, registered, ACTIVE permission (`unknown-permission`, `permission-not-assignable`); duplicates in the request are invalid input. Permission rows are locked `FOR SHARE` in code-point order (`COLLATE "C"`, the order in which reference synchronization updates them, whatever the database collation; review DC-1), so a concurrent synchronization that deprecates or retires a code is ordered with the replacement without a deadlock. The system role's permission rows are never locked. Existing non-ACTIVE mappings stay until the next replacement, which cannot keep them. No wildcard exists (spec Section 9.5) and there are no direct user grants (spec Section 9.7).
 - **D-16 Audit evidence.** Each successful change appends exactly one record (source module `iam`, result `SUCCEEDED`, the attribution's actor, trace ID and reason) with before/after values of the changed fields:
   - departments (`iam.department`, target the department ID): `iam.department.created`, `updated`, `activated`, `deactivated`;
-  - roles (`iam.role`, target the role ID): `iam.role.created`, `updated`, `activated`, `deactivated`, `permissions-replaced` (full before and after sets);
+  - roles (`iam.role`, target the role ID): `iam.role.created`, `updated`, `activated`, `deactivated`, `permissions-replaced` (removed codes before, added codes after, as reference synchronization records mapping changes);
   - users (`iam.user`, target the user ID): `iam.user.department-added`, `department-removed`, `primary-department-changed`, `role-assigned`, `role-removed`.
 
-  Refusals by `last-system-admin` and `system-role-protected` are recorded as `REFUSED` with the attempted action code, because they are attempts against System Administrator protection (spec Section 34). Other refusals (not found, invalid, conflict) are not recorded. An invalid entry is a programming error and rolls the transaction back.
+  Refusals by `last-system-admin` and `system-role-protected` are recorded as `REFUSED` with the attempted action code, because they are attempts against System Administrator protection (spec Section 34). Other refusals (not found, invalid, conflict) are not recorded. The record is built before the write: when the evidence of an accepted input exceeds Audit's size limit (only possible for long four-byte names and descriptions changed on both sides, or a very large mapping change), the use case returns `invalid` and writes nothing (review S-2, AB-1). Any other invalid entry is a programming error and rolls the transaction back.
 - **D-17 Creation races.** Department and role creation insert with `ON CONFLICT DO NOTHING` semantics, so a concurrent creation of the same code yields `code-taken` instead of aborting the transaction. Inserts of memberships and assignments are protected by the user-row lock (D-07); the primary keys remain the backstop.
 - **D-18 No read or list capabilities.** Results return the changed department or role as a view; memberships and assignments return their outcome. Lists and details are IAM-MP-11's work.
 
@@ -82,7 +82,7 @@ No migration. The existing schema already provides the unique codes, the composi
 
 ### 5.2 Use cases and outcomes
 
-Inputs are raw strings; IDs, codes and texts are parsed first (`invalid` with the field name).
+Inputs are raw strings; IDs, codes, texts and the `isPrimary` flag are checked first (`invalid` with the field name). Texts with a lone UTF-16 surrogate are invalid (review S-3).
 
 | Use case | Success | Refusals |
 |---|---|---|
@@ -141,7 +141,7 @@ The domain decides, the store executes: `decideMembershipAddition`, `decidePrima
 ## 8. Verification
 
 - `@vertex-os/iam:test`: the rule functions of Section 5.5 (every outcome of Section 5.2 that the domain decides).
-- `@vertex-os/iam-persistence:test:integration`: store behavior that depends on PostgreSQL (conflict-free creation, lock modes, count query), where not covered through the use cases.
+- `@vertex-os/iam-persistence:test:integration`: unchanged suites still green. *Deviation:* no store-level spec was added; every store behavior that depends on PostgreSQL (conflict-free creation, lock modes, count query, row-count assertions) is exercised through the use cases in the API suite below, and a lock-removal check showed that the concurrency tests fail without the locks.
 - `@vertex-os/api:test:integration` (`administration.integration.spec.ts`): every use case against real PostgreSQL through `createIamAdministration`; Audit records; the authorization-context effects through `createIamAuthorization`; truly concurrent operations for Done means 3, 4 and 6 (and a department code race for D-17), with a lock-holding transaction or parallel calls, never sequential simulation (TESTING Section 16).
 - `pnpm lint:boundaries`, `pnpm verify`, integration suites of `iam-persistence`, `audit-persistence` (unchanged) and `api`.
 - CI: `verify:full` and `deps:audit` on the pull request.
@@ -153,10 +153,29 @@ The domain decides, the store executes: `decideMembershipAddition`, `decidePrima
 - [x] M3 Ports and `IamTransactionScope`; PostgreSQL stores; runner binding
 - [x] M4 Use cases (departments, memberships, roles, mappings, assignments); composition and root exports
 - [x] M5 `createIamAdministration`; integration tests incl. concurrency and authorization-context effects
-- [ ] M6 `pnpm verify` and integration suites green
-- [ ] M7 In-run review (three reviewers); findings resolved
-- [ ] M8 Master Plan ledger, hand-off, pull request, CI green
+- [x] M6 `pnpm verify` and integration suites green
+- [x] M7 In-run review (three reviewers); findings resolved
+- [x] M8 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
 
-Written at the end of the run.
+**In-run review.** Three fresh-context reviewers checked `main...HEAD`: security; data and concurrency; architecture and boundaries. None found a blocking issue. The implementer checked the evidence of each finding before accepting it.
+
+- **Fixed in the run:**
+  - S-2, AB-1 (major, minor): valid input could produce Audit evidence above its 16 KiB limit, so the use case threw after writing (rolled back, but no outcome). Evidence is now built before the write and too-large evidence returns `invalid`; mapping evidence records the change instead of both full sets (D-16). Test: a name and description change in four-byte characters.
+  - DC-1 (major): `lockPermissions` ordered by the database collation while reference synchronization updates in code-point order; the reviewer reproduced a deadlock on a glibc `en_US.utf8` image. Ordered with `COLLATE "C"` (D-15).
+  - AB-2 (minor): the new evidence builder duplicated `appendUserAudit`; provisioning now uses the same builder.
+  - S-3 (minor): text parsers accepted lone UTF-16 surrogates and non-strings; both are `invalid` now (affects display names too).
+  - S-4 (minor), S-6 (info), DC-4 (info): tests for activating the system role and the full refused record (actor, target, trace, reason); a runtime check of `isPrimary`; a concurrent role-code race test.
+- **Recorded, not changed:**
+  - AB-4 (info): the membership use cases read the current primary themselves; the removal passes an assumed state for a replacement that is not a membership, which is correct only because the domain checks membership first (unit-tested precedence).
+  - AB-5, DC-3 (info): both ports declare `lockUser` and the lock order is kept by convention; `FOR UPDATE` is stronger than needed. No correctness impact.
+  - DC-2 (info): lock waits are bounded by the 5 s statement and transaction timeouts and surface as unclassified errors.
+  - S-5 (info): refused records carry no description of the attempted values (spec Section 35 is a SHOULD).
+
+**Owner decision raised (S-1).** Nothing limits what an administrator can grant: a holder of `iam.users.manage-roles` can assign any role, including `system-administrator`, to anyone including themselves, and a holder of `iam.roles.manage` can map any ACTIVE code into a role they hold. Spec Section 19 defines these permissions without a ceiling; `docs/SECURITY.md` requires protection against vertical privilege escalation. A ceiling rule changes the authorization model, so it is the owner's decision. The use cases are not reachable over HTTP yet, so the decision is needed before IAM-MP-11 mounts the routes.
+
+**Carried forward** (attached to the Master Plan stages):
+
+- **IAM-MP-10:** suspension, disablement, termination and bootstrap take the System Administrator role-row lock before the user row (D-05, D-06); user creation with initial memberships and roles (`createApplicationUserRepository.create`) must apply the same rules (ACTIVE department and role, System Administrator lock) instead of inserting directly; keep the lock order when one operation combines both stores (AB-5).
+- **IAM-MP-11:** the owner decision on a grant ceiling (S-1) before the routes are mounted; the outcome → error-code mapping of Section 5.6, naming the codes the specification lacks; export from the root the field types the views use (`DepartmentCode`, `RoleCode`, `EntityName`, `Description`, `DepartmentState`, `RoleState`) when the DTOs need them (AB-3); map lock-wait timeouts to a stable error (DC-2); request validation of all fields before the use cases (S-6).

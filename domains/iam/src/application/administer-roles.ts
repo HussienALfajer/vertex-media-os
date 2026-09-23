@@ -18,7 +18,11 @@ import {
   type EntityName,
 } from '../domain/text.js';
 import type { RequestedFields } from '../domain/versioned-change.js';
-import { appendAdministrationEvidence, parseExpectedVersion } from './administration-evidence.js';
+import {
+  buildIamEvidence,
+  parseExpectedVersion,
+  requireIamEvidence,
+} from './administration-evidence.js';
 import type { IamTransactionRunner } from './ports/iam-transaction.js';
 
 /** What role administration needs; composition supplies it. */
@@ -28,7 +32,7 @@ export interface RoleAdministrationDependencies {
 
 type Invalid<Field extends string> = { readonly outcome: 'invalid'; readonly field: Field };
 
-/** Upper bound of one mapping set; far above the catalog, within Audit's list limit. */
+/** Upper bound of one mapping set, far above the catalog; the change must also fit Audit's limits. */
 const MAX_MAPPED_PERMISSIONS = 500;
 
 export interface CreateRoleRequest {
@@ -133,11 +137,13 @@ export async function createRole(
   return dependencies.runner.run(async ({ roles, audit }) => {
     const created = await roles.createRole({ code: code.value, name: name.value, description });
     if (created.outcome === 'code-taken') return created;
-    await appendAdministrationEvidence(audit, attribution, {
-      action: 'iam.role.created',
-      target: { type: 'iam.role', id: created.role.id },
-      after: roleEvidence(created.role),
-    });
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action: 'iam.role.created',
+        target: { type: 'iam.role', id: created.role.id },
+        after: roleEvidence(created.role),
+      }),
+    );
     return created;
   });
 }
@@ -158,26 +164,32 @@ async function changeRole(
     if (role === undefined) return { outcome: 'role-not-found' };
     const decision = decideRoleChange(role, expectedVersion, requested);
     if (decision.kind === 'system-role-protected') {
-      await appendAdministrationEvidence(audit, attribution, {
-        action,
-        target: { type: 'iam.role', id: id.value },
-        result: 'REFUSED',
-      });
+      await audit.append(
+        requireIamEvidence(attribution, {
+          action,
+          target: { type: 'iam.role', id: id.value },
+          result: 'REFUSED',
+        }),
+      );
       return { outcome: 'system-role-protected' };
     }
     if (decision.kind === 'version-conflict') return { outcome: 'version-conflict' };
     if (decision.kind === 'unchanged') return { outcome: 'unchanged', role };
-    const updated = await roles.writeRole({
-      id: id.value,
-      expectedVersion,
-      changes: decision.changes,
-    });
-    await appendAdministrationEvidence(audit, attribution, {
+    // Built before the write: only a long description in 4-byte characters on both sides can
+    // exceed Audit's size limit, and that is refused instead of failing after the write.
+    const evidence = buildIamEvidence(attribution, {
       action,
       target: { type: 'iam.role', id: id.value },
       before: decision.before,
       after: decision.after,
     });
+    if (evidence === 'too-large') return { outcome: 'invalid', field: 'description' };
+    const updated = await roles.writeRole({
+      id: id.value,
+      expectedVersion,
+      changes: decision.changes,
+    });
+    await audit.append(evidence);
     return { outcome: 'updated', role: updated };
   });
 }
@@ -270,11 +282,13 @@ export async function replaceRolePermissions(
     const plan = planMappingReplacement(role, expectedVersion, current, requested, catalog);
     switch (plan.kind) {
       case 'system-role-protected':
-        await appendAdministrationEvidence(audit, attribution, {
-          action: 'iam.role.permissions-replaced',
-          target: { type: 'iam.role', id: id.value },
-          result: 'REFUSED',
-        });
+        await audit.append(
+          requireIamEvidence(attribution, {
+            action: 'iam.role.permissions-replaced',
+            target: { type: 'iam.role', id: id.value },
+            result: 'REFUSED',
+          }),
+        );
         return { outcome: 'system-role-protected' };
       case 'version-conflict':
         return { outcome: 'version-conflict' };
@@ -284,18 +298,23 @@ export async function replaceRolePermissions(
       case 'unchanged':
         return { outcome: 'unchanged', role, permissionCodes: current };
       case 'replace': {
+        // The evidence is the change, as reference synchronization records it: removed codes
+        // before, added codes after. It is built before the write, so a change too large for
+        // Audit is refused instead of failing after the write (IAM-R05 D-16).
+        const evidence = buildIamEvidence(attribution, {
+          action: 'iam.role.permissions-replaced',
+          target: { type: 'iam.role', id: id.value },
+          ...(plan.remove.length > 0 ? { before: { permissionCodes: plan.remove } } : {}),
+          ...(plan.add.length > 0 ? { after: { permissionCodes: plan.add } } : {}),
+        });
+        if (evidence === 'too-large') return { outcome: 'invalid', field: 'permissionCodes' };
         const updated = await roles.replaceRolePermissions({
           roleId: id.value,
           expectedVersion,
           add: plan.add,
           remove: plan.remove,
         });
-        await appendAdministrationEvidence(audit, attribution, {
-          action: 'iam.role.permissions-replaced',
-          target: { type: 'iam.role', id: id.value },
-          before: { permissionCodes: plan.before },
-          after: { permissionCodes: plan.after },
-        });
+        await audit.append(evidence);
         return { outcome: 'updated', role: updated, permissionCodes: plan.after };
       }
     }
@@ -323,11 +342,13 @@ export async function assignRole(
     const decision = decideRoleAssignment(role, await roles.hasAssignment(assignment));
     if (decision.kind === 'refuse') return { outcome: decision.reason };
     await roles.insertAssignment(assignment);
-    await appendAdministrationEvidence(audit, attribution, {
-      action: 'iam.user.role-assigned',
-      target: { type: 'iam.user', id: userId.value },
-      after: { roleId: role.id, roleCode: role.code },
-    });
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action: 'iam.user.role-assigned',
+        target: { type: 'iam.user', id: userId.value },
+        after: { roleId: role.id, roleCode: role.code },
+      }),
+    );
     return { outcome: 'assigned' };
   });
 }
@@ -366,21 +387,25 @@ export async function removeRole(
     });
     if (decision.kind === 'refuse') {
       if (decision.reason === 'last-system-admin') {
-        await appendAdministrationEvidence(audit, attribution, {
-          action: 'iam.user.role-removed',
-          target: { type: 'iam.user', id: userId.value },
-          result: 'REFUSED',
-          before: { roleId: role.id, roleCode: role.code },
-        });
+        await audit.append(
+          requireIamEvidence(attribution, {
+            action: 'iam.user.role-removed',
+            target: { type: 'iam.user', id: userId.value },
+            result: 'REFUSED',
+            before: { roleId: role.id, roleCode: role.code },
+          }),
+        );
       }
       return { outcome: decision.reason };
     }
     await roles.deleteAssignment(assignment);
-    await appendAdministrationEvidence(audit, attribution, {
-      action: 'iam.user.role-removed',
-      target: { type: 'iam.user', id: userId.value },
-      before: { roleId: role.id, roleCode: role.code },
-    });
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action: 'iam.user.role-removed',
+        target: { type: 'iam.user', id: userId.value },
+        before: { roleId: role.id, roleCode: role.code },
+      }),
+    );
     return { outcome: 'removed' };
   });
 }

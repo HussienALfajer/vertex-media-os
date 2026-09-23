@@ -121,13 +121,14 @@ export function createRoleStore(client: IamPersistenceClient): RoleStore {
 
     async lockPermissions(codes) {
       if (codes.length === 0) return new Map();
-      // Locked in code order, the order in which reference synchronization updates permissions,
-      // so the two cannot deadlock on permission rows.
+      // Locked in code-point order (`COLLATE "C"`, whatever the database collation), the order in
+      // which reference synchronization updates permissions, so the two cannot deadlock on
+      // permission rows.
       const rows = await client.$queryRaw<{ code: string; state: string }[]>`
         SELECT code, state::text
         FROM iam_permission
         WHERE code = ANY(${[...codes]}::text[])
-        ORDER BY code
+        ORDER BY code COLLATE "C"
         FOR SHARE`;
       return new Map(
         rows.map((row) => [

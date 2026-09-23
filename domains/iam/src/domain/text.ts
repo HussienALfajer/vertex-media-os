@@ -13,7 +13,13 @@ function hasControl(value: string): boolean {
   });
 }
 
+/** A lone UTF-16 surrogate is not text: storage and Audit evidence would disagree about it. */
+const LONE_SURROGATE = /\p{Cs}/u;
+
 function parseText(input: string, maximum: number): ValidationResult<string, TextReason> {
+  if (typeof input !== 'string' || LONE_SURROGATE.test(input)) {
+    return { ok: false, reason: 'invalid-text' };
+  }
   const value = input.trim();
   const length = [...value].length;
   return length >= 1 && length <= maximum && !hasControl(value)

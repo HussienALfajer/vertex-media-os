@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R05` (IAM-MP-08, IAM-MP-09) with `/stage IAM-R05`, after the `IAM-R04` pull request is merged  
+**Next step:** run `IAM-R06` (IAM-MP-10) with `/stage IAM-R06`, after the `IAM-R05` pull request is merged; the `IAM-CP2` deep audit follows it  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -1048,7 +1048,7 @@ Make authenticated protection the default API posture and expose the narrow, cur
 
 ## IAM-MP-08 — Department & Membership Administration Core
 
-**Status:** READY (run `IAM-R05`)  
+**Status:** COMPLETE (run `IAM-R05`, plan `IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`)  
 **Parent specification area:** IAM-5, Sections 22, 28, 30  
 **Depends on:** IAM-MP-07 COMPLETE
 
@@ -1094,7 +1094,7 @@ Implement authoritative application-layer behavior for departments and organizat
 
 ## IAM-MP-09 — Role/Permission Administration & Last-Admin Protection
 
-**Status:** READY (run `IAM-R05`)  
+**Status:** COMPLETE (run `IAM-R05`, plan `IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`)  
 **Parent specification area:** IAM-5, Sections 18–20, 23, 30  
 **Depends on:** IAM-MP-08 COMPLETE
 
@@ -1152,7 +1152,7 @@ Implement application-layer role and permission administration with concurrency-
 
 ## IAM-MP-10 — User Lifecycle, Session Revocation & Bootstrap Core
 
-**Status:** PLANNED  
+**Status:** READY (run `IAM-R06`)  
 **Parent specification area:** IAM-5, Sections 10–13, 20–21, 31–32, 48, 53–54  
 **Depends on:** IAM-MP-09 COMPLETE
 
@@ -1207,6 +1207,12 @@ Implement the highest-risk IAM administrative workflows as application services 
 - **CP1-07:** no test names the auth constraints; behavioural cases use a bare `.rejects.toThrow()`; the CSRF-hash, IdP-session, handle-hash, attempt-expiry checks and the key-version branch are never exercised.
 - **CP1-13:** R02 Done means 3 (conflicting identities byte-for-byte unchanged) is asserted against real Keycloak only for the foreign-owner case.
 - **CP1-26:** the evidence checks of `apps/api/src/iam/identity-provisioning.integration.spec.ts` depend on earlier tests (`total > 10`); make them order-independent and run them after cleanup (remainder of CP1-12).
+
+### Carried forward from run IAM-R05 (`IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`)
+
+- **System Administrator lock.** Suspension, disablement and termination of an ACTIVE user, and bootstrap, lock the `system-administrator` role row `FOR UPDATE` before the user row (R05 D-05, D-06), then count ACTIVE holders under it; the rule is `decideRoleRemoval`'s. Look the row up by the reserved code.
+- **User creation with memberships and roles** must apply the R05 rules (ACTIVE department locked `FOR SHARE`, ACTIVE role, System Administrator lock when the role is assigned) instead of `createApplicationUserRepository.create` inserting them unchecked.
+- **Lock order across both stores** (review AB-5): an operation that uses `OrganizationStore` and `RoleStore` together keeps role → user → department/permission.
 
 ### Exit criteria
 
@@ -1273,6 +1279,13 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 ### Carried forward from run IAM-R04 (`IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`)
 
 - **`GET /api/iam/me`** (spec Section 25.2) is this stage's: build it on `CurrentActor` (`CURRENT_ACTOR`), which already yields the current actor's authorization context (R04 D-10). Department names and profile fields for the UI are this stage's contract decision.
+
+### Carried forward from run IAM-R05 (`IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`)
+
+- **Owner decision before the routes are mounted (review S-1):** whether an administrator may grant roles or map permissions beyond their own effective permissions (a grant ceiling), or whether `iam.users.manage-roles` and `iam.roles.manage` keep their unlimited meaning of spec Section 19. It changes the authorization model.
+- **Routes over the bound capability** `createIamAdministration` (`apps/api/src/iam/administration.ts`), each with `@RequirePermission` and an Audit attribution from `CurrentActor`; the outcome → error-code mapping of R05 Section 5.6, naming once the codes the specification lacks (`version-conflict`, `code-taken`, `membership-not-found`, `assignment-not-found`, `unknown-permission`, `permission-not-assignable`, `invalid`).
+- **Root types for DTOs** (review AB-3): `DepartmentCode`, `RoleCode`, `EntityName`, `Description`, `DepartmentState`, `RoleState` are not on the root yet.
+- **Lock-wait timeouts** (review DC-2) surface as unclassified errors; map them to a stable error. Validate every request field before the use cases (review S-6).
 
 ### Exit criteria
 
@@ -1653,6 +1666,8 @@ The `IAM-CP1` re-check 1 of `cd82811` (record `audits/IAM-CP1.md` Section 5) ret
 
 Run `IAM-R04` delivered IAM-MP-07 (plan `IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`). It is `COMPLETE` once its pull request is merged. Every API route requires an application session unless its handler is one of the five `@Public()` routes of spec Section 24, pinned by a route inventory; CSRF is verified wherever a session is used on an unsafe method; `@RequirePermission()` checks the authorization context (ACTIVE user, ACTIVE departments with the primary, effective permission codes), read in one statement from committed state on every request that needs it and memoized per request only, and records denials as Audit evidence (R04 D-01 to D-16). `DEPRECATED` permissions are not effective (D-06). It closed CP1-03, CP1-04 and CP1-05: the IAM root exposes no repository, dependency type or user entity, and use cases that take ports sit behind the private `@vertex-os/iam/composition` entry (D-12). `GET /api/iam/me` stays with IAM-MP-11 (D-10). Its carried-forward items are attached to IAM-MP-09, IAM-MP-11 and IAM-MP-15.
 
+Run `IAM-R05` delivered IAM-MP-08 and IAM-MP-09 (plan `IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. Departments, memberships, custom roles, role-permission mappings and user-role assignments are administered by application use cases behind `@vertex-os/iam/composition`, bound in `apps/api/src/iam/administration.ts` and not yet mounted in HTTP (R05 D-01, D-03). Each change commits with one Audit record; departments and roles are version-checked; row locks in one order (role → user → department or permission) serialize competing operations, and the `system-administrator` role row is the lock that keeps at least one ACTIVE System Administrator (D-05 to D-08). The system role is protected, a custom role never newly maps a non-ACTIVE code (D-13, D-15), and every change reaches the next authorization context. It closed the primary-membership switch ordering (IAM-01) and the `DEPRECATED`/`RETIRED` mapping question (IAM-02), and the R04 items attached to IAM-MP-09. Review S-1 raised an owner decision on a grant ceiling, attached to IAM-MP-11; its other carried-forward items are attached to IAM-MP-10 and IAM-MP-11.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
@@ -1681,9 +1696,9 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | COMPLETE | `IAM-CP1` record merged (satisfied) |
 | `IAM-CP1` Deep audit: authentication | — | COMPLETE | R03 merged (audited: FIXES REQUIRED); R03F merged (re-check 1: FIXES REQUIRED; CP1-21 fixed in a follow-up pull request, accepted by owner decision) |
 | IAM-MP-07 Default Protection & Authorization Context | R04 | COMPLETE | `IAM-CP1 ACCEPTED` (satisfied) |
-| IAM-MP-08 Department & Membership Core | R05 | READY | R04 merged |
-| IAM-MP-09 Role/Permission & Last-Admin Core | R05 | READY | R04 merged |
-| IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | PLANNED | R05 merged |
+| IAM-MP-08 Department & Membership Core | R05 | COMPLETE | R04 merged (satisfied) |
+| IAM-MP-09 Role/Permission & Last-Admin Core | R05 | COMPLETE | R04 merged (satisfied) |
+| IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | READY | R05 merged |
 | `IAM-CP2` Deep audit: authorization and administration core | — | PLANNED | R06 merged |
 | IAM-MP-11 HTTP Administration Surface | R07 | PLANNED | `IAM-CP2 ACCEPTED` |
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | PLANNED | R07 merged |
@@ -1953,15 +1968,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-07 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, and IAM-MP-07 through run `IAM-R04`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-09 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, and IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). The next step is run `IAM-R05` (IAM-MP-08 and IAM-MP-09). Start it in a new Claude Code session after the `IAM-R04` pull request is merged:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). The next step is run `IAM-R06` (IAM-MP-10). Start it in a new Claude Code session after the `IAM-R05` pull request is merged:
 
 ```text
-/stage IAM-R05
+/stage IAM-R06
 ```
 
-Its planner reads the IAM-MP-08 and IAM-MP-09 sections, including the items carried forward from run `IAM-R04`.
+Its planner reads the IAM-MP-10 section, including the items carried forward from run `IAM-R05`. The `IAM-CP2` deep audit (authorization and administration core, MP-07 to MP-10) follows `IAM-R06`.
 
 Do **not** plan later runs in detail now.
 

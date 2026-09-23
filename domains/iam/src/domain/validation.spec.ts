@@ -205,3 +205,14 @@ describe('IAM persistence value validation', () => {
     expect(permissionSensitivities).toEqual(['STANDARD', 'SENSITIVE', 'PRIVILEGED']);
   });
 });
+
+describe('administrable text (IAM-R05 review S-3)', () => {
+  it('rejects lone UTF-16 surrogates and non-string input, and keeps well-formed pairs', () => {
+    for (const parse of [parseEntityName, parseDescription, parseDisplayName]) {
+      expect(parse('Team \uD800').ok).toBe(false);
+      expect(parse('\uDC00 text').ok).toBe(false);
+      expect(parse(42 as unknown as string).ok).toBe(false);
+      expect(parse('Team \u{1F600}')).toEqual({ ok: true, value: 'Team \u{1F600}' });
+    }
+  });
+});

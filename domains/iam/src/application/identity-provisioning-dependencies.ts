@@ -1,11 +1,11 @@
-import {
-  createAuditEntry,
-  type AuditAttribution,
-  type AuditChangeSide,
-  type AuditRecorder,
-  type AuditResult,
+import type {
+  AuditAttribution,
+  AuditChangeSide,
+  AuditRecorder,
+  AuditResult,
 } from '@vertex-os/audit';
 import type { ApplicationUser } from '../domain/application-user.js';
+import { requireIamEvidence } from './administration-evidence.js';
 import type { UserId } from '../domain/identifiers.js';
 import type { ApplicationUserRepository } from './ports/application-user-repository.js';
 import type { IamTransactionRunner } from './ports/iam-transaction.js';
@@ -51,18 +51,13 @@ export async function appendUserAudit(
   result: AuditResult,
   change: { readonly before?: AuditChangeSide; readonly after?: AuditChangeSide },
 ): Promise<void> {
-  const entry = createAuditEntry({
-    sourceModule: 'iam',
-    action,
-    actor: attribution.actor,
-    target: { type: 'iam.user', id: user.id },
-    result,
-    traceId: attribution.traceId,
-    ...(attribution.reason === undefined ? {} : { reason: attribution.reason }),
-    change,
-  });
   // An invalid entry is a programming error: throwing rolls the state write back (spec Section 50).
-  if (!entry.ok)
-    throw new Error(`Identity provisioning built an invalid audit entry (${entry.reason}).`);
-  await audit.append(entry.value);
+  await audit.append(
+    requireIamEvidence(attribution, {
+      action,
+      target: { type: 'iam.user', id: user.id },
+      result,
+      ...change,
+    }),
+  );
 }

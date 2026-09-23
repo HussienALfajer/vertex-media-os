@@ -353,6 +353,12 @@ describe('memberships', () => {
         by(),
       ),
     ).toEqual({ outcome: 'invalid', field: 'userId' });
+    expect(
+      await admin.addMembership(
+        { userId: user, departmentId: sales.id, isPrimary: 'yes' as unknown as boolean },
+        by(),
+      ),
+    ).toEqual({ outcome: 'invalid', field: 'isPrimary' });
   });
 
   it('switches the primary explicitly, clears it, and never makes an INACTIVE department primary', async () => {
@@ -503,6 +509,40 @@ describe('roles and permission mappings', () => {
     });
   });
 
+  it('turns a concurrent creation of the same role code into code-taken (D-17)', async () => {
+    const results = await Promise.all(
+      [1, 2, 3].map(() => admin.createRole({ code: 'editor', name: 'Editor' }, by())),
+    );
+    expect(results.map((result) => result.outcome).sort()).toEqual([
+      'code-taken',
+      'code-taken',
+      'created',
+    ]);
+    expect(await value(`SELECT count(*) FROM iam_role WHERE code = 'editor'`)).toBe('1');
+  });
+
+  it('refuses a valid change whose evidence exceeds Audit limits before writing anything', async () => {
+    const role = await customRole('editor');
+    // A 200-character name and a 2,000-character description of four-byte characters on each
+    // side exceed Audit's 16 KiB change limit (review S-2).
+    const wide = (codePoint: number, length: number) =>
+      String.fromCodePoint(codePoint).repeat(length);
+    const change = (codePoint: number, expectedVersion: number) =>
+      admin.updateRole(
+        {
+          roleId: role,
+          expectedVersion,
+          name: wide(codePoint, 200),
+          description: wide(codePoint, 2_000),
+        },
+        by(),
+      );
+    expect(await change(0x1f600, 1)).toMatchObject({ outcome: 'updated', role: { version: 2 } });
+    expect(await change(0x1f601, 2)).toEqual({ outcome: 'invalid', field: 'description' });
+    expect(await value(`SELECT version FROM iam_role WHERE id = '${role}'`)).toBe('2');
+    expect(await actions()).toEqual(['iam.role.created|SUCCEEDED', 'iam.role.updated|SUCCEEDED']);
+  });
+
   it('protects the system role from every change and records the refused attempts (Done means 5)', async () => {
     const system = await systemRoleId();
     const before = await value(
@@ -515,6 +555,9 @@ describe('roles and permission mappings', () => {
       await admin.updateRole({ roleId: system, expectedVersion: 1, name: 'Root' }, by()),
     ).toEqual({ outcome: 'system-role-protected' });
     expect(await admin.deactivateRole({ roleId: system, expectedVersion: 1 }, by())).toEqual({
+      outcome: 'system-role-protected',
+    });
+    expect(await admin.activateRole({ roleId: system, expectedVersion: 1 }, by('Try'))).toEqual({
       outcome: 'system-role-protected',
     });
     expect(
@@ -534,8 +577,15 @@ describe('roles and permission mappings', () => {
     expect(await actions()).toEqual([
       'iam.role.updated|REFUSED',
       'iam.role.deactivated|REFUSED',
+      'iam.role.activated|REFUSED',
       'iam.role.permissions-replaced|REFUSED',
     ]);
+    expect(
+      await value(
+        `SELECT actor_type || '|' || actor_user_id || '|' || target_type || '|' || target_id
+           || '|' || trace_id || '|' || reason FROM audit_record WHERE action = 'iam.role.activated'`,
+      ),
+    ).toBe(`USER|${ADMIN_ID}|iam.role|${system}|trace-administration-test|Try`);
   });
 
   it('replaces mappings with one version step and never newly maps a non-ACTIVE code (Done means 7)', async () => {
@@ -592,8 +642,8 @@ describe('roles and permission mappings', () => {
     ).toMatchObject({ outcome: 'updated', role: { version: 3 } });
 
     expect((await evidence()).filter((line) => line.includes('permissions-replaced'))).toEqual([
-      'iam.role.permissions-replaced|SUCCEEDED||{"after": {"permissionCodes": ["iam.roles.read", "iam.users.read"]}, "before": {"permissionCodes": []}}',
-      'iam.role.permissions-replaced|SUCCEEDED||{"after": {"permissionCodes": ["iam.roles.read"]}, "before": {"permissionCodes": ["iam.roles.read", "iam.users.read"]}}',
+      'iam.role.permissions-replaced|SUCCEEDED||{"after": {"permissionCodes": ["iam.roles.read", "iam.users.read"]}}',
+      'iam.role.permissions-replaced|SUCCEEDED||{"before": {"permissionCodes": ["iam.users.read"]}}',
     ]);
   });
 

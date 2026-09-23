@@ -15,7 +15,11 @@ import {
   type EntityName,
 } from '../domain/text.js';
 import { decideVersionedChange, type RequestedFields } from '../domain/versioned-change.js';
-import { appendAdministrationEvidence, parseExpectedVersion } from './administration-evidence.js';
+import {
+  buildIamEvidence,
+  parseExpectedVersion,
+  requireIamEvidence,
+} from './administration-evidence.js';
 import type { IamTransactionRunner } from './ports/iam-transaction.js';
 
 /** What organization administration needs; composition supplies it. */
@@ -70,7 +74,7 @@ export type AddMembershipResult =
       readonly outcome:
         'user-not-found' | 'department-not-found' | 'department-inactive' | 'duplicate-membership';
     }
-  | Invalid<'userId' | 'departmentId'>;
+  | Invalid<'userId' | 'departmentId' | 'isPrimary'>;
 
 export interface SetPrimaryMembershipRequest {
   readonly userId: string;
@@ -84,7 +88,7 @@ export type SetPrimaryMembershipResult =
       readonly primaryDepartmentId: DepartmentId | undefined;
     }
   | { readonly outcome: 'user-not-found' | 'membership-not-found' | 'department-inactive' }
-  | Invalid<'userId' | 'departmentId'>;
+  | Invalid<'userId' | 'departmentId' | 'isPrimary'>;
 
 export interface RemoveMembershipRequest {
   readonly userId: string;
@@ -133,11 +137,13 @@ export async function createDepartment(
       description,
     });
     if (created.outcome === 'code-taken') return created;
-    await appendAdministrationEvidence(audit, attribution, {
-      action: 'iam.department.created',
-      target: { type: 'iam.department', id: created.department.id },
-      after: departmentEvidence(created.department),
-    });
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action: 'iam.department.created',
+        target: { type: 'iam.department', id: created.department.id },
+        after: departmentEvidence(created.department),
+      }),
+    );
     return created;
   });
 }
@@ -159,17 +165,21 @@ async function changeDepartment(
     const decision = decideVersionedChange(department, expectedVersion, requested);
     if (decision.kind === 'version-conflict') return { outcome: 'version-conflict' };
     if (decision.kind === 'unchanged') return { outcome: 'unchanged', department };
-    const updated = await organization.writeDepartment({
-      id: id.value,
-      expectedVersion,
-      changes: decision.changes,
-    });
-    await appendAdministrationEvidence(audit, attribution, {
+    // Built before the write: only a long description in 4-byte characters on both sides can
+    // exceed Audit's size limit, and that is refused instead of failing after the write.
+    const evidence = buildIamEvidence(attribution, {
       action,
       target: { type: 'iam.department', id: id.value },
       before: decision.before,
       after: decision.after,
     });
+    if (evidence === 'too-large') return { outcome: 'invalid', field: 'description' };
+    const updated = await organization.writeDepartment({
+      id: id.value,
+      expectedVersion,
+      changes: decision.changes,
+    });
+    await audit.append(evidence);
     return { outcome: 'updated', department: updated };
   });
 }
@@ -243,6 +253,7 @@ export async function addMembership(
   if (!userId.ok) return { outcome: 'invalid', field: 'userId' };
   const departmentId = parseDepartmentId(request.departmentId);
   if (!departmentId.ok) return { outcome: 'invalid', field: 'departmentId' };
+  if (typeof request.isPrimary !== 'boolean') return { outcome: 'invalid', field: 'isPrimary' };
   return dependencies.runner.run(async ({ organization, audit }) => {
     if ((await organization.lockUser(userId.value)) === undefined) {
       return { outcome: 'user-not-found' };
@@ -264,16 +275,18 @@ export async function addMembership(
       departmentId: departmentId.value,
       isPrimary: request.isPrimary,
     });
-    await appendAdministrationEvidence(audit, attribution, {
-      action: 'iam.user.department-added',
-      target: { type: 'iam.user', id: userId.value },
-      ...(request.isPrimary ? { before: { primaryDepartmentId: decision.demote ?? null } } : {}),
-      after: {
-        departmentId: departmentId.value,
-        isPrimary: request.isPrimary,
-        ...(request.isPrimary ? { primaryDepartmentId: departmentId.value } : {}),
-      },
-    });
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action: 'iam.user.department-added',
+        target: { type: 'iam.user', id: userId.value },
+        ...(request.isPrimary ? { before: { primaryDepartmentId: decision.demote ?? null } } : {}),
+        after: {
+          departmentId: departmentId.value,
+          isPrimary: request.isPrimary,
+          ...(request.isPrimary ? { primaryDepartmentId: departmentId.value } : {}),
+        },
+      }),
+    );
     return { outcome: 'added', demotedPrimaryDepartmentId: decision.demote };
   });
 }
@@ -291,6 +304,7 @@ export async function setPrimaryMembership(
   if (!userId.ok) return { outcome: 'invalid', field: 'userId' };
   const departmentId = parseDepartmentId(request.departmentId);
   if (!departmentId.ok) return { outcome: 'invalid', field: 'departmentId' };
+  if (typeof request.isPrimary !== 'boolean') return { outcome: 'invalid', field: 'isPrimary' };
   return dependencies.runner.run(async ({ organization, audit }) => {
     if ((await organization.lockUser(userId.value)) === undefined) {
       return { outcome: 'user-not-found' };
@@ -327,12 +341,14 @@ export async function setPrimaryMembership(
         isPrimary: true,
       });
     }
-    await appendAdministrationEvidence(audit, attribution, {
-      action: 'iam.user.primary-department-changed',
-      target: { type: 'iam.user', id: userId.value },
-      before: { primaryDepartmentId: current ?? null },
-      after: { primaryDepartmentId: decision.promote ?? null },
-    });
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action: 'iam.user.primary-department-changed',
+        target: { type: 'iam.user', id: userId.value },
+        before: { primaryDepartmentId: current ?? null },
+        after: { primaryDepartmentId: decision.promote ?? null },
+      }),
+    );
     return { outcome: 'updated', primaryDepartmentId: decision.promote };
   });
 }
@@ -382,12 +398,16 @@ export async function removeMembership(
         isPrimary: true,
       });
     }
-    await appendAdministrationEvidence(audit, attribution, {
-      action: 'iam.user.department-removed',
-      target: { type: 'iam.user', id: userId.value },
-      before: { departmentId: departmentId.value, isPrimary: decision.wasPrimary },
-      ...(decision.wasPrimary ? { after: { primaryDepartmentId: decision.promote ?? null } } : {}),
-    });
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action: 'iam.user.department-removed',
+        target: { type: 'iam.user', id: userId.value },
+        before: { departmentId: departmentId.value, isPrimary: decision.wasPrimary },
+        ...(decision.wasPrimary
+          ? { after: { primaryDepartmentId: decision.promote ?? null } }
+          : {}),
+      }),
+    );
     const primary = decision.wasPrimary
       ? decision.promote
       : memberships.find((membership) => membership.isPrimary)?.departmentId;
