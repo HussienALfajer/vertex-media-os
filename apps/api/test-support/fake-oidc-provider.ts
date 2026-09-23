@@ -4,7 +4,9 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from 'j
 /**
  * A minimal OpenID provider for tests, reached through the OIDC client's `fetch` hook: discovery,
  * JWKS, and a token endpoint that checks the client secret, the redirect URI and the PKCE
- * verifier. `authorize` plays the user's sign-in at the provider and returns the callback URL.
+ * verifier, and refreshes sessions with rotating refresh tokens (as the realm's
+ * `revokeRefreshToken` does). `authorize` plays the user's sign-in at the provider and returns the
+ * callback URL.
  * Every token it issues can be bent (claims, key, algorithm) to prove the relying party rejects it.
  */
 export const FAKE_ISSUER = 'http://op.test/realms/vertex';
@@ -19,6 +21,11 @@ export interface IssuedCode {
   readonly redirectUri: string;
   readonly idTokenClaims: Readonly<Record<string, unknown>>;
   readonly signWith: 'provider' | 'stranger';
+}
+
+interface RefreshGrant {
+  readonly subject: string;
+  readonly sessionId: string | undefined;
 }
 
 export interface AuthorizeOptions {
@@ -40,6 +47,8 @@ export class FakeOidcProvider {
   readonly requests: string[] = [];
   /** Every token and code this provider issued, so tests can prove none of them leaks. */
   readonly issued: string[] = [];
+  /** Every PKCE verifier the relying party presented, so tests can prove none of them leaks. */
+  readonly verifiers: string[] = [];
   /** Answers the next token request with this HTTP status (5xx: provider outage). */
   tokenStatus: number | undefined;
   /** Makes every request fail as a network error. */
@@ -48,7 +57,16 @@ export class FakeOidcProvider {
   readonly endedSessions: string[] = [];
   /** Answers the next end-session request with this HTTP status, or fails it as a network error. */
   logoutStatus: number | 'network' | undefined;
+  /** Provider sessions ended without telling the relying party: refreshing them is refused. */
+  readonly endedProviderSessions = new Set<string>();
+  /** Replaces or removes (`undefined`) claims of ID tokens issued by the refresh grant. */
+  refreshIdTokenClaims: Readonly<Record<string, unknown>> = {};
+  /** How the refresh grant's ID tokens are signed; `malformed` answers with an undecodable one. */
+  refreshIdTokenForm: 'provider' | 'stranger' | 'malformed' = 'provider';
+  /** How many refresh grants the provider answered successfully. */
+  refreshed = 0;
   private readonly codes = new Map<string, IssuedCode>();
+  private readonly refreshTokens = new Map<string, RefreshGrant>();
 
   private constructor(
     private readonly key: CryptoKey,
@@ -184,10 +202,12 @@ export class FakeOidcProvider {
       return json({ error: 'invalid_client' }, 401);
     }
     const body = new URLSearchParams(String(init?.body ?? ''));
+    if (body.get('grant_type') === 'refresh_token') return this.refresh(body);
     const issued = this.codes.get(body.get('code') ?? '');
     this.codes.delete(body.get('code') ?? '');
     if (!issued) return json({ error: 'invalid_grant' }, 400);
     const verifier = body.get('code_verifier') ?? '';
+    if (verifier !== '') this.verifiers.push(verifier);
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     if (challenge !== issued.challenge || body.get('redirect_uri') !== issued.redirectUri) {
       return json({ error: 'invalid_grant' }, 400);
@@ -208,8 +228,45 @@ export class FakeOidcProvider {
       }),
       issued.signWith,
     );
+    return this.tokens(idToken, { subject: issued.subject, sessionId: issued.sessionId });
+  }
+
+  /** The refresh grant: single use (rotation), refused once the provider session has ended. */
+  private async refresh(body: URLSearchParams): Promise<Response> {
+    const presented = body.get('refresh_token') ?? '';
+    const grant = this.refreshTokens.get(presented);
+    this.refreshTokens.delete(presented);
+    if (
+      !grant ||
+      (grant.sessionId !== undefined && this.endedProviderSessions.has(grant.sessionId))
+    ) {
+      return json({ error: 'invalid_grant', error_description: 'Session not active' }, 400);
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const idToken =
+      this.refreshIdTokenForm === 'malformed'
+        ? '!!!!.!!!!.!!!!'
+        : await this.sign(
+            compact({
+              iss: this.issuer,
+              aud: FAKE_CLIENT_ID,
+              azp: FAKE_CLIENT_ID,
+              sub: grant.subject,
+              sid: grant.sessionId,
+              iat: now,
+              exp: now + 300,
+              ...this.refreshIdTokenClaims,
+            }),
+            this.refreshIdTokenForm,
+          );
+    this.refreshed += 1;
+    return this.tokens(idToken, grant);
+  }
+
+  private tokens(idToken: string, grant: RefreshGrant): Response {
     const accessToken = `sentinel-access-${randomBytes(12).toString('base64url')}`;
     const refreshToken = `sentinel-refresh-${randomBytes(12).toString('base64url')}`;
+    this.refreshTokens.set(refreshToken, grant);
     this.issued.push(idToken, accessToken, refreshToken);
     return json({
       access_token: accessToken,

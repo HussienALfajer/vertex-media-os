@@ -3,7 +3,8 @@ import { ConfigurationError } from './app-config.js';
 
 /**
  * Typed configuration of browser authentication (docs/modules/iam.md Section 39; IAM-R03 D-16): the
- * `vertex-web` OIDC client, the session limits and the secret that protects stored ID tokens.
+ * `vertex-web` OIDC client, the session limits and the secret that protects stored ID and refresh
+ * tokens.
  * Mapped from the environment exactly once. Kept apart from `AppConfig`, which commands such as
  * the reference synchronization load without any identity-provider value.
  */
@@ -26,7 +27,7 @@ export interface AuthConfig {
     readonly absoluteTimeoutSeconds: number;
     readonly loginAttemptTimeoutSeconds: number;
   };
-  /** Secret: the key material from which the ID-token encryption key is derived (D-17). */
+  /** Secret: the key material the token encryption keys are derived from (D-17, R03F D-06). */
   readonly tokenEncryptionSecret: string;
 }
 

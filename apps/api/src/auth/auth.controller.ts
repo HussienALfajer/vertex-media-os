@@ -154,11 +154,19 @@ export class AuthController {
     const attribution = userAttribution(request, result.userId);
     const previous = await this.runtime.sessions.authenticate(
       readCookie(request.headers.cookie, SESSION_COOKIE),
+      systemAttribution(request, 'iam.session-check'),
     );
+    if (previous.outcome === 'ended') {
+      request.log.info(
+        { auth: 'session-revoked', reason: 'provider-session-ended' },
+        'session revoked',
+      );
+    }
     const { secret } = await this.runtime.sessions.establish({
       userId: result.userId,
       idpSessionId: identity.value.idpSessionId,
       idToken: identity.value.idToken,
+      refreshToken: identity.value.refreshToken,
       attribution,
     });
     // A new sign-in in the same browser replaces the session it held (session rotation). The new
@@ -225,8 +233,9 @@ export class AuthController {
   }
 
   /**
-   * Ends the session (the CSRF guard has checked the session and its token) and returns the
-   * identity provider's end-session URL, so the Keycloak session ends too (spec Section 32).
+   * Ends the session (the CSRF guard has checked the session and its token) and the Keycloak
+   * session (spec Section 32; IAM-R03 D-17), and returns where the browser goes next: the
+   * post-logout URI, or the token-free end-session URL when the API could not end it itself.
    */
   @Post('logout')
   @HttpCode(200)

@@ -62,13 +62,121 @@ describe('OIDC client against a fake provider', () => {
     expect(url.searchParams.has('client_secret')).toBe(false);
   });
 
-  it('returns the validated identity and the ID token, and drops access and refresh tokens', async () => {
+  it('returns the validated identity, the ID token and the refresh token, and drops the access token', async () => {
     const result = await signIn({ subject: 'subject-1', sessionId: 'kc-session-1' });
     expect(result).toMatchObject({
       ok: true,
-      value: { issuer: FAKE_ISSUER, subject: 'subject-1', idpSessionId: 'kc-session-1' },
+      value: {
+        issuer: FAKE_ISSUER,
+        subject: 'subject-1',
+        idpSessionId: 'kc-session-1',
+        refreshToken: expect.stringMatching(/^sentinel-refresh-/),
+      },
     });
-    expect(JSON.stringify(result)).not.toMatch(/sentinel-(access|refresh)/);
+    expect(JSON.stringify(result)).not.toMatch(/sentinel-access/);
+  });
+
+  describe('session refresh (IAM-R03F D-01, D-05)', () => {
+    /** The ID token of the latest sign-in: the session's current one. */
+    let idToken: string | undefined;
+
+    async function signedIn(sessionId = 'kc-session-r') {
+      const result = await signIn({ subject: 'subject-r', sessionId });
+      if (!result.ok || result.value.refreshToken === undefined) throw new Error('sign-in failed');
+      idToken = result.value.idToken;
+      return result.value.refreshToken;
+    }
+
+    it('refreshes the provider session and returns the rotated token and a new ID token', async () => {
+      const first = await signedIn();
+      const refreshed = await oidc.refreshSession({
+        refreshToken: first,
+        idpSessionId: 'kc-session-r',
+        idToken,
+      });
+      expect(refreshed).toMatchObject({
+        ok: true,
+        value: { idToken: expect.stringMatching(/^eyJ/) },
+      });
+      if (!refreshed.ok) return;
+      expect(refreshed.value.refreshToken).not.toBe(first);
+      // Rotation: the used token is spent, the new one works.
+      await expect(
+        oidc.refreshSession({ refreshToken: first, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+      await expect(
+        oidc.refreshSession({
+          refreshToken: refreshed.value.refreshToken,
+          idpSessionId: 'kc-session-r',
+          idToken: refreshed.value.idToken,
+        }),
+      ).resolves.toMatchObject({ ok: true });
+    });
+
+    it('is refused once the provider session has ended', async () => {
+      const token = await signedIn('kc-session-ended');
+      provider.endedProviderSessions.add('kc-session-ended');
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-ended', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+    });
+
+    it.each([
+      ['another provider session', { sid: 'kc-session-other' }],
+      ['another audience', { aud: 'account-console', azp: 'account-console' }],
+      ['another issuer', { iss: 'http://op.test/realms/other' }],
+    ])('refuses a refreshed ID token naming %s', async (_label, claims) => {
+      const token = await signedIn();
+      provider.refreshIdTokenClaims = claims;
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+    });
+
+    it('refuses a refreshed ID token naming another subject, or when no current one exists', async () => {
+      const token = await signedIn();
+      provider.refreshIdTokenClaims = { sub: 'someone-else' };
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+      provider.refreshIdTokenClaims = {};
+      const next = await signedIn();
+      await expect(
+        oidc.refreshSession({
+          refreshToken: next,
+          idpSessionId: 'kc-session-r',
+          idToken: undefined,
+        }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+    });
+
+    it.each([
+      ['signed by another key', 'stranger' as const],
+      ['that cannot be decoded', 'malformed' as const],
+    ])('refuses a refreshed ID token %s', async (_label, form) => {
+      const token = await signedIn();
+      provider.refreshIdTokenForm = form;
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+    });
+
+    it('reports an outage as unavailable, never as a refusal', async () => {
+      const token = await signedIn();
+      provider.tokenStatus = 503;
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
+      // Rate limiting is an outage too: a refusal here would revoke every active session.
+      provider.tokenStatus = 429;
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
+      provider.offline = true;
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
+    });
   });
 
   it.each([

@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** fix run `IAM-R03F` — the `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (record `audits/IAM-CP1.md`); start it with `/stage IAM-R03F`, then re-check with `/audit IAM-CP1`. `IAM-R04` (IAM-MP-07) waits for `IAM-CP1 ACCEPTED`  
+**Next step:** once the `IAM-R03F` pull request is merged, re-check `IAM-CP1` with `/audit IAM-CP1` (blocking finding CP1-01; record `audits/IAM-CP1.md`). `IAM-R04` (IAM-MP-07) waits for `IAM-CP1 ACCEPTED`  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -860,7 +860,7 @@ Implement the single safe IAM path that reconciles committed Vertex user state w
 
 ## IAM-MP-05 — Backend Application Session Foundation
 
-**Status:** COMPLETE (run `IAM-R03`, plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)  
+**Status:** COMPLETE (run `IAM-R03`, plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`; session re-validation corrected by fix run `IAM-R03F`, plan `IAM_R03F_SESSION_REVALIDATION_PLAN.md`)  
 **Parent specification area:** IAM-3, Sections 14, 32, 39  
 **Depends on:** IAM-MP-04 COMPLETE (satisfied by run `IAM-R02`)
 
@@ -918,7 +918,7 @@ Create backend-owned, PostgreSQL-backed application-session infrastructure witho
 
 ## IAM-MP-06 — OIDC Login, First Activation, CSRF & Logout
 
-**Status:** COMPLETE (run `IAM-R03`, plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)  
+**Status:** COMPLETE (run `IAM-R03`, plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`; Keycloak-side logout and recovery reach Vertex for the whole session lifetime since fix run `IAM-R03F`)  
 **Parent specification area:** IAM-3, Sections 13–15, 32–33  
 **Depends on:** IAM-MP-05 COMPLETE (satisfied by run `IAM-R03`)
 
@@ -1597,9 +1597,11 @@ Run `IAM-R01` delivered IAM-MP-03 (plan `IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md`).
 
 Run `IAM-R02` delivered IAM-MP-04 (plan `IAM_R02_IDENTITY_RECONCILIATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed the Keycloak Admin error item, typed provisioner configuration (R01 D-11; a separate `loadIdentityProvisioningConfig` beside `AppConfig`, so the HTTP runtime needs no Keycloak value before a stage consumes it there, R02 D-13), email delivery (Mailpit, owner decision OD-1), self-service recovery (R01 S-01), the provisioner residual (R01 D-14, operation set pinned by a test) and the harness location (R01 AB-5). A-04 was again not triggered (no Keycloak package; the adapter uses `fetch`) and stays with IAM-MP-06. A2-01 passes on unchanged. Its new carried-forward items are attached to IAM-MP-05, IAM-MP-06, IAM-MP-10 and IAM-MP-11.
 
-Run `IAM-R03` delivered IAM-MP-05 and IAM-MP-06 (plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed A2-01 and the API statement-timeout item (R03 D-20, D-21), A-04 (OIDC libraries banned in the domain core and in web code, subpaths included), the request-URL logging item, typed OIDC configuration, audience binding, back-channel reachability (Testcontainers host exposure on Linux CI; locally only a container-to-loopback probe on Docker Desktop, the end-to-end Compose probe was not run, `IAM-CP1` CP1-17), MFA in browser tests (TOTP through the real invitation flow), security events (Audit records), the SSO limits (application defaults equal the realm's) and the recovery signal (Keycloak's back-channel logout, R03 D-15; `IAM-CP1` CP1-01 found that it reaches Vertex only while the Keycloak SSO session lives, about 30 minutes after sign-in, and fix run `IAM-R03F` owns it). Cookie scoping was decided by R03 D-06: spec Section 14 fixes `Path=/` and the host prefix, so the cookies also reach a Keycloak on the same host locally; production must give Keycloak its own host (listed below). Its new carried-forward items are attached to IAM-MP-07, IAM-MP-10, IAM-MP-12 and IAM-MP-15.
+Run `IAM-R03` delivered IAM-MP-05 and IAM-MP-06 (plan `IAM_R03_SESSIONS_AND_OIDC_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed A2-01 and the API statement-timeout item (R03 D-20, D-21), A-04 (OIDC libraries banned in the domain core and in web code, subpaths included), the request-URL logging item, typed OIDC configuration, audience binding, back-channel reachability (Testcontainers host exposure on Linux CI; locally only a container-to-loopback probe on Docker Desktop, the end-to-end Compose probe was not run, `IAM-CP1` CP1-17), MFA in browser tests (TOTP through the real invitation flow), security events (Audit records), the SSO limits (application defaults equal the realm's) and the recovery signal (Keycloak's back-channel logout, R03 D-15; `IAM-CP1` CP1-01 found that it reached Vertex only while the Keycloak SSO session lived, about 30 minutes after sign-in; fix run `IAM-R03F` keeps the Keycloak session alive while the Vertex session is used, R03F D-09). Cookie scoping was decided by R03 D-06: spec Section 14 fixes `Path=/` and the host prefix, so the cookies also reach a Keycloak on the same host locally; production must give Keycloak its own host (listed below). Its new carried-forward items are attached to IAM-MP-07, IAM-MP-10, IAM-MP-12 and IAM-MP-15.
 
 The `IAM-CP1` deep audit of `48ff7cc` (record `audits/IAM-CP1.md`) returned `IAM-CP1 FIXES REQUIRED`. It found one blocking finding, CP1-01: logout, recovery and disablement on the Keycloak side stop reaching the Vertex session once the Keycloak SSO session idles out (SECURITY Section 11). Fix run `IAM-R03F` resolves it together with the non-blocking items the record assigns to it; `/audit IAM-CP1` then re-checks CP1-01. The record's other non-blocking findings name their owner stages (IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12, IAM-MP-15) and are attached to those stages when the re-check accepts `IAM-CP1`. `IAM-R04` (IAM-MP-07) starts only after `IAM-CP1 ACCEPTED`.
+
+Fix run `IAM-R03F` (plan `IAM_R03F_SESSION_REVALIDATION_PLAN.md`) resolved CP1-01. It is `COMPLETE` once its pull request is merged. The API keeps each session's refresh token encrypted server-side (its own key purpose) and refreshes the Keycloak session at most once a minute while the Vertex session is used; the idle deadline slides only after a successful refresh, a refusal revokes the session (reason `PROVIDER_SESSION_ENDED`, Audit evidence), and an outage keeps the current deadline without sliding it (R03F D-01 to D-09). Real-Keycloak tests show a used session surviving the SSO idle timeout and its grace window and still receiving Keycloak's logout, and a silently ended Keycloak session or a disabled identity ending the Vertex session at its next re-validation (R03F D-10). It also closed CP1-02, CP1-10, CP1-12 and CP1-16 and the realm-contract brute-force flake (R03F D-11 to D-13). `/audit IAM-CP1` re-checks CP1-01 next.
 
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
@@ -1615,6 +1617,7 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
   - narrowing `vertex-provisioner` with fine-grained admin permissions (also reviewed by the Final IAM Module Audit);
   - production SMTP (run IAM-R02): the realm's `KEYCLOAK_SMTP_*` values, TLS (`starttls`/`ssl`) and trust, and a real sender domain. Mailpit is local and test only.
   - Keycloak on its own host (run IAM-R03 D-06): the `__Host-vertex-*` cookies use `Path=/`, so a Keycloak on the web app's host would receive them. Keycloak must also reach the API's back-channel logout URL; locally only Docker Desktop forwards `host.docker.internal` to a loopback API.
+  - Session re-validation across API processes (run IAM-R03F review DC-04): one Keycloak refresh per session and interval relies on one clock and a refresh shorter than the 60 s interval. More than one API process, or clocks skewed by tens of seconds, could refresh one session twice and revoke it through Keycloak's refresh-token reuse detection. Keep one API process, or re-check the claim when scaling out.
 
 | Stage | Run | Status | Required before the run starts |
 |---|---|---|---|
@@ -1625,7 +1628,7 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-04 Identity Reconciliation & Invitations | R02 | COMPLETE | R01 merged (satisfied) |
 | IAM-MP-05 Application Session Foundation | R03 | COMPLETE | R02 merged (satisfied) |
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | COMPLETE | R02 merged (satisfied) |
-| `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | READY | `IAM-CP1` record merged |
+| `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | COMPLETE | `IAM-CP1` record merged (satisfied) |
 | `IAM-CP1` Deep audit: authentication | — | READY | R03 merged (audited: FIXES REQUIRED); re-check after R03F merged |
 | IAM-MP-07 Default Protection & Authorization Context | R04 | PLANNED | `IAM-CP1 ACCEPTED` |
 | IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |

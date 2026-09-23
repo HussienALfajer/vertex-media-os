@@ -1,6 +1,7 @@
 import {
   createRemoteJWKSet,
   customFetch as joseCustomFetch,
+  decodeJwt,
   jwtVerify,
   type JWTPayload,
   type JWTVerifyGetKey,
@@ -33,6 +34,18 @@ export interface OidcClient {
    * confirm; or the post-logout URI when Keycloak cannot be reached at all.
    */
   endProviderSession(idTokenHint: string | undefined): Promise<ProviderLogout>;
+  /**
+   * Refreshes the Keycloak session behind an application session (IAM-R03F D-01): keeps it alive
+   * while the application session is used, and proves it still exists. A refreshed ID token must
+   * pass the D-08 claim checks, name the same identity-provider session, and name the subject of
+   * the session's current ID token (OpenID Connect Core Section 12.2).
+   */
+  refreshSession(input: {
+    readonly refreshToken: string;
+    readonly idpSessionId: string | undefined;
+    /** The session's current ID token, already validated when it was stored. */
+    readonly idToken: string | undefined;
+  }): Promise<OidcResult<RefreshedSession>>;
   verifyLogoutToken(token: string): Promise<OidcResult<LogoutTarget>>;
 }
 
@@ -43,12 +56,22 @@ export interface AuthorizationRequest {
   readonly codeVerifier: string;
 }
 
-/** A validated identity. `idToken` is kept only encrypted, for `id_token_hint` (D-17). */
+/**
+ * A validated identity. `idToken` is kept only encrypted, for `id_token_hint` (D-17), and
+ * `refreshToken` only encrypted, for re-validation (IAM-R03F D-06).
+ */
 export interface AuthenticatedIdentity {
   readonly issuer: string;
   readonly subject: string;
   readonly idpSessionId: string | undefined;
   readonly idToken: string;
+  readonly refreshToken: string | undefined;
+}
+
+/** The tokens of a refreshed session: the rotated refresh token and, when issued, a new ID token. */
+export interface RefreshedSession {
+  readonly refreshToken: string;
+  readonly idToken: string | undefined;
 }
 
 export interface ProviderLogout {
@@ -232,7 +255,8 @@ export function createOidcClient(
         ) {
           return { ok: false, failure: 'rejected', code: 'ID_TOKEN_CLAIMS' };
         }
-        // Access and refresh tokens are dropped here: the API never uses them (D-17).
+        // The access token is dropped here: the API never uses it (D-17). The refresh token is kept
+        // for re-validation (IAM-R03F D-01).
         return {
           ok: true,
           value: {
@@ -240,6 +264,7 @@ export function createOidcClient(
             subject: claims.sub,
             idpSessionId: bounded(claims['sid']),
             idToken,
+            refreshToken: tokens.refresh_token,
           },
         };
       } catch (error) {
@@ -294,6 +319,35 @@ export function createOidcClient(
       };
     },
 
+    async refreshSession({ refreshToken, idpSessionId, idToken: current }) {
+      try {
+        const oidc = await configuration();
+        const tokens = await client.refreshTokenGrant(oidc, refreshToken);
+        const idToken = tokens.id_token;
+        if (idToken !== undefined) {
+          const claims = tokens.claims();
+          const subject = subjectOf(current);
+          if (
+            claims === undefined ||
+            !checkIdTokenClaims(claims, { issuer: config.issuer, clientId: config.clientId }) ||
+            bounded(claims['sid']) !== idpSessionId ||
+            subject === undefined ||
+            claims.sub !== subject
+          ) {
+            return { ok: false, failure: 'rejected', code: 'ID_TOKEN_CLAIMS' };
+          }
+        }
+        return {
+          ok: true,
+          // A provider that does not rotate refresh tokens leaves the current one valid (RFC 6749
+          // Section 6); Keycloak rotates them (the realm's revokeRefreshToken).
+          value: { refreshToken: tokens.refresh_token ?? refreshToken, idToken },
+        };
+      } catch (error) {
+        return failureOf(error);
+      }
+    },
+
     async verifyLogoutToken(token: string) {
       let verifier: JWTVerifyGetKey;
       try {
@@ -308,6 +362,16 @@ export function createOidcClient(
     },
   };
   return Object.freeze(oidcClient);
+}
+
+/** The subject of a stored ID token; `undefined` when there is none or it cannot be read. */
+function subjectOf(idToken: string | undefined): string | undefined {
+  if (idToken === undefined) return undefined;
+  try {
+    return bounded(decodeJwt(idToken).sub);
+  } catch {
+    return undefined;
+  }
 }
 
 function bounded(value: unknown): string | undefined {
@@ -332,6 +396,10 @@ function isUnavailable(error: unknown): boolean {
   const status = (error as { status?: unknown; cause?: { status?: unknown } } | null) ?? {};
   const statusCode = typeof status.status === 'number' ? status.status : status.cause?.status;
   if (typeof statusCode === 'number' && (statusCode >= 500 || statusCode === 429)) return true;
+  // oauth4webapi's processing errors (`OAUTH_*` codes) are validation failures, even when their
+  // cause is a `TypeError` from decoding a malformed response (IAM-R03F review S-01).
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === 'string' && code.startsWith('OAUTH_')) return false;
   const cause = (error as { cause?: unknown } | null)?.cause;
   return cause !== undefined && cause !== error && cause instanceof Error && isUnavailable(cause);
 }
