@@ -93,6 +93,16 @@ No owner decision is needed: every item follows the specification or the accepte
 - **IAM store additions:** `ApplicationUserRepository.findByIdentity(issuer, subject)`; `UserIdentityStore.recordFirstActivation({ id, expectedVersion })` succeeds only from `INVITED` at that version.
 - **Error safety:** openid-client and jose errors are mapped to `unavailable` (network, timeout, 5xx) or `rejected`; only the category and a library error code matching a safe grammar are logged.
 
+### Discoveries during the run
+
+- **openid-client does not check the ID token's signature by default.** For an ID token from the token endpoint it relies on TLS (OIDC Core 3.1.3.7). The specification requires the signature check, so discovery enables `enableNonRepudiationChecks`; the unit test with a token signed by another key fails without it.
+- **Nest registered its own body parsers for every route.** `FastifyAdapter` adds JSON and form parsers (1 MiB) at start-up, so every route parsed form bodies. The application now passes `bodyParser: false`: Fastify's built-in JSON parser (prototype-poisoning checks on) stays, and the form parser accepts only the back-channel route (D-12).
+- **Fastify appends `set-cookie`.** A second `reply.header('set-cookie', …)` adds a value instead of replacing it, so each answer sets its cookies once.
+- **Client credentials are form-encoded.** openid-client percent-encodes the Basic credentials (RFC 6749 Section 2.3.1), as Keycloak expects; the fake provider decodes them the same way.
+- **Local back-channel reachability.** On Docker Desktop 4.65 (Windows) a container reached a server bound to `127.0.0.1` through `host.docker.internal` (probe with the pinned Keycloak image). Docker Engine on Linux has no such name by default; the README says so.
+- **Recovery signal.** The reset form's "sign out from other devices" checkbox is on by default; a submission with it makes Keycloak send back-channel logout for the user's other sessions, which revokes the Vertex session (test). Without it, no signal reaches Vertex (D-15).
+- **Nest's `error(message, stack)` form.** The stack string is dropped; the message string is the caller's own text and is kept, so application code logs errors as `err` objects only.
+
 ## 6. Done means
 
 1. A real local Keycloak login (password and TOTP) through `/api/auth/login` and `/api/auth/callback` ends with only the `__Host-vertex-session` cookie; no response the browser receives contains an ID, access or refresh token, and the session row stores only hashes and the encrypted ID token. *(MP-06 exit 1, 2; MP-05 exit 1, 2.)*
@@ -122,12 +132,12 @@ No owner decision is needed: every item follows the specification or the accepte
 ## 9. Checklist
 
 - [x] M1 Plan committed
-- [ ] M2 Database: `auth` schema, migration, scoped entry, lint restriction, migration and constraint tests
-- [ ] M3 IAM: `findByIdentity`, first-activation write, `signIn`, `resolveSessionUser`; unit and persistence tests
-- [ ] M4 Auth core: configuration, session store and service, cookies, CSRF, token cipher; PostgreSQL tests
-- [ ] M5 OIDC adapter, endpoints, guard, form parser, logging fixes (A2-01, request URL); API tests
-- [ ] M6 Real Keycloak journeys: login, activation, denials, protocol rejections, logout, back-channel, recovery
-- [ ] M7 Boundaries and probes, env setup, README, OpenAPI; `pnpm verify` and integration suites green
+- [x] M2 Database: `auth` schema, migration, scoped entry, lint restriction, migration and constraint tests
+- [x] M3 IAM: `findByIdentity`, first-activation write, `signIn`, `resolveSessionUser`; unit and persistence tests
+- [x] M4 Auth core: configuration, session store and service, cookies, CSRF, token cipher; PostgreSQL tests
+- [x] M5 OIDC adapter, endpoints, guard, form parser, logging fixes (A2-01, request URL); API tests
+- [x] M6 Real Keycloak journeys: login, activation, denials, protocol rejections, logout, back-channel, recovery
+- [x] M7 Boundaries and probes, env setup, README, OpenAPI; `pnpm verify` and integration suites green
 - [ ] M8 In-run review (three reviewers); findings resolved
 - [ ] M9 Master Plan ledger, hand-off, pull request, CI green
 
