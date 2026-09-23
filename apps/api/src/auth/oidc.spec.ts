@@ -240,6 +240,77 @@ describe('OIDC client against a fake provider', () => {
     });
   });
 
+  describe('a provider that does not answer in time (IAM-CP1 CP1-21)', () => {
+    /**
+     * `fetch` rejects with these when the request's `AbortSignal.timeout` fires or the request is
+     * aborted; openid-client wraps them as `OAUTH_TIMEOUT` and `OAUTH_ABORT`.
+     */
+    const stops = [
+      ['times out', () => new DOMException('The operation timed out.', 'TimeoutError')],
+      ['is aborted', () => new DOMException('This operation was aborted', 'AbortError')],
+    ] as const;
+
+    /** The fake provider, except that requests whose path contains `stalled` never complete. */
+    function stallingClient(stalled: string, stop: () => DOMException): OidcClient {
+      return createOidcClient(oidcConfig(), {
+        fetch: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : String(input));
+          if (url.pathname.includes(stalled)) throw stop();
+          return provider.fetch(input, init);
+        },
+      });
+    }
+
+    it.each(stops)(
+      'reports a refresh that %s as unavailable, so the session is kept',
+      async (_label, stop) => {
+        const request = await oidc.authorizationRequest();
+        if (!request.ok) throw new Error('authorization request failed');
+        const callback = new URL(provider.authorize(request.value.url, { sessionId: 'kc-t' }));
+        const signedIn = await oidc.completeAuthorization({
+          query: callback.search.slice(1),
+          state: request.value.state,
+          nonce: request.value.nonce,
+          codeVerifier: request.value.codeVerifier,
+        });
+        if (!signedIn.ok || signedIn.value.refreshToken === undefined) {
+          throw new Error('sign-in failed');
+        }
+        const stalling = stallingClient('/protocol/openid-connect/token', stop);
+        await expect(
+          stalling.refreshSession({
+            refreshToken: signedIn.value.refreshToken,
+            idpSessionId: 'kc-t',
+            idToken: signedIn.value.idToken,
+          }),
+        ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
+      },
+    );
+
+    it.each(stops)('reports a code exchange that %s as unavailable', async (_label, stop) => {
+      const stalling = stallingClient('/protocol/openid-connect/token', stop);
+      const request = await stalling.authorizationRequest();
+      if (!request.ok) throw new Error('authorization request failed');
+      const callback = new URL(provider.authorize(request.value.url));
+      await expect(
+        stalling.completeAuthorization({
+          query: callback.search.slice(1),
+          state: request.value.state,
+          nonce: request.value.nonce,
+          codeVerifier: request.value.codeVerifier,
+        }),
+      ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
+    });
+
+    it.each(stops)('reports a discovery that %s as unavailable', async (_label, stop) => {
+      const stalling = stallingClient('/.well-known/', stop);
+      await expect(stalling.authorizationRequest()).resolves.toMatchObject({
+        ok: false,
+        failure: 'unavailable',
+      });
+    });
+  });
+
   it('retries discovery after a failure', async () => {
     provider.offline = true;
     await expect(oidc.authorizationRequest()).resolves.toMatchObject({ ok: false });
