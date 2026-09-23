@@ -28,6 +28,54 @@ services:
       retries: 12
       start_period: 5s
 
+  # Keycloak identity provider for local development only (docs/modules/iam.md Sections 37-38).
+  # Development mode with its embedded database; never a production configuration. The `vertex`
+  # realm is imported from infra/keycloak/import on the first start of an empty volume and is
+  # never re-imported afterwards: apply realm changes with `pnpm infra:reset`.
+  keycloak:
+    # Tag and digest pinned; apps/api/test-support/keycloak.ts uses the same reference (a unit
+    # test fails if they differ).
+    image: quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c
+    command: ['start-dev', '--import-realm']
+    env_file:
+      - ./keycloak/keycloak.env
+    environment:
+      # Deterministic local issuer: http://127.0.0.1:<port>/realms/vertex.
+      KC_HOSTNAME: http://127.0.0.1:${KEYCLOAK_PORT:-8080}
+      # Master-realm administrator, created only when the volume is empty. No committed default.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:?set KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME in .env (pnpm env:setup)}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?set KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD in .env (pnpm env:setup)}
+      # Placeholders resolved by the realm import (infra/keycloak/import/vertex-realm.json).
+      KEYCLOAK_WEB_CLIENT_SECRET: ${KEYCLOAK_WEB_CLIENT_SECRET:?set KEYCLOAK_WEB_CLIENT_SECRET in .env (pnpm env:setup)}
+      KEYCLOAK_PROVISIONER_CLIENT_SECRET: ${KEYCLOAK_PROVISIONER_CLIENT_SECRET:?set KEYCLOAK_PROVISIONER_CLIENT_SECRET in .env (pnpm env:setup)}
+      KEYCLOAK_WEB_REDIRECT_URI: ${KEYCLOAK_WEB_REDIRECT_URI:?set KEYCLOAK_WEB_REDIRECT_URI in .env (pnpm env:setup)}
+      KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI: ${KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI:?set KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI in .env (pnpm env:setup)}
+      KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL: ${KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL:?set KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL in .env (pnpm env:setup)}
+    ports:
+      # Loopback only. The management port (9000, health) is not published.
+      - '127.0.0.1:${KEYCLOAK_PORT:-8080}:8080'
+    volumes:
+      # Embedded development database (data/h2) and runtime state; the image owns the directory.
+      - keycloak-data:/opt/keycloak/data
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+    healthcheck:
+      # The image has no curl; bash /dev/tcp asks the management interface for readiness, which
+      # reports UP only after the realm import has finished.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"status": "UP"' <&3
+      interval: 5s
+      timeout: 3s
+      retries: 36
+      start_period: 20s
+
 volumes:
-  # Survives `pnpm infra:down`; removed only by the explicit `pnpm infra:reset`.
+  # Both survive `pnpm infra:down` and are removed together only by the explicit
+  # `pnpm infra:reset`, so IAM rows and Keycloak identities never drift apart.
   postgres-data:
+  keycloak-data:

@@ -1,4 +1,7 @@
-import baseConfig, { restrictedImportPatterns } from '../../eslint.config.mjs';
+import baseConfig, {
+  restrictedImportPaths,
+  restrictedImportPatterns,
+} from '../../eslint.config.mjs';
 
 const adapterPatterns = restrictedImportPatterns.map((pattern) =>
   pattern.group.includes('@vertex-os/iam/*')
@@ -13,7 +16,12 @@ export default [
   ...baseConfig,
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.mts'],
-    rules: { 'no-restricted-imports': ['error', { patterns: adapterPatterns }] },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: restrictedImportPaths, patterns: adapterPatterns },
+      ],
+    },
   },
   {
     files: ['**/*.json'],

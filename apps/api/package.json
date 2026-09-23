@@ -97,7 +97,23 @@
           "build"
         ]
       },
-      "test": {},
+      "test": {
+        "inputs": [
+          "default",
+          "^production",
+          {
+            "externalDependencies": [
+              "vitest"
+            ]
+          },
+          {
+            "dependentTasksOutputFiles": "**/*.js",
+            "transitive": true
+          },
+          "{workspaceRoot}/infra/**/*",
+          "{workspaceRoot}/.env.example"
+        ]
+      },
       "test:integration": {
         "dependsOn": [
           "^build",
