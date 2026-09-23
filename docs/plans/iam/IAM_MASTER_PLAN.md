@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next run:** `IAM-R01` (stage `IAM-MP-03`) — `READY`; start it with `/stage IAM-MP-03`  
+**Next run:** `IAM-R02` (stage `IAM-MP-04`) — `READY`; start it with `/stage IAM-MP-04`  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -734,7 +734,7 @@ The executable plan resolves these at plan level (its Section 5.1 and decisions 
 
 ## IAM-MP-03 — Keycloak Environment, Realm Contract & Integration Harness
 
-**Status:** READY  
+**Status:** COMPLETE (run `IAM-R01`, plan `IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md`)  
 **Parent specification area:** IAM-2, Sections 7, 37–39, 46.4  
 **Depends on:** IAM-MP-02 COMPLETE (satisfied 2026-09-23)
 
@@ -796,9 +796,9 @@ Details and evidence: `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Secti
 
 ## IAM-MP-04 — Identity Reconciliation, Provisioning & Invitation Delivery
 
-**Status:** PLANNED  
+**Status:** READY  
 **Parent specification area:** IAM-2, Sections 11–13, 31, 50  
-**Depends on:** IAM-MP-03 COMPLETE
+**Depends on:** IAM-MP-03 COMPLETE (run `IAM-R01`)
 
 ### Objective
 
@@ -826,6 +826,15 @@ Implement the single safe IAM path that reconciles committed Vertex user state w
 ### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
 
 - **Keycloak Admin errors** can contain emails in their messages. Translate them to safe categories before logging (spec Section 36); the generic serializer path logs the messages of non-database errors.
+
+### Carried forward from run IAM-R01 (`IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md`)
+
+- **A-04 (IAM-MP-00 audit):** if this stage installs a Keycloak Admin client package, prove that an IAM domain-core import of it is rejected.
+- **Typed provisioner configuration (R01 D-11):** map the provisioner values into `AppConfig` through the existing loader, validating secrets without echoing them. The values are the realm issuer URL, the `vertex-provisioner` client ID and `KEYCLOAK_PROVISIONER_CLIENT_SECRET`.
+- **Email delivery:** the realm has no SMTP configuration. Add it with credentials supplied as secrets (spec Section 37), and choose how local development and tests receive invitation email. A new local container is a new infrastructure service; get the owner's approval if one is needed.
+- **Self-service credential recovery (R01 review S-01):** the realm ships with `resetPasswordAllowed: false`. Keycloak's built-in reset flow lets whoever holds the mailbox enrol a new TOTP and set a new password. Turn reset on again only with a reset-credentials flow that demands the existing OTP (users without one enrol during the flow), proven end to end with the mail sink. Likewise, no invitation or resend may become an email-only way to replace an enrolled user's factors.
+- **Provisioner residual (R01 D-14):** `manage-users` can also reset passwords, grant `manage-users`, clear brute-force lockouts and read role mappings. The adapter uses only the operations spec Section 7.2 lists.
+- **Harness:** reuse `apps/api/test-support/keycloak.ts`. If the Admin REST adapter lives in a library project, decide where the harness belongs, because a library cannot import from `apps/api`.
 
 ### Exit criteria
 
@@ -878,6 +887,10 @@ Create backend-owned, PostgreSQL-backed application-session infrastructure witho
 ### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
 
 - **A2-01 and API statement-timeout sizing** (see the IAM-MP-03 section): owned by whichever of IAM-MP-05, IAM-MP-06 or IAM-MP-07 first composes IAM or Audit persistence, or any query beyond `ping`, into the HTTP runtime.
+
+### Carried forward from run IAM-R01
+
+- **SSO limits:** the realm sets Keycloak SSO idle to 1800 s and maximum to 36000 s. SECURITY Section 11 forbids the identity-provider limits from exceeding the application-session limits. If this stage chooses a shorter application idle or absolute lifetime, lower the realm values in the same run.
 
 ### Exit criteria
 
@@ -933,6 +946,12 @@ Deliver the complete first-party browser authentication lifecycle against the re
 - **Security events** (sign-in denials and similar; IAM-02 plan Section 40): Audit records with `REFUSED`/`FAILED`, structured security logs, or both (IAM-MP-05/06, spec Section 34).
 - **A-04 (OIDC runtime; IAM-MP-00 audit):** add the chosen OIDC runtime library to the domain-core ban list and prove an IAM import of it is rejected.
 - **Request-URL logging** (found by the 2026-09-23 repository documentation audit): the API logger replaces only the `err` serializer, so Fastify's default `req` serializer logs the full URL including the query string. The OIDC callback (`?code=…&state=…`) must not log authorization codes or state (spec Section 36); prove it with a test.
+- **From run IAM-R01:**
+  - **Typed OIDC configuration (R01 D-11).** Map into `AppConfig` the issuer, the `vertex-web` client ID and secret, and the redirect and post-logout URIs (`KEYCLOAK_*` in `.env.example`).
+  - **Audience binding.** Validate `aud`/`azp` against `vertex-web`: other realm clients (the account console) issue tokens for the same users.
+  - **Back-channel logout reachability.** Keycloak calls `KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL` from inside its container (`host.docker.internal`), while the API listens on 127.0.0.1. Prove that the call arrives locally and in the Testcontainers harness on Linux CI, or change the value.
+  - **Cookie scoping.** Keycloak (127.0.0.1:8080) and the web origin (127.0.0.1:4200) share a host, and cookies are not port-scoped. Scope the application-session and login-attempt cookies so they are not sent to Keycloak and cannot collide with Keycloak's cookies.
+  - **MFA in browser tests.** The realm's browser flow requires TOTP, so the end-to-end journey needs a deterministic TOTP credential in the ephemeral test realm (for example through the Admin partial-import API). Production gets no bypass.
 
 ### Exit criteria
 
@@ -1535,21 +1554,30 @@ Risk IDs were `IAM-R01`…`IAM-R17` until run IDs took the `IAM-Rnn` form (Secti
 
 This Master Plan is `ACTIVE`. IAM-MP-00 to IAM-MP-02 are `COMPLETE` under the previous method: each was independently audited (`IAM-00`, `IAM-01`, `IAM-02 ACCEPTED`, no blocking findings) and accepted by the owner on 2026-09-23.
 
-The next run is `IAM-R01` (IAM-MP-03), which is `READY`. Its plan is written from the current `main` by `/stage IAM-MP-03`. It must resolve the items under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in the IAM-MP-03 section that belong to this stage (A-04 for Keycloak packages, A-02 optionally, A2-02 and A2-03); A2-01 passes on under the condition stated there.
+Run `IAM-R01` delivered IAM-MP-03 (plan `IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed A-02, A2-02 and A2-03. A-04 was not triggered, because no Keycloak package was installed, and passes to IAM-MP-04 and IAM-MP-06. A2-01 passes on under the condition stated in the IAM-MP-03 section.
+
+The next run is `IAM-R02` (IAM-MP-04), which is `READY`. Its plan is written from the merged `main` by `/stage IAM-MP-04`. It must resolve the items carried forward in the IAM-MP-04 section, including those from run IAM-R01.
 
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
 - `docs/modules/audit.md`: when MOD-AUDIT is fully specified; it adopts or deliberately migrates the foundation contract (IAM-02 D-05). Until then `docs/modules/iam.md` Sections 34–35 specify the implemented foundation;
-- a shared test-support package: decided when a fourth copy of the PostgreSQL test harness would be needed.
+- a shared test-support package: decided when a fourth copy of the PostgreSQL test harness would be needed;
+- production identity provider (run IAM-R01): production deployment design. It covers:
+  - the realm's production form (hostname, TLS, database, no `start-dev`);
+  - never importing `vertex-realm.json` without every placeholder set, because Keycloak imports an unset `${NAME}` literally (verified on 26.7.4);
+  - Argon2id benchmarking on production hardware;
+  - WebAuthn/passkeys and a compromised-password list (SHOULD items);
+  - event retention;
+  - narrowing `vertex-provisioner` with fine-grained admin permissions (also reviewed by the Final IAM Module Audit).
 
 | Stage | Run | Status | Required before the run starts |
 |---|---|---|---|
 | IAM-MP-00 Architecture & Domain Boundary Foundation | — | COMPLETE | IAM spec execution gate (closed) |
 | IAM-MP-01 IAM Persistence & First Migration | — | COMPLETE | MP-00 COMPLETE (satisfied) |
 | IAM-MP-02 Reference Data & Minimal Audit Foundation | — | COMPLETE | MP-01 COMPLETE (satisfied) |
-| IAM-MP-03 Keycloak Environment & Realm Contract | R01 | READY | MP-02 COMPLETE (satisfied) |
-| IAM-MP-04 Identity Reconciliation & Invitations | R02 | PLANNED | R01 merged |
+| IAM-MP-03 Keycloak Environment & Realm Contract | R01 | COMPLETE | MP-02 COMPLETE (satisfied) |
+| IAM-MP-04 Identity Reconciliation & Invitations | R02 | READY | R01 merged |
 | IAM-MP-05 Application Session Foundation | R03 | PLANNED | R02 merged |
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | PLANNED | R02 merged |
 | `IAM-CP1` Deep audit: authentication | — | PLANNED | R03 merged |
@@ -1812,15 +1840,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-02 are complete and accepted (Section 15). Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-03 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-The next step is run `IAM-R01`, which delivers IAM-MP-03 only. Start it in a new Claude Code session:
+The next step is run `IAM-R02`, which delivers IAM-MP-04 only. Start it in a new Claude Code session after the `IAM-R01` pull request is merged:
 
 ```text
-/stage IAM-MP-03
+/stage IAM-MP-04
 ```
 
-The run writes its plan to `docs/plans/iam/IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md` on the branch `iam/r01-keycloak-environment`. It resolves the items under "Carried forward from the IAM-MP-00 audit" (A-04; A-02 optional) and "Carried forward from the IAM-MP-02 audit" (A2-02, A2-03; A2-01 passes on) in the IAM-MP-03 section, and ends with a reviewed pull request.
+The run writes its plan under `docs/plans/iam/` on a branch `iam/r02-<short-name>`. It resolves the items carried forward in the IAM-MP-04 section, including those from run IAM-R01, and ends with a reviewed pull request.
 
 Do **not** plan later runs in detail now.
 

@@ -171,6 +171,13 @@ const violations = [
     createRequireBan,
   ],
   ['V57', 'apps/api', "import m = require('node:module'); void m;", syntaxRule, createRequireBan],
+  [
+    'V62',
+    'packages/ui',
+    "import { createRequire } from 'node:module';",
+    importsRule,
+    createRequireBan,
+  ],
   // Template, re-export and nested-destructuring routes to the raw environment and unsafe SQL.
   ['V58', 'domains/iam', 'process[`env`];', syntaxRule, rawEnvironment],
   ['V59', 'domains/iam', "export * from 'node:process';", syntaxRule, rawEnvironment],

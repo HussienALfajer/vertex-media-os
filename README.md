@@ -128,7 +128,7 @@ data.
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V61, C1–C8)                     |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V62, C1–C8)                     |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
 | `pnpm build`            | Production builds of every project with a build target                            |

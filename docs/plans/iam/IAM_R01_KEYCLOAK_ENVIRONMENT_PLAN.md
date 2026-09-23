@@ -1,6 +1,6 @@
 # IAM-R01 — Keycloak Environment, Realm Contract & Integration Harness
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** IAM-MP-03  
 **Risk tier:** A (reviewers: security; architecture and boundaries; tests and verification)  
 **Branch:** `iam/r01-keycloak-environment`  
@@ -95,7 +95,8 @@ Carried-forward items and their resolution in this run:
    - user-profile restrictions through the account route (username, email and `vertexUserId` unchanged; `vertexUserId` hidden), with the Update Email action disabled;
    - the password policy and Argon2id parameters, and TOTP enrolment demanded before a code is issued;
    - brute-force lockout, a LOGIN_ERROR event and an admin CREATE event attributed to the provisioner;
-   - SSO and token limits, and no test secret in the Keycloak logs.
+   - SSO and token limits, and no test secret in the Keycloak logs;
+   - no client in the realm issues a token through a password or implicit grant, and self-service reset is off (added after in-run review, S-01 and S-02).
 
    *(MP exit: policy verifiably configured; realm reproducible without console state.)*
 4. Unit tests pin the image reference across Compose and the harness, assert loopback-only ports, and assert that every client secret in the realm file is a bare placeholder.
@@ -128,4 +129,45 @@ Carried-forward items and their resolution in this run:
 
 ## 10. Hand-off
 
-*Written at the end of the run.*
+**In-run review.** Three fresh-context reviewers checked `main...HEAD`: security, architecture and boundaries, and tests and verification. Every finding's evidence was checked before it was accepted.
+
+- **Fixed in the run:**
+  - AB-1 (blocking): the persistence adapters' import overrides dropped the `createRequire` ban.
+  - AB-2 and AB-3: other routes to `createRequire`, and template, re-export and nested-destructuring forms of the environment and unsafe-SQL bans.
+  - AB-6, from the re-check: `packages/ui` now keeps the `node:module` ban while it drops the import patterns.
+  - S-01: the mailbox-only takeover through self-service reset, fixed by turning reset off.
+  - S-02: the built-in `admin-cli` password grant.
+  - S-03: the committed admin username default.
+  - T-1 to T-3 (blocking): lockout, provisioner-flow and password-policy tests could pass with the policy broken.
+  - T-4, T-5 and T-6.
+- **Recorded:** S-04 (D-14 residuals), AB-4 (aliasing and `Reflect.get` cannot be closed by syntax lint, see D-13) and AB-5 (harness location, below).
+
+The architecture and tests reviewers re-checked their fixes.
+
+**Carried forward** (attached to the Master Plan stages):
+
+- **IAM-MP-04:**
+  - A-04, if a Keycloak Admin client package is installed;
+  - typed provisioner configuration (D-11);
+  - SMTP and a local mail sink (the owner approves a new local service if one is needed);
+  - self-service recovery re-enabled only with an OTP-requiring reset flow (S-01);
+  - the provisioner residuals (D-14);
+  - where the harness lives if the adapter is a library (AB-5).
+- **IAM-MP-05:** Keycloak SSO limits (1800 s idle, 36000 s maximum) must stay within the application-session limits it chooses.
+- **IAM-MP-06:**
+  - typed OIDC configuration;
+  - `aud`/`azp` binding to `vertex-web`;
+  - back-channel logout reachability from the Keycloak container, including on Linux CI;
+  - cookie scoping on the shared 127.0.0.1 host;
+  - a deterministic TOTP credential for browser tests.
+- **Production deployment design (no IAM stage):**
+  - production realm form;
+  - never importing the realm with an unset placeholder, because Keycloak imports `${NAME}` literally (verified);
+  - Argon2id benchmark;
+  - WebAuthn/passkeys;
+  - compromised-password list;
+  - event retention;
+  - fine-grained narrowing of the provisioner.
+- **A2-01 and the API statement timeout:** unchanged, passed to the first stage that composes persistence into HTTP.
+
+**Local environment note.** A developer whose Keycloak volume was created before the review fixes still has the earlier realm, with reset enabled and the built-in `admin-cli` direct grant. Recreating only the Keycloak volume, or running `pnpm infra:reset`, imports the current realm.
