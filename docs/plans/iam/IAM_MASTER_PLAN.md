@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-02` — `READY` (IAM-MP-01 `COMPLETE`: implemented in `5056c9f`, audited `IAM-01 ACCEPTED` and baseline accepted by the owner on 2026-09-23; the IAM-MP-02 executable plan is not yet written)  
+**Next executable stage:** `IAM-MP-02` — `READY` (IAM-MP-01 `COMPLETE`: implemented in `5056c9f`, audited `IAM-01 ACCEPTED` and baseline accepted by the owner on 2026-09-23; the IAM-MP-02 executable plan `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` is written and awaits implementation)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -671,7 +671,8 @@ The resolutions become effective when that plan is implemented and audited.
 
 **Status:** READY  
 **Parent specification area:** IAM-1, Sections 18–21, 34–35, 48–49  
-**Depends on:** IAM-MP-01 COMPLETE (satisfied 2026-09-23)
+**Depends on:** IAM-MP-01 COMPLETE (satisfied 2026-09-23)  
+**Executable plan:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` (written from `21f536c`; not yet implemented)
 
 ### Objective
 
@@ -702,6 +703,16 @@ Details and evidence: `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Section 40A.
 - **A1-03 (owner, documentation):** replace the two-segment `projects.edit` examples in `docs/modules/iam.md` Sections 6.4, 16.1 and 16.3 and `docs/SECURITY.md` with three-segment codes; the audit upheld interpretation I-4.
 - **A1-05, A1-07 (optional):** make the `updatedAt` advance assertion time-independent, and assert foreign-key referential actions and the lower module-length bound by name, when the adapter tests are next touched.
 - Open items passed on by the IAM-01 plan (Section 34): API statement-timeout sizing when IAM persistence is first composed; primary-membership switch ordering (IAM-MP-08); A-02 and A-04 (IAM-MP-03/06).
+
+The executable plan resolves these at plan level (its Section 5.1 and decisions D-01…D-17). The owner accepted it on 2026-09-23 and delegated its flagged decisions to the planning agent (plan Section 12.1):
+
+- MOD-AUDIT gets its own core `domains/audit` and adapter `domains/audit-persistence`, with a `domain:audit` boundary that IAM may depend on and that never depends on IAM;
+- per-domain database entries `@vertex-os/database/iam` and `/audit` replace `/persistence`, so neither adapter can reach the other's models through the typed client (R-06);
+- IAM mutations and their Audit evidence share one transaction through an opaque database transaction handle, an IAM-specific transaction port and composition-root wiring (the first AR-022 case);
+- reference synchronization runs only through the operator command `pnpm iam:sync-reference`, serialized by an advisory lock and fully audited;
+- `iam_role_system_code_ck` makes the system role unforgeable in the database;
+- A1-01 is closed by syntax selectors; A1-02 by logging only an allowlisted description of database errors; A1-03, A1-05 and A1-07 are applied;
+- the API statement-timeout item stays open, because the stage composes persistence only into the operator command, not the HTTP runtime.
 
 ### Exit criteria
 
@@ -1486,7 +1497,7 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 is `COMPLETE`: its independent audit returned `IAM-01 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No subsequent IAM stage has started.
 
-The next stage eligible for detailed planning is `IAM-MP-02`, which is `READY`: its executable plan may be written from the current `main`, but it has not yet been created or implemented. It must carry the items listed under "Carried forward from the IAM-MP-01 audit" in its section.
+The next stage is `IAM-MP-02`, which is `READY`: its executable plan `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` has been written from `21f536c` and carries the items listed under "Carried forward from the IAM-MP-01 audit", but it has not been implemented.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
@@ -1546,6 +1557,14 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **Evidence:** `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Section 40A (verdict `IAM-01 ACCEPTED`, no blocking findings, no implementation fix), and CI run 35811045334 on `3cc9cd4`: frozen install, `pnpm verify:full` including `lint:boundaries`, fresh-container migration and drift tests and the adapter suite on `ubuntu-24.04`, Playwright 130/130 with no flaky test, and `pnpm deps:audit`.
 - **Stages affected:** IAM-MP-02 becomes eligible for detailed planning and carries A1-01, A1-02, A1-03, A1-05 and A1-07 plus the IAM-01 plan's Section 34 open items. Stage order and ownership are unchanged.
 - **Accepted baselines:** IAM-MP-00 and IAM-MP-01.
+
+### Amendment record — IAM-MP-02 executable plan written (2026-09-23)
+
+- **What changed:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` was written from `main` at `21f536c`. IAM-MP-02 remains `READY` until its implementation conversation starts. The IAM-MP-02 section now links the plan and summarizes how it resolves the carried-forward items.
+- **Evidence:** the plan's Section 6.3 records planning-time probes against the repository's own Prisma 7.10.0 CLI, a throwaway PostgreSQL 18.6 container and the repository's ESLint/Nx configuration. The most important finding: an unexpected database error puts personal data into logs through two paths, the driver's `detail` (a whole row, email included) and, for invalid input, the error message itself. A1-02 therefore needs an allowlisted description, not the removal of one property.
+- **Stages affected:** none reordered. The stage was checked for a split into "Audit foundation" and "reference synchronization" and kept whole: an Audit capability without a consumer would be speculative, and a synchronization without Audit would break spec Section 9.6 (plan Section 2.1).
+- **Owner acceptance:** the owner accepted the plan on 2026-09-23 and delegated its flagged decisions. The rulings (D-03 and D-04 confirmed, D-04 recorded in `docs/ENGINEERING.md` rather than an ADR, I-1, I-3 and I-5 confirmed, A1-03 wording fixed, no `docs/modules/audit.md` yet) are in plan Section 12.1.
+- **Accepted baselines:** remain valid.
 
 ---
 
@@ -1723,13 +1742,15 @@ It was written from `main` at `a1e087f` using the structure required by `docs/PL
 
 IAM-MP-01 has been completed through the same cycle: implemented (`5056c9f`), independently audited (`IAM-01 ACCEPTED`, executable plan Section 40A, recorded in `3cc9cd4`) and accepted by the owner on 2026-09-23.
 
-The next step is to create the executable plan for IAM-MP-02, and only that plan:
+The executable plan for IAM-MP-02 now exists:
 
 ```text
-docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md   (recommended name)
+docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md
 ```
 
-Write it from the accepted `main`, using the structure required by `docs/PLANNING.md`, and carry the items listed under "Carried forward from the IAM-MP-01 audit" in the IAM-MP-02 section. Then implement it in one conversation, audit it independently, and accept its baseline before planning IAM-MP-03.
+It was written from `main` at `21f536c` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A1-01, A1-02, A1-03, A1-05, A1-07 and R-06 (its Section 5.1).
+
+The owner accepted that plan on 2026-09-23 (plan Section 12.1). The next step is to implement it in one conversation, audit it independently, and accept its baseline before planning IAM-MP-03.
 
 Do **not** create detailed implementation plans for IAM-MP-03 through IAM-MP-15 now.
 
