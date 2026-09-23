@@ -1213,6 +1213,7 @@ Implement the highest-risk IAM administrative workflows as application services 
 - **System Administrator lock.** Suspension, disablement and termination of an ACTIVE user, and bootstrap, lock the `system-administrator` role row `FOR UPDATE` before the user row (R05 D-05, D-06), then count ACTIVE holders under it; the rule is `decideRoleRemoval`'s. Look the row up by the reserved code.
 - **User creation with memberships and roles** must apply the R05 rules (ACTIVE department locked `FOR SHARE`, ACTIVE role, System Administrator lock when the role is assigned) instead of `createApplicationUserRepository.create` inserting them unchecked.
 - **Lock order across both stores** (review AB-5): an operation that uses `OrganizationStore` and `RoleStore` together keeps role → user → department/permission.
+- **Grant ceiling (owner decision 2026-09-24, spec Section 23.1).** Enforce it in the R05 use cases `assignRole`, `activateRole` and `replaceRolePermissions` (added codes), and in user creation with initial roles: a USER actor who is not an ACTIVE System Administrator cannot grant a permission they do not hold effectively, nor assign the system role. Evaluate the actor's committed permissions inside the same transaction, after the D-05 locks (read the actor's user row without locking it, so no lock-order cycle forms); refuse with outcome `grant-exceeds-actor` and a REFUSED Audit record. Removals and deactivation stay unlimited; SYSTEM actors are exempt. Tests: self-escalation to the system role, mapping a privileged code into one's own role, activating an inactive privileged role, and a System Administrator unaffected. It lands in IAM-R06 so that `IAM-CP2` audits it with the rest of the administration core.
 
 ### Exit criteria
 
@@ -1282,7 +1283,7 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 
 ### Carried forward from run IAM-R05 (`IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`)
 
-- **Owner decision before the routes are mounted (review S-1):** whether an administrator may grant roles or map permissions beyond their own effective permissions (a grant ceiling), or whether `iam.users.manage-roles` and `iam.roles.manage` keep their unlimited meaning of spec Section 19. It changes the authorization model.
+- **Grant ceiling (review S-1): decided by the owner on 2026-09-24** — option 1, spec Section 23.1. IAM-R06 implements it in the use cases (see IAM-MP-10); this stage maps `grant-exceeds-actor` to `403 IAM_GRANT_EXCEEDS_ACTOR` and passes the current actor as the Audit attribution.
 - **Routes over the bound capability** `createIamAdministration` (`apps/api/src/iam/administration.ts`), each with `@RequirePermission` and an Audit attribution from `CurrentActor`; the outcome → error-code mapping of R05 Section 5.6, naming once the codes the specification lacks (`version-conflict`, `code-taken`, `membership-not-found`, `assignment-not-found`, `unknown-permission`, `permission-not-assignable`, `invalid`).
 - **Root types for DTOs** (review AB-3): `DepartmentCode`, `RoleCode`, `EntityName`, `Description`, `DepartmentState`, `RoleState` are not on the root yet.
 - **Lock-wait timeouts** (review DC-2) surface as unclassified errors; map them to a stable error. Validate every request field before the use cases (review S-6).
@@ -1731,6 +1732,12 @@ The ledger changes only through the pull request of the run or audit that produc
 - **Accepted baselines:** IAM-MP-05 and IAM-MP-06 with the `IAM-R03F` correction and the CP1-21 fix.
 
 The records below were written under the previous method and are kept as history. Under the current method, a record is added only when the roadmap changes.
+
+### Amendment record — grant ceiling (2026-09-24)
+
+- **What changed:** the owner chose option 1 for review finding S-1 of run `IAM-R05`: an administrator who is not an ACTIVE System Administrator cannot grant a role, activate a role or map a permission beyond their own effective permissions, and cannot assign the system role. The rule is spec Section 23.1 with error code `IAM_GRANT_EXCEEDS_ACTOR`. Implementation is attached to IAM-MP-10 (run `IAM-R06`), the HTTP mapping to IAM-MP-11.
+- **Why:** spec Section 19 gave `iam.users.manage-roles` and `iam.roles.manage` no limit, which allowed self-escalation to System Administrator; `docs/SECURITY.md` requires protection against vertical privilege escalation. It changes the authorization model, so it was the owner's decision (`AGENTS.md`, "Changes Requiring Explicit Approval").
+- **Placement:** in IAM-R06 rather than IAM-R07 so that the `IAM-CP2` deep audit covers it with the administration core it constrains.
 
 ### Amendment record — IAM-MP-00 acceptance (2026-09-23)
 

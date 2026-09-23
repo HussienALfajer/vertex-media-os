@@ -950,6 +950,16 @@ Rules:
 - duplicate assignments are forbidden;
 - direct user-permission grants are forbidden in V1.
 
+### 23.1 Grant ceiling
+
+No administrator can grant more than they hold (owner decision, 2026-09-24). An actor who is not an ACTIVE System Administrator:
+
+- may assign a role, or activate a custom role, only when every ACTIVE permission mapped to that role is among the actor's own effective permissions;
+- may add a permission to a custom role's mappings only when the actor holds that permission effectively;
+- may never assign the system-administrator role.
+
+Removing a role, removing a mapping, and deactivating a role are not limited by the ceiling. An ACTIVE System Administrator holds every ACTIVE permission and is therefore not limited. The ceiling is evaluated inside the same serialized transaction as the change, against the actor's committed state; a system process (bootstrap) is not subject to it. A refused grant changes nothing, is recorded as a REFUSED Audit record, and fails with IAM_GRANT_EXCEEDS_ACTOR (403).
+
 ---
 
 ## 24. Protected-by-Default HTTP Policy
@@ -1089,6 +1099,7 @@ Recommended baseline:
 | 409 | IAM_INVITATION_NOT_APPLICABLE |
 | 409 | IAM_LAST_SYSTEM_ADMIN |
 | 409 | IAM_SYSTEM_ROLE_PROTECTED |
+| 403 | IAM_GRANT_EXCEEDS_ACTOR |
 | 409 | IAM_ROLE_INACTIVE |
 | 409 | IAM_DEPARTMENT_INACTIVE |
 | 409 | IAM_DUPLICATE_ROLE_ASSIGNMENT |
