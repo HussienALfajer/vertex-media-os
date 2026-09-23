@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** once the `IAM-R03F` pull request is merged, re-check `IAM-CP1` with `/audit IAM-CP1` (blocking finding CP1-01; record `audits/IAM-CP1.md`). `IAM-R04` (IAM-MP-07) waits for `IAM-CP1 ACCEPTED`  
+**Next step:** once the `IAM-CP1` re-check 1 record is merged, run fix run `IAM-R03F2` with `/stage IAM-R03F2` (blocking finding CP1-21; record `audits/IAM-CP1.md` Section 5); after it merges, re-check `IAM-CP1` with `/audit IAM-CP1`. `IAM-R04` (IAM-MP-07) waits for `IAM-CP1 ACCEPTED`  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -471,6 +471,7 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R02` | IAM-MP-04 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R03` | IAM-MP-05, IAM-MP-06 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP1` deep audit** — authentication (MP-03 to MP-06) |
 | `IAM-R03F` | fix run for the `IAM-CP1` blocking finding (IAM-MP-05, IAM-MP-06 scope; `docs/PLANNING.md` Section 9) | A | security; data and concurrency; tests and verification | `IAM-CP1` re-check of its blocking finding |
+| `IAM-R03F2` | fix run for the `IAM-CP1` re-check 1 blocking finding CP1-21 (IAM-MP-05, IAM-MP-06 scope; `docs/PLANNING.md` Section 9) | A | security; data and concurrency; tests and verification | `IAM-CP1` re-check of CP1-21 |
 | `IAM-R04` | IAM-MP-07 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R05` | IAM-MP-08, IAM-MP-09 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP2` deep audit** — authorization and administration core (MP-07 to MP-10) |
@@ -1603,6 +1604,8 @@ The `IAM-CP1` deep audit of `48ff7cc` (record `audits/IAM-CP1.md`) returned `IAM
 
 Fix run `IAM-R03F` (plan `IAM_R03F_SESSION_REVALIDATION_PLAN.md`) resolved CP1-01. It is `COMPLETE` once its pull request is merged. The API keeps each session's refresh token encrypted server-side (its own key purpose) and refreshes the Keycloak session at most once a minute while the Vertex session is used; the idle deadline slides only after a successful refresh, a refusal revokes the session (reason `PROVIDER_SESSION_ENDED`, Audit evidence), and an outage keeps the current deadline without sliding it (R03F D-01 to D-09). Real-Keycloak tests show a used session surviving the SSO idle timeout and its grace window and still receiving Keycloak's logout, and a silently ended Keycloak session or a disabled identity ending the Vertex session at its next re-validation (R03F D-10). It also closed CP1-02, CP1-10, CP1-12 and CP1-16 and the realm-contract brute-force flake (R03F D-11 to D-13). `/audit IAM-CP1` re-checks CP1-01 next.
 
+The `IAM-CP1` re-check 1 of `cd82811` (record `audits/IAM-CP1.md` Section 5) returned `IAM-CP1 FIXES REQUIRED`. CP1-01 is resolved, and so are CP1-02, CP1-10 and CP1-16; CP1-12 is resolved in the auth suites, and its remainder in the provisioning suite is CP1-26. The fix run introduced one blocking finding, CP1-21: review fix S-01 classes an identity-provider timeout as `rejected`, so a hung Keycloak revokes every session that comes due (reason `PROVIDER_SESSION_ENDED`) and a timed-out sign-in answers `AUTH_LOGIN_FAILED`. This contradicts R03F D-05 and Done means 3. Fix run `IAM-R03F2` resolves it together with CP1-22 to CP1-25 and the M8 tick of CP1-29; `/audit IAM-CP1` then re-checks CP1-21. The record's other non-blocking findings (CP1-26 to IAM-MP-10, CP1-27 to IAM-MP-15, and the earlier CP1-03 to CP1-18 owners) are attached to their stages when a re-check accepts `IAM-CP1`.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
@@ -1629,7 +1632,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-05 Application Session Foundation | R03 | COMPLETE | R02 merged (satisfied) |
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | COMPLETE | R02 merged (satisfied) |
 | `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | COMPLETE | `IAM-CP1` record merged (satisfied) |
-| `IAM-CP1` Deep audit: authentication | — | READY | R03 merged (audited: FIXES REQUIRED); re-check after R03F merged |
+| `IAM-R03F2` Fix run for the `IAM-CP1` re-check 1 blocking finding | R03F2 | READY | `IAM-CP1` re-check 1 record merged |
+| `IAM-CP1` Deep audit: authentication | — | READY | R03 merged (audited: FIXES REQUIRED); R03F merged (re-check 1: FIXES REQUIRED); re-check after R03F2 merged |
 | IAM-MP-07 Default Protection & Authorization Context | R04 | PLANNED | `IAM-CP1 ACCEPTED` |
 | IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | PLANNED | R04 merged |
@@ -1656,6 +1660,13 @@ The ledger changes only through the pull request of the run or audit that produc
 - **What changed:** run `IAM-R03F` (Tier A) was added between `IAM-R03` and the `IAM-CP1` re-check (Section 8.3 and the ledger).
 - **Why:** `IAM-CP1 FIXES REQUIRED` (`audits/IAM-CP1.md`, blocking finding CP1-01). `docs/PLANNING.md` Section 9 requires a dedicated fix run, and `/stage` starts only runs listed here.
 - **Stages affected:** IAM-MP-05 and IAM-MP-06 stay `COMPLETE` (merged); their session behavior is corrected by `IAM-R03F`. IAM-MP-07 still waits for `IAM-CP1 ACCEPTED`. Stage order and ownership are unchanged.
+- **Accepted baselines:** unchanged. `IAM-CP1` is not accepted.
+
+### Amendment record — `IAM-CP1` second fix run (2026-09-23)
+
+- **What changed:** run `IAM-R03F2` (Tier A) was added between `IAM-R03F` and the next `IAM-CP1` re-check (Section 8.3 and the ledger).
+- **Why:** the `IAM-CP1` re-check 1 returned `IAM-CP1 FIXES REQUIRED` (`audits/IAM-CP1.md` Section 5, blocking finding CP1-21, introduced by `IAM-R03F`). `docs/PLANNING.md` Section 9 requires a dedicated fix run, and `/stage` starts only runs listed here.
+- **Stages affected:** IAM-MP-05 and IAM-MP-06 stay `COMPLETE`; their provider-error classification is corrected by `IAM-R03F2`. IAM-MP-07 still waits for `IAM-CP1 ACCEPTED`. Stage order and ownership are unchanged.
 - **Accepted baselines:** unchanged. `IAM-CP1` is not accepted.
 
 The records below were written under the previous method and are kept as history. Under the current method, a record is added only when the roadmap changes.
@@ -1898,13 +1909,13 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-06 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, and IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`). The next step is fix run `IAM-R03F`. Start it in a new Claude Code session after the audit's pull request is merged:
+The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`), and fix run `IAM-R03F` resolved its blocking finding CP1-01. Re-check 1 (record Section 5) returned `IAM-CP1 FIXES REQUIRED` again, for the new blocking finding CP1-21. The next step is fix run `IAM-R03F2`. Start it in a new Claude Code session after the re-check's pull request is merged:
 
 ```text
-/stage IAM-R03F
+/stage IAM-R03F2
 ```
 
-Its plan is built from the audit record. After it merges, a new session re-checks the blocking finding with `/audit IAM-CP1`. Run `IAM-R04` (IAM-MP-07) starts only after `IAM-CP1 ACCEPTED`.
+Its plan is built from the audit record, Section 5.4. After it merges, a new session re-checks CP1-21 with `/audit IAM-CP1`. Run `IAM-R04` (IAM-MP-07) starts only after `IAM-CP1 ACCEPTED`.
 
 Do **not** plan later runs in detail now.
 

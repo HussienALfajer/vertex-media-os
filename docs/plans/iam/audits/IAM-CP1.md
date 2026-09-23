@@ -1,11 +1,11 @@
 # IAM-CP1 — Deep Audit: Authentication (IAM-MP-03 to IAM-MP-06)
 
-**Verdict:** `IAM-CP1 FIXES REQUIRED`  
-**Audited commit:** `48ff7ccaa12b88d89e0a4142e0a1f3f68cfd0222` (`origin/main`)  
-**Range:** `1af351a..48ff7cc`: from the last accepted baseline before run `IAM-R01` to the merge of `IAM-R03`  
-**Pull requests:** #5 (`IAM-R01`, IAM-MP-03), #6 (`IAM-R02`, IAM-MP-04), #7 (`IAM-R03`, IAM-MP-05 and IAM-MP-06)  
-**Method:** `docs/PLANNING.md` Section 9. Five fresh-context reviewers (one per concern), each reviewer's evidence checked, and the auditor's own probes.  
-**Fix run:** `IAM-R03F` (Master Plan Section 8.3). Its scope is CP1-01, plus the non-blocking items attached to it below. After it merges, `/audit IAM-CP1` re-checks CP1-01.
+**Current verdict:** `IAM-CP1 FIXES REQUIRED` (re-check 1, Section 5): CP1-01 is resolved; the fix run introduced blocking finding CP1-21.  
+**Audited commits:** `48ff7ccaa12b88d89e0a4142e0a1f3f68cfd0222` (audit); `cd82811b04767b06800f9eb51d5e3b0c3c62d1f7` (re-check 1)  
+**Range:** `1af351a..48ff7cc`: from the last accepted baseline before run `IAM-R01` to the merge of `IAM-R03`; re-check 1: `fbd607d..cd82811` (fix run `IAM-R03F`)  
+**Pull requests:** #5 (`IAM-R01`, IAM-MP-03), #6 (`IAM-R02`, IAM-MP-04), #7 (`IAM-R03`, IAM-MP-05 and IAM-MP-06); re-check 1: #9 (`IAM-R03F`)  
+**Method:** `docs/PLANNING.md` Section 9. Five fresh-context reviewers (one per concern), each reviewer's evidence checked, and the auditor's own probes; the same for re-check 1.  
+**Fix runs:** `IAM-R03F` (CP1-01; merged as #9). `IAM-R03F2` (CP1-21 and the items Section 5 attaches to it). After it merges, `/audit IAM-CP1` re-checks CP1-21.
 
 ---
 
@@ -90,3 +90,71 @@ The reviewers also ran, locally:
 - **The mutation claims in the R01 and R02 plans** (email editability, PKCE, the OTP step, factor actions in links). Not reproduced.
 - **`pnpm infra:up`, `infra:down` and `infra:reset`.** Their behavior on the developer's volumes was not exercised.
 - **Leftover volume.** The anonymous data volume of `cp1-audit-pg` (`3609213c4ec0…`) could not be removed from this session, because permission was denied. The owner can remove it with `docker volume rm`.
+
+---
+
+## 5. Re-check 1 — after fix run `IAM-R03F` (2026-09-23)
+
+**Verdict:** `IAM-CP1 FIXES REQUIRED`. CP1-01 is resolved. The fix run's own review fix S-01 introduced CP1-21, which violates the fix run's Done means 3 and decision D-05.  
+**Scope:** `fbd607d..cd82811` (PR #9). The blocking finding CP1-01 and the items assigned to `IAM-R03F` (CP1-02, CP1-10, CP1-12, CP1-16), plus anything the fix itself broke. Five reviewers, one per concern.
+
+### 5.1 CI evidence
+
+| Pull request | Run | Head | Result |
+|---|---|---|---|
+| #9 | 35910432355 | `8b877fe` (same tree as `cd82811`) | `pnpm verify:full` and `pnpm deps:audit` succeeded; 4 `test:integration` tasks executed (8/12 cache hits were builds); Playwright 130 passed |
+| push to `main` | 35911733442 | `cd82811` | `pnpm verify:full` and `pnpm deps:audit` succeeded |
+
+No gate was re-run locally. The tests reviewer ran `@vertex-os/api:test:integration --skip-nx-cache` (8 files, 114 tests passed) and `@vertex-os/api:test` (115 passed); the data reviewer ran `@vertex-os/database:test:integration` (5 files, 28 passed).
+
+### 5.2 Earlier findings
+
+| ID | Result | Evidence |
+|---|---|---|
+| CP1-01 | **Resolved.** A used session keeps its Keycloak session alive and receives Keycloak's logout after the SSO idle timeout; a silently ended Keycloak session, a Keycloak logout without back-channel delivery and a disabled identity are refused at the next re-validation, which runs before any request that comes 60 s or more after the previous claim; every failure mode that does not refresh leaves at most one idle period, because the idle deadline slides only after a successful refresh. | Probes R1 and R2; the real-Keycloak spec fails without re-validation (R3); code reading of `sessions.ts:153-243` by the security and data reviewers. |
+| CP1-02 | Resolved, with the gaps CP1-23 and CP1-24. | Both scans assert over the full capture after cleanup. |
+| CP1-10 | Resolved. | `realm-contract.integration.spec.ts` asserts 1800 and 36000 exactly. |
+| CP1-12 | Resolved in the two auth suites; the third file the finding cites is unchanged (CP1-26). | `git diff --quiet fbd607d cd82811 -- apps/api/src/iam/identity-provisioning.integration.spec.ts` |
+| CP1-16 | Resolved. | README ranges V1–V87 and C1–C11 match the script; the logout text matches `oidc.ts`. |
+
+### 5.3 New findings
+
+| ID | Severity | File:line | Finding | Evidence | Owner |
+|---|---|---|---|---|---|
+| CP1-21 | **Blocking** | `apps/api/src/auth/oidc.ts:399-402` | [SEC-R1] **A Keycloak timeout is classed `rejected`, not `unavailable`.** openid-client reports a timeout as `ClientError` with code `OAUTH_TIMEOUT` and the `TimeoutError` as its cause. The `OAUTH_*` short-circuit added by review fix S-01 returns before the cause is examined. When Keycloak hangs for more than 10 s, every session that comes due is revoked with reason `PROVIDER_SESSION_ENDED`, so Audit records a provider decision that never happened. This is the "end them all at once" outcome that D-05 rules out, and it breaks Done means 3 ("a Keycloak outage keeps the session until its current idle deadline"). The same path turns a timed-out sign-in into `AUTH_LOGIN_FAILED` instead of `IDENTITY_PROVIDER_UNAVAILABLE`, which `IAM-R03` returned. No test covers a timeout. The reviewer rated it Major because it fails closed; it is Blocking because it violates the run's Done means and decision. | Probe R4: a paused Keycloak gives `rejected OAUTH_TIMEOUT` after 10 s, and the same token still refreshes after unpause. Probe R5: against a provider that never answers, the built client returns `rejected OAUTH_TIMEOUT` for login start and refresh; the same file without the S-01 lines returns `unavailable OAUTH_TIMEOUT`. The security reviewer reproduced it with a fake provider. | `IAM-R03F2` |
+| CP1-22 | Minor | `apps/api/src/auth/session-store.ts:242-247` | [DATA-01] The sweep tests expiry only inside its `id IN (SELECT … LIMIT 200)` subquery. After a lock wait, PostgreSQL re-checks only the outer `WHERE`, so a sweep that meets an in-flight `applyRevalidation` clears the tokens of a row the apply has just made live. That session then cannot re-validate until its new idle deadline (up to 30 min), and Keycloak-side disablement does not reach it in that time. It fails closed and needs a claim within one Keycloak round trip of the idle deadline. | Reviewer's two-session `psql` probe on PostgreSQL 18.6: the slid row ends with both ciphertexts NULL; the same sweep with the expiry predicate repeated in the outer `WHERE` updates 0 rows. The auditor read the script: it uses the store's exact statements. | `IAM-R03F2` |
+| CP1-23 | Minor | `apps/api/test-support/fake-oidc-provider.ts:153-172`; `apps/api/src/auth/auth-flow.integration.spec.ts:73-82` | [T-R1] The auth-flow scan does not collect the back-channel logout tokens the suite posts (valid and forged), and it has no JWT pattern. A logout token logged on the rejection path (`auth.controller.ts:292-295`) would pass. R03F Done means 6 names every token. | `logoutToken()` never pushes to `issued` (only lines 147 and 270 do). | `IAM-R03F2` |
+| CP1-24 | Minor | `apps/api/src/auth/keycloak-login.integration.spec.ts:183, 234` | [T-R2] Two login attempts call `/api/auth/login` directly, so their state, nonce and PKCE verifier are not collected; one of them is the replayed-callback rejection path. | Reading; only `journey.signIn` reads `auth_login_attempt`. | `IAM-R03F2` |
+| CP1-25 | Minor | `apps/api/src/auth/sessions.integration.spec.ts` | [T-R3] R03F Done means 4 says the refresh token never reaches an Audit record; no test reads `audit_record.change` or `reason` for token material. The code is clean today (the payload is `{ reason }`). | `grep audit_record apps/api/src/auth/*.spec.ts`. | `IAM-R03F2` |
+| CP1-26 | Minor | `apps/api/src/iam/identity-provisioning.integration.spec.ts:566-580` | [SD-R3] The remainder of CP1-12: the provisioning suite's evidence checks are still ordinary tests that depend on earlier tests (`total > 10`). `IAM-R03F` reported CP1-12 closed and carried nothing forward. | Unchanged in the range. | IAM-MP-10 |
+| CP1-27 | Minor | `docs/SECURITY.md:377`; `apps/api/src/auth/sessions.ts:158-165` | [SD-R8] SECURITY Section 11 says identity-provider tokens MUST be discarded when the session ends. Tokens of an expired session are discarded when the row is next seen or swept (R03 D-17, R03F DC-02); the refresh token now follows that path. Expired refresh tokens are dead at Keycloak (probe R1, case H), so the risk is low. Reconcile the canonical text or the code. | Reading. | IAM-MP-15 |
+| CP1-28 | Minor | `IAM_MASTER_PLAN.md` Section 19 | [SD-R1] Section 19 still named `/stage IAM-R03F` as the next step. | Resolved by this record's pull request. | — |
+| CP1-29 | Info | `IAM_R03F_SESSION_REVALIDATION_PLAN.md:138` | [SD-R2] Checklist item M8 is unticked on `main`. Commit `b7cceef` ticks it, but it was pushed after the merge and re-created `origin/iam/r03f-session-revalidation`. | `git merge-base --is-ancestor b7cceef cd82811` fails. | `IAM-R03F2` ticks it; the owner may delete the remote branch |
+| CP1-30 | Info | various | No action: [SEC-R2] a session without a usable refresh token can outlive its Keycloak session when the application idle is configured above the realm's (bounded, legacy rows or a rotated secret only); [SEC-R3] a refresh without an ID token skips the `sid`/`sub` binding (Keycloak always returns one for `scope=openid`); [DATA-02] no test isolates the apply's claim guard (the token guard covers the property); [T-R4] the Audit evidence of Done means 2 is proven one layer down; [T-R5] the `handled.length > 10` guard cannot fail per category; [SD-R4] "recovery reaches Vertex for the whole session lifetime" is inferred, not tested after the idle timeout, but both paths are proven (back-channel after the idle timeout; a removed Keycloak session is refused at refresh, probe R1 case B); [SD-R5] PR #9's "113 passing tests" is not reproducible (114 passed in the reviewer's run); [SD-R6] README omits the discovery-failure fallback; [SD-R7] the plan understates `auth_session_refresh_token_ck`. | Reports and reading. | — |
+
+**Re-classified:** SEC-R1 from Major to Blocking (reason in CP1-21). SD-R2, SD-R4 and SD-R5 from Minor to Info. No finding was rejected for lack of evidence.
+
+### 5.4 What the fix run must deliver
+
+- **CP1-21.** A timeout of any identity-provider call is `unavailable`, with a unit test that times out through openid-client itself (for example a fetch that waits for the abort signal), for refresh and sign-in. Validation failures stay `rejected` (S-01).
+- **CP1-22 to CP1-25** and the M8 tick of CP1-29, in the files the fix touches.
+
+### 5.5 Probes run by the auditor
+
+Throwaway container `cp1r-audit-kc` (the pinned Keycloak 26.7.4 digest) with a copy of the committed realm: SSO idle 60 s and direct grants on `vertex-web`, for the probe only. The container was removed afterwards. The built API was checked current (`tsc --build` reported it up to date at `cd82811`).
+
+| # | Probe | Result |
+|---|---|---|
+| R1 | The built `refreshSession` against real Keycloak | Live session: refreshed, rotated, same `sid`. Reused replaced token: `rejected`, and the newest token is refused afterwards too (Keycloak ends the session). After an Admin logout: `rejected`. Disabled identity: `rejected`. Admin password reset without logout: refreshed (D-09). Wrong client secret: `rejected` (fails closed). Unreachable issuer: `unavailable`. Session unused for 200 s (idle 60 s plus grace): `rejected`. Session refreshed every 40 s for 200 s: still refreshed. |
+| R2 | A second sign-in in the same browser (same Keycloak session) while the previous session is due, reproducing the callback's refresh of the previous session | Both variants (with and without that refresh) leave the new session's first refresh `ok`. No defect. |
+| R3 | Mutation: re-validation disabled (`sessions.ts:182`), then `keycloak-revalidation.integration.spec.ts` | Both tests fail (Keycloak session gone; `200` instead of `401`). File restored; tree clean. |
+| R4 | Keycloak paused with `docker pause` during a refresh | `rejected OAUTH_TIMEOUT` after 10 s → CP1-21. |
+| R5 | Built `oidc.js` and a copy without the S-01 lines, against a TCP server that never answers | Built: `rejected OAUTH_TIMEOUT` for login start and refresh. Without S-01: `unavailable OAUTH_TIMEOUT` for both. |
+
+The reviewers also ran: `pnpm lint:boundaries` (pass, C1–C11 included); `@vertex-os/api:lint --skip-nx-cache` (clean); 11 ESLint `lintText` boundary probes (all as intended); `prisma migrate diff` both directions (no difference); concurrency probes against PostgreSQL 18.6 of claim, apply, revoke and discard (1 winner, 1 Audit record, never revived); a mutant claim without its `last_seen_at` predicate makes the race test fail.
+
+### 5.6 Not verified
+
+- The mutation claims of the R03F plan (DC-01, S-01 to S-03, the log-scan mutations); only R3 was run.
+- Self-service reset after the SSO idle timeout through the browser (CP1-30, SD-R4); covered by inference from two proven paths.
+- A dangling anonymous volume `a5bcd540…` created at 19:57:09Z, most likely by the data reviewer's `cp1r-data-pg`, was not removed: its origin could not be confirmed.
