@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-02` — `READY` (IAM-MP-01 `COMPLETE`: implemented in `5056c9f`, audited `IAM-01 ACCEPTED` and baseline accepted by the owner on 2026-09-23; the IAM-MP-02 executable plan `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` is written and awaits implementation)  
+**Next executable stage:** `IAM-MP-02` — `AUDIT_REQUIRED` (implemented 2026-09-23 on `9e9e464`; independent audit `IAM-02 ACCEPTED` on 2026-09-23, executable plan Section 46A; owner baseline acceptance pending, after which IAM-MP-03 planning may start)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -672,7 +672,7 @@ The resolutions become effective when that plan is implemented and audited.
 **Status:** AUDIT_REQUIRED (implemented 2026-09-23 on `9e9e464`, uncommitted; independent audit pending)  
 **Parent specification area:** IAM-1, Sections 18–21, 34–35, 48–49  
 **Depends on:** IAM-MP-01 COMPLETE (satisfied 2026-09-23)  
-**Executable plan:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` (written from `21f536c`; implemented 2026-09-23, evidence in its Sections 43–44)
+**Executable plan:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` (written from `21f536c`; implemented 2026-09-23, evidence in its Sections 43–44; independent audit `IAM-02 ACCEPTED`, plan Section 46A; owner baseline acceptance pending)
 
 ### Objective
 
@@ -765,6 +765,15 @@ Create a reproducible, version-pinned local/test Keycloak environment and prove 
 
 - **A-04:** the domain-core Keycloak bans take effect only once a package is installed. When this stage installs Keycloak packages, prove an IAM import of them is rejected. IAM-MP-06 does the same for the chosen OIDC runtime library, adding it to the ban list.
 - **A-02 (optional):** when typed Keycloak configuration is added, consider closing the raw-environment lint bypasses (`env` imported from `node:process`, `globalThis.process.env`).
+
+### Carried forward from the IAM-MP-02 audit
+
+Details and evidence: `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 46A.
+
+- **A2-02 (boundary configuration):** a dynamic import whose template literal starts with an interpolation, such as ``import(`${'@vertex-os'}/database/iam`)``, and `createRequire(…)('@vertex-os/…/<subpath>')` pass lint. Add `ImportExpression > TemplateLiteral.source[expressions.length>0]` to `restrictedImportSyntax` (validated by the auditor). Optionally forbid `createRequire` in backend production source; `apps/web-e2e` uses it legitimately. Add `lint:boundaries` cases. Do this when this stage changes boundary configuration (A-04).
+- **A2-03 (boundary configuration):** bracket-notation and destructured `$queryRawUnsafe`/`$executeRawUnsafe` pass the D-14 ban. Add `property.value` and destructuring selectors (validated by the auditor), or remove the unsafe methods from the production scoped types in favor of a test-only entry. Add `lint:boundaries` cases.
+- **A2-01 (forward; must be closed before IAM or Audit persistence enters the HTTP runtime):** `PinoLoggerService` writes an `Error`'s raw `message` as the log `msg`, and a string stack argument as `stack`, outside the sanitized `err`. The auditor proved it with real P2007, validation and P1001 errors through Nest's `Logger`. It is not reachable while the HTTP runtime's only query is the readiness ping. Whichever stage first composes IAM or Audit persistence, or any query beyond `ping`, into the HTTP runtime must fix it and prove it with a test, together with the API statement-timeout item. Until then, each next executable plan carries this item forward.
+- Open items passed on by the IAM-02 plan (Section 40) are unchanged. They include API statement-timeout sizing, the effectiveness of `DEPRECATED` permissions and custom-role version semantics (IAM-MP-07/09), system-role mappings that stay unwritable (IAM-MP-09), bootstrap requiring synchronized reference data (IAM-MP-10), security-event recording, database-level Audit immutability and role separation, `docs/modules/audit.md`, and a shared test-support package.
 
 ### Exit criteria
 
@@ -1497,7 +1506,7 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 is `COMPLETE`: its independent audit returned `IAM-01 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No subsequent IAM stage has started.
 
-The next stage is `IAM-MP-02`, which is `AUDIT_REQUIRED`: its executable plan `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` was written from `21f536c` and implemented on 2026-09-23 on top of `9e9e464` (left uncommitted for the independent audit). It becomes `COMPLETE` only after that audit returns `IAM-02 ACCEPTED` and the owner accepts the baseline; IAM-MP-03 stays `PLANNED` until then.
+The next stage is `IAM-MP-02`, which is `AUDIT_REQUIRED`: its executable plan `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` was written from `21f536c` and implemented on 2026-09-23 on top of `9e9e464` (left uncommitted for the independent audit). The independent audit on 2026-09-23 returned `IAM-02 ACCEPTED` with no blocking finding (plan Section 46A). The stage becomes `COMPLETE` when the owner accepts that baseline; IAM-MP-03 stays `PLANNED` until then.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
@@ -1573,6 +1582,24 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **Stages affected:** IAM-MP-02 only; no stage order or ownership change. Open items passed on are unchanged from the plan's Section 40 (API statement-timeout sizing, `DEPRECATED` effectiveness, custom-role version semantics, unwritable system-role mappings for IAM-MP-09, bootstrap requiring synchronized reference data, security-event recording, database-level Audit immutability and role separation, `docs/modules/audit.md`).
 - **Remaining audit focus:** the `transaction_timestamp()` spelling of the `occurred_at` default (Prisma fills `now()` on the client), Nx's cycle diagnostic for V20, the `P3018`-less CLI output of a failed wrapped migration, the exit-code normalization through `pnpm`/Nx, and the interpretations I-1…I-8. Independent audit determines acceptance.
 - **Accepted baselines:** unchanged; IAM-MP-02 is not yet accepted.
+
+### Amendment record — IAM-MP-02 independent audit (2026-09-23)
+
+- **What changed:** the independent audit of the uncommitted IAM-02 tree on `9e9e464` returned `IAM-02 ACCEPTED`. There is no blocking finding and no implementation fix. IAM-MP-02 stays `AUDIT_REQUIRED` until the owner accepts the baseline. The non-blocking items are attached to IAM-MP-03 as "Carried forward from the IAM-MP-02 audit":
+  - A2-01: the Nest `Logger` path of `PinoLoggerService` logs raw error messages. It is latent, and must be closed before IAM or Audit persistence enters the HTTP runtime.
+  - A2-02 and A2-03: narrow lint residuals for interpolated dynamic imports or `createRequire`, and for bracket-notation or destructured unsafe raw SQL.
+
+  The header's next-stage line and Section 19 still described the pre-implementation state and were corrected (A2-04, status text only). A2-05 and A2-06 are local-environment notes.
+- **Evidence:** `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 46A:
+  - migrations and catalog: line-by-line review of both migrations; the Audit DDL regenerated from the `9e9e464` schema, byte-identical; the IAM-01 migration unchanged; the `audit_record` and `iam_role` catalogs derived from the auditor's own freshly migrated PostgreSQL 18.6 (no foreign key, secondary index, trigger or function); the tightening failure reproduced (atomic, row kept, P3009 on redeploy);
+  - synchronization, run as the built command on fresh databases: the first run gave 12 permissions, 1 role, 12 mappings and 14 Audit records; the second run left every row byte-identical; both refusals exited 2 with nothing written; eight concurrent processes, observed waiting on the advisory lock, produced exactly one creator and 14 Audit records;
+  - real adapters: I-1 observed, custom roles untouched, and full rollback when the real Audit adapter fails;
+  - logging: real database errors inside the composed command logged only allowlisted descriptions;
+  - boundaries: 74 auditor ESLint probes, and D-03 proven by two restored type-level breaks;
+  - OpenAPI: regenerated at `9e9e464` and on the IAM-02 tree, byte-identical;
+  - verification: uncached lint/typecheck/test/build, `pnpm test:integration`, the three new or changed suites three times each, Playwright 130/130, `pnpm verify:full` (with a temporary, restored sibling-worktree exclusion) and `pnpm deps:audit` all pass.
+- **Stages affected:** IAM-MP-03 receives the carried-forward items. A2-01 is owned by the first stage that composes IAM into the HTTP runtime (IAM-MP-05/06/07). Stage order and ownership are unchanged.
+- **Accepted baselines:** unchanged until the owner's acceptance.
 
 ---
 
@@ -1758,7 +1785,12 @@ docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md
 
 It was written from `main` at `21f536c` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A1-01, A1-02, A1-03, A1-05, A1-07 and R-06 (its Section 5.1).
 
-The owner accepted that plan on 2026-09-23 (plan Section 12.1). The next step is to implement it in one conversation, audit it independently, and accept its baseline before planning IAM-MP-03.
+The owner accepted that plan on 2026-09-23 (plan Section 12.1). It has been implemented (on `9e9e464`, uncommitted at audit time) and independently audited with the verdict `IAM-02 ACCEPTED` and no blocking finding (plan Section 46A).
+
+The next steps are:
+
+1. the owner accepts the audited IAM-02 baseline, which marks IAM-MP-02 `COMPLETE` and IAM-MP-03 `READY`;
+2. then create the executable plan for IAM-MP-03 from that accepted `main`, carrying the IAM-MP-02 audit items listed in the IAM-MP-03 section.
 
 Do **not** create detailed implementation plans for IAM-MP-03 through IAM-MP-15 now.
 

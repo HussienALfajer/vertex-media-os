@@ -2,7 +2,7 @@
 
 **Repository path:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md`  
 **Master Plan item:** `IAM-MP-02` — Permission/System-Role Reference Data & Minimal Audit Foundation  
-**Status:** AUDIT_REQUIRED — written 2026-09-23 from the accepted IAM-01 baseline and accepted by the owner the same day (Section 12.1); implemented 2026-09-23 on `9e9e464` (uncommitted), awaiting the independent audit (Section 46)  
+**Status:** AUDIT_REQUIRED — written 2026-09-23 from the accepted IAM-01 baseline and accepted by the owner the same day (Section 12.1); implemented 2026-09-23 on `9e9e464` (uncommitted); independent audit returned `IAM-02 ACCEPTED` (Section 46A); owner baseline acceptance pending  
 **Plan type:** Living execution plan  
 **Prepared:** 2026-09-23  
 **Planning baseline:** `main` at `21f536ce4b2b71d78e28d0a804ec4a7d7b780462`, clean working tree, CI run 35811565312 green  
@@ -1713,6 +1713,179 @@ IAM-02 REJECTED — FIXES REQUIRED
 ```
 
 Only `IAM-02 ACCEPTED`, followed by the owner's baseline acceptance, marks IAM-MP-02 `COMPLETE` and unlocks the IAM-MP-03 plan.
+
+---
+
+## 46A. Independent Audit Record — 2026-09-23
+
+### Basis
+
+Separate conversation, read-only for implementation; the implementation report and this plan's living sections were treated as claims, not evidence. The audit reviewed the uncommitted IAM-02 tree on `main` at `9e9e464a9d17eb0a10d200b88ed415040b93130a` (65 `git status` entries: 36 modified, 1 deleted, 28 untracked paths; `git diff --stat 9e9e464`: 37 files, +812/−203; `git worktree list`: the main checkout plus the two sibling worktrees under `.claude/worktrees/`). Read first: `AGENTS.md`, `CLAUDE.md`, `docs/PLANNING.md`, this whole plan, `IAM_MASTER_PLAN.md` (Sections 7, 10 IAM-MP-02/03, 12, 15, 19), `docs/modules/iam.md` Sections 9.4–9.6, 18–21, 28–30, 34–36, 44, 48–50, 53, `docs/MODULES.md` (MR-001…MR-015, MOD-AUDIT, Section 16), `docs/ARCHITECTURE.md` AR-001…AR-024 and Section 26, `docs/ENGINEERING.md` Sections 4.3, 13–15, 25, 26, 32, `docs/SECURITY.md` Sections 16, 26–29, `docs/TESTING.md` Sections 12–17, 32–34, and `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Section 40A (format model). Every changed and new file was read completely, tests included. Environment: Windows 11, Node 24.21.0, pnpm 12.5.1 (no corepack needed), Docker 29.2.1, `NX_DAEMON=false`, `CI` unset. All probes used ESLint `lintText` on virtual files, the session scratch directory, and one auditor container (`iam02-audit-pg-a7`, `postgres:18.6-alpine`, loopback port 55491, removed afterwards). No other container, compose project or the developer database was touched. Two repository files (`packages/database/src/scoped-clients.types.spec.ts` and `packages/database/src/database-client.ts`) were changed temporarily for type-level breaks and restored byte-for-byte (SHA-256 verified), and `.prettierignore` was extended temporarily for the `pnpm verify:full` run and restored byte-for-byte (Verification). At the end `git status` shows exactly the implementation changes plus this record and the Master Plan edits.
+
+### Verdict
+
+```text
+IAM-02 ACCEPTED
+```
+
+No blocking finding exists, and no implementation fix was required or made. Every Section 36 Definition of Done item and every Master Plan IAM-MP-02 exit criterion was re-verified from repository evidence and the auditor's own runs. The Section 13 invariants hold for every path the IAM-02 runtime can reach. A2-01 records a latent logging gap in the HTTP runtime that no IAM-02 code can reach and that must be closed before IAM or Audit persistence enters the HTTP runtime. A2-02 and A2-03 record narrow lint residuals that need deliberate obfuscation. All non-blocking items are carried forward in the Master Plan. This audit changed only this plan and `IAM_MASTER_PLAN.md`. The Master Plan's stale "next executable stage" header and Section 19 were corrected (A2-04). IAM-MP-02 stays `AUDIT_REQUIRED` until the owner accepts the baseline.
+
+### Findings
+
+| ID | Severity | Blocks IAM-02 | Evidence | Impact | Recommended fix / owner |
+|---|---|---|---|---|---|
+| A2-01 | Major (forward; not reachable in IAM-02) | No | `apps/api/src/logging/pino-logger.service.ts` (`write`): when Nest passes an `Error`, the line is written as `logger[level]({ …, err: message }, message.message)`, and for `error(message, stack)` the raw stack string goes to a top-level `stack` field. Only `err` passes through `safeErrorSerializer`. Auditor probe (`createApp` with a capture stream; real errors from a fresh PostgreSQL 18.6): `new Logger('AuditProbe').error(error)` and `.error(error.message, error.stack)` put the P2007 raw input (`sentinel-input-4d2a`), the `PrismaClientValidationError` call arguments (an email) and the P1001 `host:port` into `msg`/`stack`. The same errors through the command logger and the Fastify logger (`app.getHttpAdapter().getInstance().log`) produce only the allowlisted description. D-15 item 3 and Progress M8 state that the `createApp` wiring "covers … `PinoLoggerService`". That is true for its `err` field only. | Not reachable today. The HTTP runtime issues a single statement (the readiness `ping()`), which converts every driver failure into `DatabaseUnavailableError` with a fixed, safe message. No IAM or Audit persistence is composed into the HTTP runtime (D-16, Section 27). Once a query path joins the HTTP runtime, any database error that reaches Nest's `Logger` would log row data or raw input (`docs/SECURITY.md` Section 27, spec Section 36). The IAM-01 A1-02 obligation for this stage (the first composition into `apps/api`, here the command) is met and proven. `apps/api/src/main.ts` also writes a raw `error.stack` to stderr on startup failure. That is pre-existing, and startup issues no query. | Before any IAM or Audit persistence (or any query beyond `ping`) enters the HTTP runtime: make `PinoLoggerService` log `Error` values with `safeErrorSerializer(error).message` as `msg`, decide deliberately how `error(message, stack)` string pairs from Nest are logged (for example, drop the raw stack or keep it only for non-database failures), review `main.ts`'s startup `stack` output, and add a test that logs real P2007 and validation errors through Nest's `Logger` with a sentinel. Owner: the first stage composing IAM into the HTTP request path (IAM-MP-05/06/07), with the carried API statement-timeout item. |
+| A2-02 | Minor | No | Auditor probes P50, P51 and P54 in `apps/api`: ``await import(`${'@vertex-os'}/database/iam`)``, ``await import(`@vertex-${'os'}/database/iam`)`` and `createRequire(import.meta.url)('@vertex-os/database/iam')` produce no boundary message. D-13 selector 3 exempts every `TemplateLiteral`, and selector 2 matches only templates whose first quasi starts with `@vertex-os/`. Every other dynamic, template, computed and type-query form probed is rejected (P01–P16, P44, P48, P52, P53). No such code exists: the only template dynamic import is the V33 case string, and the only `createRequire` is `apps/web-e2e/src/visual/browser.setup.ts` (resolving a Playwright `package.json`). | Invariant 13.9 holds for every non-obfuscated form. An interpolated module specifier, or `createRequire` of a workspace subpath, would reach a private entry without a lint error. That needs deliberate circumvention, which lint cannot exclude in general (inline `eslint-disable` exists too). | Add `ImportExpression > TemplateLiteral.source[expressions.length>0]` to `restrictedImportSyntax`. The auditor validated it with ESLint: it rejects both interpolated forms and a relative interpolated import, and accepts `import('@vertex-os/iam')`. Optionally forbid `createRequire` in backend production `src` (`no-restricted-imports` `importNames` on `node:module`/`module`, not in `apps/web-e2e`). Add `lint:boundaries` cases for all three. Owner: IAM-MP-03, the next stage that changes boundary configuration (A-04). |
+| A2-03 | Minor | No | Auditor probes P41, Q1 and Q3: `c['$executeRawUnsafe']('x')`, `c['$queryRawUnsafe']('x')` and `const { $queryRawUnsafe } = c` in adapter production `src` produce no message. `restrictedRawSqlSyntax` matches only `MemberExpression[property.name=…]`, while `restrictedEnvSyntax` already covers the bracket form through `property.value`. `c?.$queryRawUnsafe(…)` is rejected (Q2). No production source uses unsafe raw SQL: the only `RawUnsafe` in production `src` is the `RawSqlMethods` union type in `packages/database/src/database-client.ts`. | D-14's ban, the mitigation for keeping the unsafe methods in the scoped type (D-03), can be bypassed by bracket or destructuring syntax. It is not reachable by accident in current code. | Add `MemberExpression[property.value='$queryRawUnsafe']`, `MemberExpression[property.value='$executeRawUnsafe']` and a `Property[key.name=/^\$(query\|execute)RawUnsafe$/]` selector for destructuring. The auditor validated the bracket selectors: they reject F6 and leave tagged `$queryRaw`/`$executeRaw` accepted (F7, F8). Add `lint:boundaries` cases. A stronger alternative is to drop the unsafe methods from the production scoped types and expose them through a test-only entry, which makes the ban a compile error. Owner: IAM-MP-03 (with A2-02). |
+| A2-04 | Minor (documentation; corrected in this audit) | No | `IAM_MASTER_PLAN.md` line 12 ("Next executable stage: `IAM-MP-02` — `READY` … awaits implementation") and Section 19 ("The next step is to implement it …") still described the pre-implementation state, while the IAM-MP-02 section, the ledger and the amendment record said `AUDIT_REQUIRED`. | The Master Plan contradicted itself about the current stage. | Corrected by the auditor: factual status text only, with no stage or decision change (the same edit the IAM-01 audit made). |
+| A2-05 | Informational (local environment) | No | The ignored local build output `packages/database/dist/persistence.{js,d.ts}` from pre-IAM-02 builds is still present. The `.d.ts` imports the generated Prisma client. `package.json` `exports` no longer has `./persistence`, lint bans `@vertex-os/database/*`, and the Section 35 search finds the specifier only in historical plan text. | It cannot be resolved or imported. CI builds from a clean checkout. The only effect is that a grep over `dist/*.d.ts` shows a stale Prisma reference. | Optional: delete `packages/database/dist` locally, or let a clean-before-build step handle it if one is ever added. |
+| A2-06 | Informational (local environment; recurring A1-08) | No | `pnpm format:check` in the main checkout exits 1 with 22 warnings, all under `.claude/worktrees/` (none elsewhere). `pnpm exec prettier --check . '!.claude/**'` passes. | The literal root gates fail locally while sibling worktrees exist. CI is unaffected. | Owner choice: remove stale worktrees or add `.claude/` to `.prettierignore`. |
+
+### Migration and catalog review
+
+- **Line-by-line review.** Both `migration.sql` files were reviewed against Sections 16 and 17.3. `20260923035742_audit_foundation` has a header naming MOD-AUDIT, IAM-MP-02, the wrapper reason and the recovery pointer; `BEGIN;`; the generated enums and table; ten hand-written checks; `COMMIT;`. `20260923041312_iam_system_role_code` has a header naming MOD-IAM, the tightening and the recovery pointer; `BEGIN;`; one `ALTER TABLE … ADD CONSTRAINT "iam_role_system_code_ck" CHECK (is_system = (code = 'system-administrator'))`; `COMMIT;`. Each file has exactly one `BEGIN;` and one `COMMIT;` and none of `CONCURRENTLY`, `CREATE SCHEMA`, `DROP`, `TRUNCATE`, `DELETE`, `INSERT`, `UPDATE`, `CREATE TRIGGER`, `CREATE FUNCTION`, `REFERENCES` or an index statement. There are no reference rows. Every predicate matches Section 16.1 semantics. `audit_record_change_ck` wraps the Section 16.1 predicate in `CASE … ELSE false`, so JSON scalars are rejected instead of raising an error. That is equivalent and correct.
+- **Regenerated DDL.** The auditor copied `git show 9e9e464:packages/database/prisma/schema/{schema,iam}.prisma` to scratch and ran the repository's Prisma 7.10.0 `migrate diff --from-schema <copy> --to-schema prisma/schema --script`. The output is byte-identical to the migration's generated section after CR and blank-line normalization (720 bytes each). The only other schema change, the `///` comment on `IamRole`, produces no DDL, as D-06 predicts.
+- **IAM-01 migration unchanged.** `git diff 9e9e464` on its folder is empty, and the blob hash is `47d20c8d…5688` both at `9e9e464` and in the working tree.
+- **Fresh database.** The auditor's own `postgres:18.6-alpine` (UTF8, `en_US.utf8`, libc provider) was migrated with the repository's `prisma migrate deploy`. The result: three finished migrations in order, a second deploy reporting "No pending migrations", the drift gate (`migrate diff --from-config-datasource --to-schema prisma/schema --exit-code`) exiting 0, and `migrate status` up to date.
+- **`audit_record` catalog.** The catalog derived from `pg_constraint`, `pg_indexes`, `pg_enum`, `pg_trigger`, `pg_proc` and `information_schema.columns` matches Section 16.1 exactly:
+  - `audit_record_pkey` plus the ten named checks (source_module, action, action_module, actor, actor_process, target_type, target_id, trace_id, reason, change), and PostgreSQL 18's automatic NOT NULL entries;
+  - no foreign key in either direction and no index other than the primary key;
+  - enums `audit_actor_type` (`USER`, `SYSTEM`) and `audit_result` (`SUCCEEDED`, `REFUSED`, `FAILED`) in order;
+  - defaults only `gen_random_uuid()` and `transaction_timestamp()` on `timestamptz(3)`;
+  - zero non-internal triggers in the database (the 24 `RI_ConstraintTrigger_*` rows are IAM-01's foreign-key internals) and zero functions in `public`.
+- **`iam_role` catalog.** `iam_role_pkey`, `iam_role_code_ck`, `iam_role_name_ck`, `iam_role_description_ck`, `iam_role_system_active_ck`, `iam_role_system_code_ck` (`CHECK ((is_system = (code = 'system-administrator'::text)))`) and `iam_role_version_ck`, with the indexes `iam_role_pkey` and `iam_role_code_key`. The longest constraint name in `public` is 58 bytes (a PostgreSQL-generated NOT NULL name) and the longest new name is 29 bytes.
+- **Tightening failure.** In a second database of the auditor's container, the IAM-01 migration alone was deployed through a temporary Prisma configuration pointing at a scratch copy (P-11). A custom role `system-administrator` / `Impostor` (`is_system = false`) and a valid custom role were inserted. `prisma migrate deploy` then exited 1 with `current transaction is aborted …` naming `migration_name="20260923041312_iam_system_role_code"`. Afterwards the Audit migration was applied, `iam_role_system_code_ck` was absent, both roles were intact (version 1), and the failed attempt was recorded with `finished_at` NULL. A redeploy printed `Error: P3009`. This matches Section 42 and the README. The plan's "fails with P3018" wording (Sections 33.5, D-07) is superseded by that recorded observation.
+- **Parity spot check.** Beyond the shared fixtures, `U+2028`, `U+2029`, `U+FFF9`, `U+200B` and `U+00A0` are neither `[[:cntrl:]]` in this locale nor rejected by the core, and the core trims a leading NBSP before the database sees it. No divergence was found.
+
+### Reference-synchronization evidence
+
+All runs used the built command (`node --enable-source-maps apps/api/dist/commands/iam-sync-reference.js`) in a clean environment (`env -i` with only `PATH`, `SystemRoot`, an explicit `DATABASE_URL` for the auditor's container and `LOG_LEVEL=info`), each against a fresh, freshly migrated database.
+
+- **First run.** Exit 0 with one JSON line: `iam reference data synchronized`, 12 registered, `systemRole: created`, 12 granted, UUID `traceId`, no `pid`/`hostname`/URL. The database then held 12 permissions whose code, module, name, description, state and sensitivity equal Section 21.1 exactly; one role `system-administrator` / `System Administrator` (`ACTIVE`, `is_system`, version 1); 12 mappings; and exactly 14 `audit_record` rows. All 14 carry the run's `trace_id`, `source_module = iam`, `actor_type = SYSTEM`, `actor_process = iam.reference-sync`, `actor_user_id` NULL and `result = SUCCEEDED`, and share one `occurred_at` instant (transaction start). The actions are 12 × `iam.permission.registered`, 1 × `iam.role.created` and 1 × `iam.role.permissions-granted`, with the Section 23.2 targets and `change` shapes.
+- **Converged run.** Exit 0, all counts 0, `systemRole: unchanged`. The `row_to_json` text of every permission, role, mapping and Audit row (39 lines, `updated_at` and `version` included) was byte-identical before and after (`cmp`). Still 14 Audit rows.
+- **Refusals.** An undeclared `iam.audit-probe.read` inserted by SQL gave exit 2 with `reason: undeclared-permissions` and `details: ["iam.audit-probe.read"]` at level 40. Setting `iam.sessions.revoke` to `RETIRED` (mapping removed) with the manifest declaring it `ACTIVE` gave exit 2 with `retired-permission-reactivated`. In both cases every row stayed byte-identical and no Audit row was added. Through `pnpm iam:sync-reference` (Nx target, explicit `DATABASE_URL` overriding `.env`) a converged database gives exit 0, and the refusing database gives exit 1 with the `…refused` result line, which confirms the README's statement on exit-code normalization.
+- **Concurrency.** Eight command processes were started simultaneously on a fresh database: all exited 0, exactly one reported `systemRole: created` with 12 registered, seven reported no change, and the database held 12 permissions, one role at version 1, 12 mappings and 14 Audit rows under one trace ID. To prove genuine contention, the run was repeated on another fresh database while a `psql` session held `pg_advisory_xact_lock(-4098619809192145812)` for 3.5 s. `pg_stat_activity` showed **8** sessions waiting on the `advisory` lock, and on release the result was again exactly one creator, seven converged runs, 14 Audit rows and 12/1/12 rows. The key equals the first eight bytes of SHA-256(`vertex-os:iam.reference-sync`) as a signed 64-bit integer, as the source comment states, and it is the repository's only advisory lock.
+- **Real adapters: I-1, custom roles, atomicity.** The built `synchronizeIamReferenceData` + `createIamTransactionRunner` + `createAuditRecorder` ran with synthetic manifests.
+  - (a) `iam.a.read` + `iam.b.read` ACTIVE: role created at version 1 with both mappings.
+  - A custom role `content-editors` mapped to `iam.b.read` was then inserted by SQL.
+  - (b) `iam.b.read` → `DEPRECATED`: `permissionsUpdated` and `permissionsRevoked` = `iam.b.read`; the system role moved to version 2 with only `iam.a.read`. **I-1 was observed.**
+  - (c) → `RETIRED`: metadata update only, no mapping change and no version bump.
+  - The custom role's version, `updated_at` and mapping `created_at` were unchanged after both runs. Audit actions per trace matched Section 23.2.
+  - (d) Evolution adding `iam.c.read`, with a recorder wrapping the **real** `createAuditRecorder` that throws after its second real append: the error propagated, the full state (Audit rows included) stayed byte-identical, and no row carries that trace ID.
+  - (e) `RETIRED` → `ACTIVE` was refused with nothing written.
+- **Implementer's tests.** They were reviewed as genuine. The four-way concurrency test uses real competing transactions. The lock test waits on the observable `pg_stat_activity` advisory wait, not on a timer. The atomicity tests cover a fresh and a converged database, and the API test fails after the fourteenth *real* append. There is no mock used as concurrency proof, no `.only`/`.skip`, and `retry: 0` everywhere. The two server-side `pg_sleep` calls create a measured interval inside one transaction; neither waits for an asynchronous condition.
+
+### Boundary evidence
+
+- `pnpm lint:boundaries`: 45/45 PASS (V1–V40, C1–C5). V20 is reported as a cycle and V24 by the `layer:adapter` rule, as Section 42 records.
+- **Auditor probes.** 62 probes ran in each project's own configuration (`lintText`, nothing written). Rejected as intended:
+  - dynamic and type-query imports of `@vertex-os/database/iam|audit`, `@vertex-os/iam/persistence` and `@vertex-os/audit/src/*` from `apps/api`, `apps/web`, `domains/audit`, `domains/iam`, `domains/iam-persistence` and `domains/audit-persistence` (P01–P16);
+  - `export *` and `import type`/`export type` of private subpaths (P17–P22);
+  - relative deep imports between all four domain projects and into `packages/database/src`, static and dynamic (P23–P29);
+  - `@vertex-os/audit` → `@vertex-os/iam` (cycle diagnostic, P30/P31);
+  - `@vertex-os/iam-persistence` → `@vertex-os/audit-persistence` and the reverse (`layer:adapter`, P32/P33);
+  - `pg`/NestJS in Audit projects (P34–P36);
+  - `packages/database` → the Audit adapter; `apps/web-e2e` and `packages/ui` → `@vertex-os/audit` (P37–P39);
+  - `$queryRawUnsafe` in adapter `src` (P40);
+  - the bootstrap overrides keep the import and raw-SQL selectors in `src/main.ts` and `src/commands/iam-sync-reference.ts` (P44–P46, P48, P49) and exempt only the environment (P43); `process.env` stays banned in `iam-sync-reference.command.ts` (P47);
+  - test files still reject private dynamic imports (P61) and may use unsafe raw SQL (P62).
+
+  Accepted as intended: the root dynamic import, the root type query and the permitted adapter entries (P56–P60). Not rejected: P41, P42 (computed key) and Q1 (A2-03), and P50, P51 and P54 (A2-02). P55 (`import x = require(…)`) is rejected by `no-restricted-imports`. No project configuration switches `no-restricted-syntax` off; only the pre-existing `packages/ui` `no-restricted-imports: off` (A-05) remains.
+- **D-03 typed scoping.** `scoped-clients.types.spec.ts` compiles under `@vertex-os/database:typecheck` (its `tsconfig.spec.json` is part of `tsc --build`). Two temporary breaks, each restored byte-for-byte (SHA-256 checked) with typecheck passing again afterwards:
+  - removing the `@ts-expect-error` above `iam.auditRecord` failed typecheck with `TS2339: Property 'auditRecord' does not exist on type 'IamPersistenceClient'`;
+  - widening `DomainScopedClient` to the full `Prisma.TransactionClient` failed it with `TS2578 Unused '@ts-expect-error'` on the `iam.auditRecord`, `audit.iamRole`, `audit.iamPermission` and both `$transaction` lines.
+
+  At runtime the scoped object is Prisma's own client (Decision Log). The scoping is a compile-time and lint guarantee, as D-03 states; R-04 remains the documented residual.
+- **Transaction handle.** The handle is registered in a module-private `WeakMap` inside `runInTransaction` and deregistered in `finally`. A `WeakSet` marks issued handles, so an ended handle raises `TypeError('DatabaseTransaction has already ended.')`. Foreign objects and a transaction handle passed as a client raise `TypeError`. `runInTransaction` is exported only from `./iam` and `./audit`, never from the root. `@vertex-os/iam` reaches the transaction only through `IamTransactionRunner`/`IamTransactionScope` (capability interfaces). The IAM adapter never imports the Audit adapter; the only binding is `auditRecorderFor: createAuditRecorder` in `apps/api/src/commands/iam-sync-reference.command.ts`.
+- **Public declarations.** After an uncached build, the `dist/index.d.ts` of `@vertex-os/database`, `@vertex-os/audit`, `@vertex-os/audit-persistence`, `@vertex-os/iam` and `@vertex-os/iam-persistence` contain no `prisma`, `generated`, `TransactionClient` or `runInTransaction`. The database root exports only `createDatabaseClient`, `DatabaseUnavailableError`, `describeDatabaseError` and the types `DatabaseClient`, `DatabaseClientOptions`, `DatabaseErrorDescription`, `DatabaseTransaction`. `database-client.d.ts`, which that index re-exports from, still imports Prisma for its non-root helpers, exactly as in the accepted IAM-01 baseline. The IAM root exports exactly the D-17 list.
+- **Graph and tags.** `nx show project` gives `type:lib, scope:backend, layer:domain, domain:audit` and `type:lib, scope:backend, layer:adapter, domain:audit`. `nx graph --file` edges: `api → audit, audit-persistence, database, iam, iam-persistence`; `audit-persistence → audit, database`; `iam → audit`; `iam-persistence → audit, database, iam`; `web → ui`; `web-e2e → web, api`. There is no Audit → IAM edge and no adapter-to-adapter edge.
+
+### Logging and data-protection evidence
+
+- **Real errors through the composed command process.** Both runs used the built entry against the auditor's database.
+  - (1) A throwaway trigger raised SQLSTATE 23514 whose message and detail contained `Sentinel.Trigger@Example.com` and `secret-value-9f3`. Exit 1, one error line whose `err` is only the description `{ errorClass: PrismaClientKnownRequestError, prismaCode: P2039, sqlState: 23514, driverKind: postgres, model: IamRole }`. Neither stdout nor stderr contains the sentinels, the password, the port or a `postgres(ql)://` URL. The run rolled back completely: 0 permissions, 0 roles, 0 Audit rows.
+  - (2) An unreachable server with sentinel credentials: exit 1, description `P1001` / `DatabaseNotReachable`, with no host, port or credential.
+- **Loggers in isolation.** Real P2007 (input sentinel), P2039 (email in `detail`), `PrismaClientValidationError` (email in the printed arguments) and P1001 errors were logged through `createCommandLogger` and through `createApp`'s Fastify logger. Every line contains only the allowlisted description with the fixed message and empty stack, and no sentinel, `detail`, `meta`, driver message or connection detail. The raw errors do contain the sentinels. The Nest `Logger` path is A2-01.
+- **Existing hygiene tests.** `app.spec.ts` readiness-failure logging and `health.integration.spec.ts` pass inside the unit and integration runs below.
+- **Audit rows.** Sampled rows (`iam.role.created`, `iam.role.permissions-granted`, two `iam.permission.registered`) contain only codes, a role UUID and catalog text. A scan of all 14 rows found no `@`, password, token, secret, cookie, session ID, URL or credential.
+- **Audit write paths.** The only `auditRecord` call in any source is `create` in `createAuditRecorder` (frozen object, exactly `append`). There is no `update`, `updateMany`, `upsert`, `delete` or `deleteMany` on the Audit delegate, and the only `TRUNCATE audit_record` statements are test setup.
+
+### Interpretation rulings
+
+- **I-1 (System Administrator holds exactly the `ACTIVE` set): upheld.** Spec Section 20 says "receives every active permission", and Section 9.6 defines a mapping as associating "one active permission" with a role. Removing `DEPRECATED` codes is the least-privilege reading and was observed as an audited revocation with one version increment. `DEPRECATED` effectiveness for custom roles stays with IAM-MP-07/09.
+- **I-2 (transitions; `RETIRED` terminal): consistent** with spec Section 18 ("never silently repurposed", "retired permissions are never effective"). Refusal observed.
+- **I-3 (undeclared persisted code refuses): upheld.** It implements the Master Plan exit criterion "administrators cannot invent permission codes through data alone" and fails loudly on accidental removal. Refusal observed.
+- **I-4 (metadata may change; `owningModule` cannot): consistent.** `iam_permission_code_module_ck` enforces the first segment.
+- **I-5 (sensitivity definitions and the Section 21.1 classification): upheld** as a working classification. No V1 behavior depends on it. Note for IAM-MP-07/14: if department membership becomes an authorization input (spec Section 16.2 organizational context), revisit whether `iam.users.manage-departments` stays `SENSITIVE`.
+- **I-6 (version rule): consistent** with spec Section 30. Observed: version 1 on creation, +1 once per changing run, no bump for metadata-only or unrelated permission changes.
+- **I-7 (refusals logged, not audited): consistent.** Nothing changed, and spec Section 34 does not list reference-synchronization refusals among security events. Refusals are logged at level 40 with the stable reason.
+- **I-8 (trace-ID grammar): consistent.** `TRACE_ID` in `domains/audit/src/codes.ts` and `ACCEPTED_REQUEST_ID` in `apps/api/src/http/request-id.ts` are the same expression, `^[A-Za-z0-9._:-]{1,128}$`, and `request-id.spec.ts` proves generated and inbound values parse.
+- **Decision Log entries (Section 41): all acceptable.**
+  - V17 unchanged: a database self-import would test nothing.
+  - Scope helper and registry in `database-client.ts`: not root-exported.
+  - Database test support, the extra spec files and the `ignoredFiles` entry: test infrastructure only.
+  - Audit adapter dependencies declared at M4: forced by `@nx/dependency-checks`.
+  - Stricter Audit core details: non-empty sides, denylist before grammar, extra reason codes, deep freeze; no database-contract change.
+  - `transaction_timestamp()` instead of the literal `CURRENT_TIMESTAMP`: PostgreSQL defines them as equivalent. Callers never write the value, the drift gate exits 0, and one instant was observed per run.
+  - `AuditChange` as a type alias.
+  - Server-side `pg_sleep`: a deterministic interval, not a wait.
+  - Reference-sync port and detail-token choices: `wrong-module:<code>` echoes only a syntactically valid code, which satisfies "codes only".
+  - Fixed message and empty stack for database errors.
+  - Operator-command details: exact `pino` pin, `test:integration` depending on `build`.
+  - Files outside Section 31: each is needed by the plan's own work; confirmed against `git status`.
+  - Boundary-check message fragments: they strengthen the cases.
+- **Surprises (Section 42): confirmed where reproduced.** Reproduced: the P3018-less output and P3009, V20 reported as a cycle and V24 by the tag rule, P2039/P2010/P2007/P2002/P1001 error shapes, and the exit-code normalization through Nx. The timestamp corrections in Progress are a record-keeping matter and do not affect results.
+
+### Scope checks
+
+- **HTTP runtime.** Under `apps/api/src`, the only changed runtime file is `app.factory.ts` (+4 lines: the serializer import and `serializers: { err }`). No controller, module, provider, route or DTO changed.
+- **OpenAPI.** The auditor regenerated the document **at `9e9e464` independently**: a `git archive` copy in scratch, `pnpm install --frozen-lockfile --offline` from the local store, `NX_SKIP_NX_CACHE=true pnpm openapi:generate`. SHA-256 `0bf3e7a1…84d717`. An uncached `pnpm openapi:generate` on the IAM-02 tree gave a byte-identical file (`cmp`). The scratch copy was deleted.
+- **No out-of-scope work.** No Keycloak, OIDC, session, CSRF, authentication, authorization-context, IAM HTTP endpoint, UI, Audit read or query path, index, user seed or department seed was added. Keycloak and session matches in changed files are the pre-existing ESLint ban list, the D-08 denylist fragment `sessionid` and the catalog text of `iam.sessions.revoke`. No `console.log`, Nest decorator in `domains/**`, `eslint-disable`, `@ts-ignore` or `as any` appears in changed files.
+- **Search gates (Section 35).** All re-run and clean:
+  - the only `audit…` matches in IAM source are the D-04 factory name `auditRecorderFor`;
+  - there are no `iam…` matches in Audit source, and no `@prisma`/`pg` in cores or adapter `src`;
+  - `@vertex-os/database/persistence` appears only in historical plan text;
+  - `@vertex-os/database/iam|audit` appear only in their owning adapter, the boundary script, ESLint configuration and `packages/database`;
+  - `$transaction(` appears only inside `runInTransaction`, with none in `domains/**/src`;
+  - the only `RawUnsafe` in production `src` is the type union;
+  - `packages/database/prisma/**` contains no `INSERT INTO`, seed, trigger, function, preview feature or `CONCURRENTLY`; its `UPDATE`/`DELETE` matches are IAM-01's `ON DELETE/UPDATE RESTRICT`;
+  - `process.env` appears only in the two bridges, a comment and tests.
+- **Lockfile delta.** The delta is `importers:` hunks only: the two new importers, the `workspace:` links and `pino: 10.3.1` for `apps/api`. `pino@10.3.1` was already in `packages:` at `9e9e464`, and there is no `packages:`/`snapshots:` change.
+- **Section 31 comparison.** Every changed path is in Section 31 or justified in the Decision Log. The API `tsconfig*.json` and root `tsconfig.json` edits are `nx sync` references.
+- **Carried items.** A1-01 is done (static, dynamic, template, computed and type-query forms; residual A2-02). A1-02 is done for every composed path (residual A2-01). A1-03 changed exactly four example lines, `git diff` showing `docs/modules/iam.md` 3/3 and `docs/SECURITY.md` 1/1 with no normative text touched, and no two-segment `projects.edit` remains. A1-05 backdates `updated_at` and asserts against the pre-update row. A1-07 asserts all six foreign keys as `r`/`r` and not deferrable, and adds the one-character module case.
+- **Documentation.** The README commands exist and behave as documented: first run, converged run, the refusal exit code through Nx, three migrations and the failure wording. ENGINEERING Section 15 describes the implemented D-04 mechanism accurately, without an ADR. The Master Plan shows IAM-MP-02 `AUDIT_REQUIRED` with an amendment record; its stale header and Section 19 are A2-04. The living sections match the auditor's evidence, except the `PinoLoggerService` coverage claim (A2-01).
+
+### Verification (every command actually run by the auditor)
+
+| Command | Result | Notes |
+|---|---|---|
+| `git status`, `git rev-parse HEAD`, `git log -5 --oneline`, `git diff --stat 9e9e464`, untracked list, `git worktree list` | Evidence | See Basis; HEAD `9e9e464`; unchanged at the end apart from this record and the Master Plan |
+| `prisma migrate diff --from-schema <9e9e464 copy> --to-schema prisma/schema --script` | PASS | Byte-identical to the generated section |
+| Fresh-container `migrate deploy` ×2, drift gate, `migrate status`, catalog queries, tightening reproduction | PASS | As recorded above; container removed |
+| `pnpm lint:boundaries` | PASS | 45/45 |
+| Auditor ESLint probes (62 + 12 follow-up) | As recorded | A2-02 and A2-03 residuals; candidate selectors validated |
+| Type-level breaks on `@vertex-os/database:typecheck` (`--skip-nx-cache`) | As expected | TS2339 and TS2578; files restored (SHA-256), typecheck exit 0 |
+| Uncached build of the five backend libraries and `dist/*.d.ts` inspection | PASS | No Prisma in any public index |
+| Built command: first, converged, two refusals, 8 concurrent (twice, once under a held lock), trigger error, unreachable server | PASS | 12/1/12 + 14; byte-identical; exit 2 ×2; one creator; descriptions only |
+| Real-adapter probe (I-1, custom roles, atomicity, RETIRED refusal) | PASS | As recorded |
+| Logger probe (command, Fastify, Nest `Logger`) | Command/Fastify PASS; Nest `Logger` leaks | A2-01 |
+| `pnpm iam:sync-reference` via Nx with explicit `DATABASE_URL` | PASS | Exit 0 converged; exit 1 on a refusal with the `…refused` line |
+| `pnpm openapi:generate` at `9e9e464` (temp copy) and on the IAM-02 tree, uncached | PASS | Byte-identical, SHA-256 `0bf3e7a1…84d717` |
+| `pnpm install --frozen-lockfile` | PASS | Lockfile SHA-256 unchanged (05:32 UTC) |
+| `pnpm nx sync:check` | PASS | All files up to date |
+| `pnpm format:check` | FAIL (environmental) | 22 warnings, all under `.claude/worktrees/` (A2-06) |
+| `pnpm exec prettier --check . '!.claude/**'` | PASS | Sibling-worktree exclusion given on the command line |
+| `NX_SKIP_NX_CACHE=true`: `pnpm lint`, `pnpm lint:boundaries`, `pnpm typecheck`, `pnpm test`, `pnpm build` | PASS | Lint 9 projects (19 s); 45/45 (8 s); typecheck 9 (9 s); test 5 projects (13 s); build 8 (8 s); "Cache: Skipped". Stream run of the unit suites: Audit 111, IAM 86, API 29, UI 146, web 8 |
+| `pnpm db:validate`, `pnpm db:generate` (uncached) | PASS | — |
+| `NX_SKIP_NX_CACHE=true pnpm test:integration` | PASS | 39 s: database 27, Audit adapter 99, IAM adapter 84, API 10 |
+| `@vertex-os/audit-persistence:test:integration` ×3 (`--skip-nx-cache`, retry 0) | PASS | 99/99 each (8.00 s, 7.54 s, 7.69 s) |
+| `@vertex-os/iam-persistence:test:integration` ×3 | PASS | 84/84 each (9.93 s, 10.75 s, 9.95 s) |
+| `@vertex-os/api:test:integration` ×3 | PASS | 10/10 each (10.70 s, 11.91 s, 11.17 s) |
+| `pnpm test:e2e` (`CI` unset) | PASS | 130/130 in 71 s, no flaky test |
+| `pnpm verify:full` | PASS | 143 s including Playwright 130/130. `.claude/` was appended to `.prettierignore` for this run and the original bytes restored immediately (SHA-256 `391aeb8c…32a70` verified; `git status` clean for that file). Lint, typecheck, test and integration tasks were partly Nx cache hits of the uncached runs above. |
+| `pnpm deps:audit` | PASS | 4 previously reviewed exceptions (1 moderate, 3 high); none new |
+
+The local `vertexos` compose project was not used: the auditor's own container replaced it for every database run.
 
 ---
 
