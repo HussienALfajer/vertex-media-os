@@ -49,35 +49,6 @@
       "PowerShell(docker compose * down --volumes*)",
       "PowerShell(pnpm infra:reset *)",
       "PowerShell(* prisma migrate reset *)"
-    ],
-    "ask": [
-      "Bash(git push)",
-      "Bash(git push * main)",
-      "Bash(git push * main *)",
-      "Bash(git push * HEAD:main*)",
-      "Bash(git -c * push * main*)",
-      "Bash(git branch -D *)",
-      "Bash(git clean *)",
-      "Bash(git rebase *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh repo edit *)",
-      "Bash(rm -rf *)",
-      "Bash(pnpm env:setup *)",
-      "Bash(ssh *)",
-      "Bash(scp *)",
-      "PowerShell(git push)",
-      "PowerShell(git push * main)",
-      "PowerShell(git push * main *)",
-      "PowerShell(git push * HEAD:main*)",
-      "PowerShell(git -c * push * main*)",
-      "PowerShell(git branch -D *)",
-      "PowerShell(git clean *)",
-      "PowerShell(git rebase *)",
-      "PowerShell(gh pr merge *)",
-      "PowerShell(gh repo edit *)",
-      "PowerShell(pnpm env:setup *)",
-      "PowerShell(ssh *)",
-      "PowerShell(scp *)"
     ]
   }
 }
