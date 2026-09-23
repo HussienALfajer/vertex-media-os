@@ -40,6 +40,7 @@ If repository evidence conflicts with documentation in a way that materially aff
 
 ## Long runs
 
+* At session start, `.claude/hooks/sync-main.sh` fast-forwards the local `main` and reports one line when it changed something or could not.
 * Keep run progress in the plan's checklist so it survives context compaction; read the checklist, not the scrollback, to resume.
 * Accept mid-run additions from the owner without restarting the run.
 
