@@ -105,7 +105,9 @@ describe('authentication endpoints without PostgreSQL or Keycloak', () => {
     const response = await app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(response.statusCode).toBe(303);
     expect(response.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
-    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(response.headers['set-cookie']).toBe(
+      '__Host-vertex-login=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax',
+    );
     expect(response.headers['cache-control']).toBe('no-store');
   });
 

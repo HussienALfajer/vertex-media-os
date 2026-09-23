@@ -85,9 +85,7 @@ export class AuthController {
       '`AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`.',
   })
   async callback(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
-    // The login attempt is single-use whatever happens next.
-    void reply.header('set-cookie', clearedCookie(LOGIN_COOKIE));
-
+    // The login attempt is single-use whatever happens next: every answer below clears its cookie.
     const attempt = await this.runtime.sessions.finishLogin(
       readCookie(request.headers.cookie, LOGIN_COOKIE),
     );
@@ -275,9 +273,11 @@ export class AuthController {
   }
 
   private signInFailed(reply: FastifyReply, code: SignInFailure): void {
+    // Fastify appends every `set-cookie` value, so each answer sets its cookies exactly once.
     void reply
       .code(303)
       .header('cache-control', NO_STORE)
+      .header('set-cookie', clearedCookie(LOGIN_COOKIE))
       .header('location', `/?authError=${code}`)
       .send();
   }

@@ -36,6 +36,8 @@ export interface AuthorizeOptions {
 export class FakeOidcProvider {
   readonly issuer = FAKE_ISSUER;
   readonly requests: string[] = [];
+  /** Every token and code this provider issued, so tests can prove none of them leaks. */
+  readonly issued: string[] = [];
   /** Answers the next token request with this HTTP status (5xx: provider outage). */
   tokenStatus: number | undefined;
   /** Makes every request fail as a network error. */
@@ -113,6 +115,7 @@ export class FakeOidcProvider {
       idTokenClaims: options.idTokenClaims ?? {},
       signWith: options.signWith ?? 'provider',
     });
+    this.issued.push(code);
     callback.search = new URLSearchParams({ code, state, iss: this.issuer }).toString();
     return callback.href;
   }
@@ -179,9 +182,12 @@ export class FakeOidcProvider {
       }),
       issued.signWith,
     );
+    const accessToken = `sentinel-access-${randomBytes(12).toString('base64url')}`;
+    const refreshToken = `sentinel-refresh-${randomBytes(12).toString('base64url')}`;
+    this.issued.push(idToken, accessToken, refreshToken);
     return json({
-      access_token: `sentinel-access-${randomBytes(12).toString('base64url')}`,
-      refresh_token: `sentinel-refresh-${randomBytes(12).toString('base64url')}`,
+      access_token: accessToken,
+      refresh_token: refreshToken,
       token_type: 'Bearer',
       expires_in: 300,
       id_token: idToken,
