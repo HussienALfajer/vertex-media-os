@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** once the `IAM-CP1` re-check 1 record is merged, run fix run `IAM-R03F2` with `/stage IAM-R03F2` (blocking finding CP1-21; record `audits/IAM-CP1.md` Section 5); after it merges, re-check `IAM-CP1` with `/audit IAM-CP1`. `IAM-R04` (IAM-MP-07) waits for `IAM-CP1 ACCEPTED`  
+**Next step:** run `IAM-R04` (IAM-MP-07) with `/stage IAM-R04`; `IAM-CP1` is accepted (owner decision, `audits/IAM-CP1.md` Section 5.7)  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -471,7 +471,6 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R02` | IAM-MP-04 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R03` | IAM-MP-05, IAM-MP-06 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP1` deep audit** — authentication (MP-03 to MP-06) |
 | `IAM-R03F` | fix run for the `IAM-CP1` blocking finding (IAM-MP-05, IAM-MP-06 scope; `docs/PLANNING.md` Section 9) | A | security; data and concurrency; tests and verification | `IAM-CP1` re-check of its blocking finding |
-| `IAM-R03F2` | fix run for the `IAM-CP1` re-check 1 blocking finding CP1-21 (IAM-MP-05, IAM-MP-06 scope; `docs/PLANNING.md` Section 9) | A | security; data and concurrency; tests and verification | `IAM-CP1` re-check of CP1-21 |
 | `IAM-R04` | IAM-MP-07 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R05` | IAM-MP-08, IAM-MP-09 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP2` deep audit** — authorization and administration core (MP-07 to MP-10) |
@@ -1020,6 +1019,12 @@ Make authenticated protection the default API posture and expose the narrow, cur
 - **Build on the session boundary, do not duplicate it.** `requireSession` (`apps/api/src/auth/request-session.ts`) resolves the cookie, the live session and the ACTIVE user on every request (request-local memoization only) and revokes a session whose user is no longer ACTIVE. The global `CsrfGuard` already rejects every unsafe request without a valid session (`401`) or CSRF token (`403`), with `@CsrfExempt()` only on back-channel logout. This stage adds the protected-by-default rule for safe methods, the explicit public-route marker (health, login, callback, back-channel logout) and the authorization context on top.
 - **Bound capabilities only.** The authentication area reaches IAM through `apps/api/src/iam/sign-in.ts` (bound functions); lint keeps adapters in `apps/api/src/auth/auth-runtime.ts`. The authorization-context composition follows the same pattern.
 
+### Carried forward from the `IAM-CP1` audit (`audits/IAM-CP1.md`)
+
+- **CP1-03 (Major):** adapter imports in `apps/api/src/auth` are confined to `auth-runtime.ts` by `no-restricted-imports` only; a dynamic import or a type query of `@vertex-os/iam-persistence` or `@vertex-os/audit-persistence` passes lint. Close both forms and prove them with `lintText` probes.
+- **CP1-04:** lint residuals: template-literal dynamic imports, `import x = require(…)`, CommonJS `require()` of private entries, and `process.env` destructured by assignment or through a parameter default pass the bans (R02 AB-4).
+- **CP1-05:** the IAM root exports `SignInDependencies`, `IdentityProvisioningDependencies` (repository and transaction-runner types) and the whole `ApplicationUser`; spec Section 44 forbids exposing repositories and mutable internal entities. Reconcile the specification or the surface.
+
 ### Exit criteria
 
 - forgetting a protection annotation does not silently make a new controller public;
@@ -1191,6 +1196,13 @@ Implement the highest-risk IAM administrative workflows as application services 
 
 - **Session revocation capability.** Suspension, disablement, termination and the administrator revoke-sessions action call `SessionService.revokeUserSessions` (one Audit record per revoked session, same transaction) after the access change commits; add their reasons to `auth_session_revocation_reason` in a migration. Every session use already re-checks `accessState`, so a restriction takes effect on the next request even before revocation runs.
 
+### Carried forward from the `IAM-CP1` audit (`audits/IAM-CP1.md`)
+
+- **CP1-06:** the database does not keep session revocation monotonic (a revoked row can be un-revoked, `revoked_at` rewritten), and structural checks are missing (idle deadline before creation, zero-length session, `revoked_at` before `created_at`, empty ciphertext, state, nonce or verifier).
+- **CP1-07:** no test names the auth constraints; behavioural cases use a bare `.rejects.toThrow()`; the CSRF-hash, IdP-session, handle-hash, attempt-expiry checks and the key-version branch are never exercised.
+- **CP1-13:** R02 Done means 3 (conflicting identities byte-for-byte unchanged) is asserted against real Keycloak only for the foreign-owner case.
+- **CP1-26:** the evidence checks of `apps/api/src/iam/identity-provisioning.integration.spec.ts` depend on earlier tests (`total > 10`); make them order-independent and run them after cleanup (remainder of CP1-12).
+
 ### Exit criteria
 
 - every allowed/forbidden lifecycle transition matches the canonical state machine;
@@ -1248,6 +1260,10 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 ### Carried forward from run IAM-R02 (`IAM_R02_IDENTITY_RECONCILIATION_PLAN.md`)
 
 - **Outcome mapping:** map the provisioning outcomes to spec Section 27 once: `identity-conflict` → `IAM_IDENTITY_CONFLICT`, `provider-unavailable`/`provider-rejected` → `IDENTITY_PROVIDER_UNAVAILABLE`, `sync-incomplete` → `IAM_IDENTITY_SYNC_INCOMPLETE`, `not-invited` → `IAM_INVITATION_NOT_APPLICABLE`, `not-found` → `IAM_USER_NOT_FOUND`. Decide the response for `no-action-required` (resend to a user whose invitation is complete) and `superseded`.
+
+### Carried forward from the `IAM-CP1` audit (`audits/IAM-CP1.md`)
+
+- **CP1-18:** `POST /api/auth/backchannel-logout` declares form consumption but has no `requestBody` schema (`logout_token`) and no 400 body in the generated OpenAPI.
 
 ### Exit criteria
 
@@ -1307,6 +1323,10 @@ Integrate the real web application shell with backend-owned authentication/sessi
 - **Contracts to consume:** `/api/auth/login` (top-level navigation); the callback returns to `/` or `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`; `GET /api/auth/session`; `GET /api/auth/csrf` (hold the token in memory, send `X-CSRF-Token` on every unsafe request); `POST /api/auth/logout` returns `logoutUrl`, which the browser opens.
 - **Real-browser cookie behavior:** prove that Chromium, Firefox and WebKit accept the `__Host-` cookies on `http://127.0.0.1` locally (only a fetch-based browser was used so far).
 - **Session rotation across sites (R03 review S-02):** the rotation of an existing session at the callback reads the `SameSite=Strict` session cookie on a navigation from Keycloak. It works while Keycloak and the web app share a site (locally, and a production subdomain of the same registrable domain); verify it for the deployed topology, or rotate differently.
+
+### Carried forward from the `IAM-CP1` audit (`audits/IAM-CP1.md`)
+
+- **CP1-17:** back-channel logout through the local Compose Keycloak and a running API (a real login, then a Keycloak-side logout) was never probed end to end; only the Linux CI path is proven.
 
 ### Exit criteria
 
@@ -1462,6 +1482,18 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 - **Retention:** expired and revoked `auth_session` rows are kept; decide their retention and purge. ID tokens of expired sessions are discarded when the session is next seen and by a bounded sweep on each sign-in; a scheduled purge would remove the dependency on sign-in activity.
 - **Back-channel logout before session creation (R03 review D-3):** a logout token for a Keycloak session that arrives between the code exchange and the session insert revokes nothing, and the new session lives until its deadline. Consider remembering recently logged-out `sid` values briefly, or re-checking the Keycloak session.
 
+### Carried forward from the `IAM-CP1` audit (`audits/IAM-CP1.md`)
+
+- **CP1-08:** the sign-in sweep scans the whole `auth_session` table (no covering index, rows never purged) and swallows a statement timeout without a log line.
+- **CP1-09:** the older race tests use `Promise.all` without a barrier or held lock; their assertions also hold sequentially.
+- **CP1-11:** no automated test covers the upgrade, append and refusal branches of `pnpm env:setup`.
+- **CP1-14:** a rejected or no-op back-channel logout leaves only a log line; spec Sections 33–34 ask for a security event (needs the rate limiting of this stage).
+- **CP1-15:** the realm enables the `delete_credential` required action, so a user can delete their OTP and re-enrol with the password alone.
+- **CP1-22:** the sweep tests expiry only inside its `id IN (SELECT … LIMIT 200)` subquery; a sweep meeting an in-flight `applyRevalidation` clears the tokens of a row that was just made live. Repeat the expiry predicate in the outer `WHERE` and prove it with a forced interleaving.
+- **CP1-23, CP1-24:** the auth-flow log scan does not collect back-channel logout tokens (and has no JWT pattern); two login attempts in `keycloak-login.integration.spec.ts` (lines 183 and 234) are not collected.
+- **CP1-25:** no test shows that refresh or ID token material never reaches `audit_record.change` or `reason`.
+- **CP1-27:** SECURITY Section 11 says identity-provider tokens MUST be discarded when the session ends; tokens of an expired session are discarded when the row is next seen or swept. Reconcile the canonical text or the code (with CP1-08).
+
 ### Exit criteria
 
 - the IAM specification Definition of Done is satisfied or every remaining item is explicitly classified as a blocker;
@@ -1604,7 +1636,7 @@ The `IAM-CP1` deep audit of `48ff7cc` (record `audits/IAM-CP1.md`) returned `IAM
 
 Fix run `IAM-R03F` (plan `IAM_R03F_SESSION_REVALIDATION_PLAN.md`) resolved CP1-01. It is `COMPLETE` once its pull request is merged. The API keeps each session's refresh token encrypted server-side (its own key purpose) and refreshes the Keycloak session at most once a minute while the Vertex session is used; the idle deadline slides only after a successful refresh, a refusal revokes the session (reason `PROVIDER_SESSION_ENDED`, Audit evidence), and an outage keeps the current deadline without sliding it (R03F D-01 to D-09). Real-Keycloak tests show a used session surviving the SSO idle timeout and its grace window and still receiving Keycloak's logout, and a silently ended Keycloak session or a disabled identity ending the Vertex session at its next re-validation (R03F D-10). It also closed CP1-02, CP1-10, CP1-12 and CP1-16 and the realm-contract brute-force flake (R03F D-11 to D-13). `/audit IAM-CP1` re-checks CP1-01 next.
 
-The `IAM-CP1` re-check 1 of `cd82811` (record `audits/IAM-CP1.md` Section 5) returned `IAM-CP1 FIXES REQUIRED`. CP1-01 is resolved, and so are CP1-02, CP1-10 and CP1-16; CP1-12 is resolved in the auth suites, and its remainder in the provisioning suite is CP1-26. The fix run introduced one blocking finding, CP1-21: review fix S-01 classes an identity-provider timeout as `rejected`, so a hung Keycloak revokes every session that comes due (reason `PROVIDER_SESSION_ENDED`) and a timed-out sign-in answers `AUTH_LOGIN_FAILED`. This contradicts R03F D-05 and Done means 3. Fix run `IAM-R03F2` resolves it together with CP1-22 to CP1-25 and the M8 tick of CP1-29; `/audit IAM-CP1` then re-checks CP1-21. The record's other non-blocking findings (CP1-26 to IAM-MP-10, CP1-27 to IAM-MP-15, and the earlier CP1-03 to CP1-18 owners) are attached to their stages when a re-check accepts `IAM-CP1`.
+The `IAM-CP1` re-check 1 of `cd82811` (record `audits/IAM-CP1.md` Section 5) returned `IAM-CP1 FIXES REQUIRED`. CP1-01 is resolved, and so are CP1-02, CP1-10 and CP1-16; CP1-12 is resolved in the auth suites, and its remainder in the provisioning suite is CP1-26. The fix run introduced one blocking finding, CP1-21: review fix S-01 classes an identity-provider timeout as `rejected`, so a hung Keycloak revokes every session that comes due (reason `PROVIDER_SESSION_ENDED`) and a timed-out sign-in answers `AUTH_LOGIN_FAILED`. This contradicts R03F D-05 and Done means 3. By owner decision, CP1-21 was fixed in the re-check's own pull request instead of a separate fix run and re-check (record Section 5.7): openid-client's `OAUTH_TIMEOUT` and `OAUTH_ABORT` are `unavailable` again, proven by unit tests that fail without the fix and by a probe against a provider that never answers. `IAM-CP1` is accepted on that decision. Its non-blocking findings are attached to IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12 and IAM-MP-15 ("Carried forward from the `IAM-CP1` audit"); CP1-22 to CP1-25, first assigned to a fix run, go to IAM-MP-15.
 
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
@@ -1632,9 +1664,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-05 Application Session Foundation | R03 | COMPLETE | R02 merged (satisfied) |
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | COMPLETE | R02 merged (satisfied) |
 | `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | COMPLETE | `IAM-CP1` record merged (satisfied) |
-| `IAM-R03F2` Fix run for the `IAM-CP1` re-check 1 blocking finding | R03F2 | READY | `IAM-CP1` re-check 1 record merged |
-| `IAM-CP1` Deep audit: authentication | — | READY | R03 merged (audited: FIXES REQUIRED); R03F merged (re-check 1: FIXES REQUIRED); re-check after R03F2 merged |
-| IAM-MP-07 Default Protection & Authorization Context | R04 | PLANNED | `IAM-CP1 ACCEPTED` |
+| `IAM-CP1` Deep audit: authentication | — | COMPLETE | R03 merged (audited: FIXES REQUIRED); R03F merged (re-check 1: FIXES REQUIRED; CP1-21 fixed in the re-check pull request, accepted by owner decision) |
+| IAM-MP-07 Default Protection & Authorization Context | R04 | READY | `IAM-CP1 ACCEPTED` (satisfied) |
 | IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | PLANNED | R04 merged |
 | IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | PLANNED | R05 merged |
@@ -1662,12 +1693,12 @@ The ledger changes only through the pull request of the run or audit that produc
 - **Stages affected:** IAM-MP-05 and IAM-MP-06 stay `COMPLETE` (merged); their session behavior is corrected by `IAM-R03F`. IAM-MP-07 still waits for `IAM-CP1 ACCEPTED`. Stage order and ownership are unchanged.
 - **Accepted baselines:** unchanged. `IAM-CP1` is not accepted.
 
-### Amendment record — `IAM-CP1` second fix run (2026-09-23)
+### Amendment record — `IAM-CP1` accepted by owner decision (2026-09-23)
 
-- **What changed:** run `IAM-R03F2` (Tier A) was added between `IAM-R03F` and the next `IAM-CP1` re-check (Section 8.3 and the ledger).
-- **Why:** the `IAM-CP1` re-check 1 returned `IAM-CP1 FIXES REQUIRED` (`audits/IAM-CP1.md` Section 5, blocking finding CP1-21, introduced by `IAM-R03F`). `docs/PLANNING.md` Section 9 requires a dedicated fix run, and `/stage` starts only runs listed here.
-- **Stages affected:** IAM-MP-05 and IAM-MP-06 stay `COMPLETE`; their provider-error classification is corrected by `IAM-R03F2`. IAM-MP-07 still waits for `IAM-CP1 ACCEPTED`. Stage order and ownership are unchanged.
-- **Accepted baselines:** unchanged. `IAM-CP1` is not accepted.
+- **What changed:** `IAM-CP1` → `COMPLETE` and IAM-MP-07 (`IAM-R04`) → `READY`. The `IAM-CP1` non-blocking findings are attached to IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12 and IAM-MP-15.
+- **Why:** re-check 1 returned `IAM-CP1 FIXES REQUIRED` for CP1-21, a small defect introduced by `IAM-R03F`. The owner decided to fix it directly in the re-check's pull request, without the separate fix run and re-check that `docs/PLANNING.md` Section 9 prescribes. This is a one-time exception, not a change of method.
+- **Evidence:** `audits/IAM-CP1.md` Section 5.7; the pull request's CI.
+- **Accepted baselines:** IAM-MP-05 and IAM-MP-06 with the `IAM-R03F` correction and the CP1-21 fix.
 
 The records below were written under the previous method and are kept as history. Under the current method, a record is added only when the roadmap changes.
 
@@ -1909,13 +1940,13 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-06 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, and IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`), and fix run `IAM-R03F` resolved its blocking finding CP1-01. Re-check 1 (record Section 5) returned `IAM-CP1 FIXES REQUIRED` again, for the new blocking finding CP1-21. The next step is fix run `IAM-R03F2`. Start it in a new Claude Code session after the re-check's pull request is merged:
+The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`), and fix run `IAM-R03F` resolved its blocking finding CP1-01. Re-check 1 (record Section 5) found the new blocking finding CP1-21, which was fixed in the same pull request by owner decision, and `IAM-CP1` is accepted (record Section 5.7). The next step is run `IAM-R04` (IAM-MP-07). Start it in a new Claude Code session after that pull request is merged:
 
 ```text
-/stage IAM-R03F2
+/stage IAM-R04
 ```
 
-Its plan is built from the audit record, Section 5.4. After it merges, a new session re-checks CP1-21 with `/audit IAM-CP1`. Run `IAM-R04` (IAM-MP-07) starts only after `IAM-CP1 ACCEPTED`.
+Its planner reads the IAM-MP-07 section, including the items carried forward from the `IAM-CP1` audit.
 
 Do **not** plan later runs in detail now.
 
