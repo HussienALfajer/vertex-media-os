@@ -11,6 +11,7 @@ import {
 import { createApplicationUserRepository } from '@vertex-os/iam-persistence';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
+import { testAuthConfig } from '../../test-support/auth-config.js';
 import { createApp } from '../app.factory.js';
 import { loadAppConfig, type AppConfig } from '../config/app-config.js';
 import {
@@ -220,7 +221,7 @@ describe('pnpm iam:sync-reference against real PostgreSQL', () => {
     const commandLog = capture();
     createCommandLogger(config, commandLog.destination).error({ err: error }, 'probe');
     const apiLog = capture();
-    const app = await createApp(config, { logStream: apiLog.destination });
+    const app = await createApp(config, testAuthConfig(), { logStream: apiLog.destination });
     try {
       app.getHttpAdapter().getInstance().log.error({ err: error }, 'probe');
     } finally {

@@ -1,13 +1,17 @@
 import helmet from '@fastify/helmet';
+import { UnsupportedMediaTypeException } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { FastifyLoggerOptions } from 'fastify';
 import { AppModule } from './app.module.js';
+import type { AuthRuntimeOptions } from './auth/auth-runtime.js';
 import { type AppConfig } from './config/app-config.js';
+import type { AuthConfig } from './config/auth-config.js';
 import { ProblemDetailsFilter } from './http/problem-details.js';
 import { REQUEST_ID_HEADER, resolveRequestId } from './http/request-id.js';
 import { PinoLoggerService } from './logging/pino-logger.service.js';
 import { safeErrorSerializer } from './logging/safe-error-serializer.js';
+import { safeRequestSerializer } from './logging/safe-request-serializer.js';
 import { serveApiDocs } from './openapi/openapi.js';
 
 /** Stable prefix of every HTTP route; the web application reaches the API through it. */
@@ -16,7 +20,11 @@ export const API_PREFIX = 'api';
 /** Fastify's default request body limit (1 MiB), stated explicitly so it is a reviewed choice. */
 const BODY_LIMIT_BYTES = 1_048_576;
 
-export interface CreateAppOptions {
+/** The one route that takes a form body: Keycloak's back-channel logout (spec Section 33). */
+const FORM_BODY_ROUTE = `/${API_PREFIX}/auth/backchannel-logout`;
+const FORM_BODY_LIMIT_BYTES = 32_768;
+
+export interface CreateAppOptions extends AuthRuntimeOptions {
   /** Destination of the JSON log records; standard output when omitted. Tests inspect logs through it. */
   readonly logStream?: NonNullable<FastifyLoggerOptions['stream']>;
 }
@@ -28,15 +36,17 @@ export interface CreateAppOptions {
  */
 export async function createApp(
   config: AppConfig,
+  auth: AuthConfig,
   options: CreateAppOptions = {},
 ): Promise<NestFastifyApplication> {
+  const { logStream, ...authOptions } = options;
   const adapter = new FastifyAdapter({
     logger: {
       level: config.logging.level,
-      // Fastify keeps its own request/response serializers; only `err` is replaced, so database
-      // errors are logged as allowlisted descriptions (IAM-02 D-15).
-      serializers: { err: safeErrorSerializer },
-      ...(options.logStream ? { stream: options.logStream } : {}),
+      // `err`: database errors are logged as allowlisted descriptions (IAM-02 D-15). `req`: the
+      // path without its query string, which can carry OIDC codes and state (IAM-R03 D-20).
+      serializers: { err: safeErrorSerializer, req: safeRequestSerializer },
+      ...(logStream ? { stream: logStream } : {}),
     },
     // Request ids come only from `resolveRequestId`, which validates inbound values.
     requestIdHeader: false,
@@ -48,11 +58,30 @@ export async function createApp(
   fastify.addHook('onRequest', async (request, reply) => {
     void reply.header(REQUEST_ID_HEADER, request.id);
   });
+  // Form bodies are accepted by the back-channel logout route only; any other route answers 415.
+  fastify.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string', bodyLimit: FORM_BODY_LIMIT_BYTES },
+    (request, body, done) => {
+      if (request.url.split('?', 1)[0] !== FORM_BODY_ROUTE) {
+        done(new UnsupportedMediaTypeException('Form bodies are not accepted here.'), undefined);
+        return;
+      }
+      done(null, Object.fromEntries(new URLSearchParams(String(body))));
+    },
+  );
 
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule.forRoot(config), adapter, {
-    logger: new PinoLoggerService(fastify.log),
-    abortOnError: false,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule.forRoot(config, auth, authOptions),
+    adapter,
+    {
+      logger: new PinoLoggerService(fastify.log),
+      abortOnError: false,
+      // Nest would add its own JSON and form parsers for every route. Fastify's built-in JSON parser
+      // (prototype-poisoning checks on) and the restricted form parser above are the only ones.
+      bodyParser: false,
+    },
+  );
 
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalFilters(new ProblemDetailsFilter());

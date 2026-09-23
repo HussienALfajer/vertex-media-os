@@ -1,6 +1,7 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from './app.factory.js';
+import { testAuthConfig } from '../test-support/auth-config.js';
 import { loadAppConfig } from './config/app-config.js';
 import { createOpenApiDocument } from './openapi/openapi.js';
 
@@ -15,6 +16,7 @@ async function startApp(environment: Record<string, string> = {}): Promise<NestF
       DATABASE_URL: UNREACHABLE_DATABASE_URL,
       ...environment,
     }),
+    testAuthConfig(),
   );
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
@@ -171,6 +173,7 @@ describe('readiness failure logging', () => {
     const lines: string[] = [];
     const app = await createApp(
       loadAppConfig({ NODE_ENV: 'test', LOG_LEVEL: 'warn', DATABASE_URL: SENTINEL_DATABASE_URL }),
+      testAuthConfig(),
       { logStream: { write: (line) => lines.push(line) } },
     );
     try {
