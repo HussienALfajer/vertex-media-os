@@ -34,6 +34,7 @@ const OWNING_VOLUME = {
   'keycloak-admin-password': 'keycloak-data',
   'keycloak-web-client-secret': 'keycloak-data',
   'keycloak-provisioner-client-secret': 'keycloak-data',
+  'keycloak-smtp-password': 'keycloak-data',
 };
 
 const PLACEHOLDER = /<generated:([a-z0-9-]+)>/g;
