@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-01` — `READY` (IAM-MP-00 `COMPLETE`: audited `IAM-00 ACCEPTED` and baseline accepted by the owner on 2026-09-23; its executable plan is not yet written)  
+**Next executable stage:** `IAM-MP-01` — `READY` (IAM-MP-00 `COMPLETE`: audited `IAM-00 ACCEPTED` and baseline accepted by the owner on 2026-09-23; its executable plan `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` was written on 2026-09-23 and is not yet implemented)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -599,7 +599,8 @@ Establish the first real business-domain package boundary and the platform integ
 
 **Status:** READY  
 **Parent specification area:** IAM-1  
-**Depends on:** IAM-MP-00 COMPLETE (satisfied 2026-09-23)
+**Depends on:** IAM-MP-00 COMPLETE (satisfied 2026-09-23)  
+**Executable plan:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` (written 2026-09-23; not yet implemented)
 
 ### Objective
 
@@ -635,6 +636,15 @@ Introduce the authoritative IAM persistence model and prove structural invariant
 - **A-06:** decide deliberately which project owns IAM's private repository adapters, and give it explicit tags and constraints. Today `layer:domain` may depend only on `layer:domain`/`layer:shared`, with `@prisma/*` banned, and `layer:infrastructure` only on `layer:infrastructure`, so "IAM infrastructure → `@vertex-os/iam`" is not yet expressible. Do not loosen the domain-core rule to make persistence fit.
 - **A-03:** add `pg` to the domain-core banned external imports when that adapter boundary is defined.
 - **A-08:** this stage changes boundary configuration, so prefer a durable, repository-run check of the new rules over temporary probes alone (`docs/ARCHITECTURE.md` Section 39).
+
+The executable plan resolves these at plan level, with authority the owner delegated, in decisions D-01…D-04:
+
+- a separate IAM-owned adapter project `domains/iam-persistence`, tagged `layer:adapter` + `domain:iam`, with the domain-core rule left unchanged;
+- lint-restricted private entry points `@vertex-os/iam/persistence` and `@vertex-os/database/persistence`;
+- `pg` added to the domain-core ban;
+- a `pnpm lint:boundaries` regression check inside `pnpm verify`.
+
+The resolutions become effective when that plan is implemented and audited.
 
 ### Exit criteria
 
@@ -1465,7 +1475,7 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No later IAM stage has started.
 
-The next stage eligible for detailed planning is `IAM-MP-01`, which is `READY`: its executable plan may be written from the current `main`, but it has not yet been created or implemented.
+The next executable stage is `IAM-MP-01`, which is `READY`. Its executable plan, `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`, was written on 2026-09-23 from `main` at `a1e087f` and has not yet been implemented.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
@@ -1495,6 +1505,13 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **Evidence:** `IAM_00_ARCHITECTURE_FOUNDATION_PLAN.md` Section 49A: independent audit of `40c5aff`/`54107b0` with the auditor's own negative boundary probes, `pnpm verify:full`, uncached `pnpm verify`, `pnpm deps:audit` and Nx graph/sync checks, followed by the owner's acceptance.
 - **Stages affected:** IAM-MP-01 and IAM-MP-03 (and IAM-MP-06 for the OIDC runtime ban). Stage order and ownership are unchanged.
 - **Findings outside IAM scope:** A-01 (a design-system E2E test that was flaky under CPU contention and hidden by CI retries) was fixed in `ea8b16c`; CI now fails on flaky tests. A-05 (`packages/ui` switches off `no-restricted-imports` entirely) belongs to design-system configuration. Neither blocks IAM planning.
+- **Accepted baselines:** remain valid.
+
+### Amendment record — IAM-MP-01 executable plan written (2026-09-23)
+
+- **What changed:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` was written. IAM-MP-01 remains `READY` until its implementation conversation starts. The IAM-MP-01 section now links the plan and summarizes how it resolves the carried-forward audit items A-03, A-06 and A-08.
+- **Evidence:** the plan's Section 6.3 records planning-time probes against the repository's own Prisma 7.10.0 CLI and a throwaway PostgreSQL 18.6 container. One notable finding: `prisma migrate deploy` does not apply a migration atomically, so the plan requires an explicit transaction wrapper.
+- **Stages affected:** none reordered. Within the stage's own scope, IAM-MP-01 delivers repository operations for the user aggregate only; department, role and permission write operations arrive with IAM-MP-02, IAM-MP-08 and IAM-MP-09, while all seven tables and their constraints are created in IAM-MP-01.
 - **Accepted baselines:** remain valid.
 
 ---
@@ -1663,24 +1680,19 @@ The governance steps that had to precede execution are complete:
 
 IAM-MP-00 has been completed through that cycle: plan written, implemented (`40c5aff`, `54107b0`), independently audited (`IAM-00 ACCEPTED`, executable plan Section 49A) and accepted by the owner on 2026-09-23.
 
-The next steps are:
-
-1. create **only** the executable plan for:
-
-```text
-IAM-MP-01 — IAM Persistence Model & First Business Migration
-```
-
-Suggested filename:
+The executable plan for IAM-MP-01 now exists:
 
 ```text
 docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md
 ```
 
-2. write that executable plan from the current `main` baseline, using the structure required by `docs/PLANNING.md` and resolving the items in IAM-MP-01's "Carried forward from the IAM-MP-00 audit" (above all A-06, the adapter project boundary);
-3. implement it in one implementation conversation, then stop;
-4. perform an independent audit and accept the resulting baseline only after blocking findings are closed;
-5. then create the executable plan for IAM-MP-02.
+It was written from `main` at `a1e087f` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A-03, A-06 and A-08 (its decisions D-01…D-04).
+
+The next steps are:
+
+1. implement that plan in one implementation conversation, then stop;
+2. perform an independent audit and accept the resulting baseline only after blocking findings are closed;
+3. then create the executable plan for IAM-MP-02.
 
 Do **not** create detailed implementation plans for IAM-MP-02 through IAM-MP-15 now.
 
