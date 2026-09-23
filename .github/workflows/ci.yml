@@ -56,12 +56,14 @@ jobs:
       - name: pnpm deps:audit
         run: pnpm deps:audit
 
+      # A test that passes only on its retry also fails `verify:full` (Playwright
+      # `failOnFlakyTests` on CI, TESTING.md §56), so flaky tests reach this step too.
       - name: Upload Playwright diagnostics
         if: failure() && steps.verify.outcome == 'failure'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-diagnostics
-          # Traces and screenshots of failed tests plus the HTML report; nothing else.
+          # Traces and screenshots of failed attempts plus the HTML report; nothing else.
           path: apps/web-e2e/test-output/
           if-no-files-found: ignore
           retention-days: 7

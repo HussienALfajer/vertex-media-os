@@ -36,6 +36,10 @@ const VISUAL_BROWSER = {
  *   only through an explicit `--update-snapshots` run followed by human review; CI never
  *   writes them.
  *
+ * CI retries a failed test once, only to tell a flaky test from a broken one (TESTING.md §31,
+ * §56): a test that passes only on retry still fails the run, is annotated on the GitHub run,
+ * and keeps the failed attempt's trace and screenshot.
+ *
  * The smoke journey only observes liveness, which does not touch PostgreSQL; readiness
  * against real PostgreSQL is proven by the Testcontainers integration tests. The API
  * still validates its configuration at startup, so it receives a syntactically valid,
@@ -47,8 +51,13 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
+  failOnFlakyTests: isCI,
   updateSnapshots: isCI ? 'none' : 'missing',
-  reporter: [['list'], ['html', { outputFolder: './test-output/report', open: 'never' }]],
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: './test-output/report', open: 'never' }],
+    ...(isCI ? [['github'] as const] : []),
+  ],
   use: {
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

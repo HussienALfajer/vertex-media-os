@@ -98,8 +98,10 @@ baselines. Design tokens are edited in `packages/ui/src/tokens/tokens.json` and 
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same commands,
 `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit`, for every pull request
-to `main` and every push to `main`. It needs no secrets. When `verify:full` fails, the Playwright
-traces, screenshots and report are kept as a run artifact for 7 days.
+to `main` and every push to `main`. It needs no secrets. CI retries a failed Playwright test once
+only to classify it: a test that passes only on retry is flaky and still fails the run. Failed and
+flaky tests are annotated on the run, and when `verify:full` fails the Playwright traces,
+screenshots and report are kept as a run artifact for 7 days.
 
 ## Repository layout
 

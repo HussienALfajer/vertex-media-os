@@ -11,19 +11,40 @@ test.describe('overlay ownership (§17.2, §31)', () => {
     const dialog = page.getByRole('dialog', { name: 'تعديل المستخدم' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('textbox', { name: 'الاسم' })).toBeFocused();
+    // The entry style ends on an animation frame: once it is gone, the page renders frames.
+    await expect(dialog).not.toHaveAttribute('data-starting-style');
 
-    // Tab and Shift+Tab never leave the modal. At its boundary focus briefly lands on the
-    // primitive's hidden focus guard, which returns it inside within a frame; a real escape
-    // to the page never settles inside and fails this check.
-    for (let step = 0; step < 12; step += 1) {
-      await page.keyboard.press(step % 3 === 2 ? 'Shift+Tab' : 'Tab');
-      await expect
-        .poll(
-          () => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]'))),
-          { timeout: 1_000 },
-        )
-        .toBe(true);
+    // Tab and Shift+Tab never leave the modal. At either boundary focus first lands on one of
+    // the modal's own hidden focus guards beside it, which returns focus inside on the next
+    // animation frame. Every element that receives focus is recorded, so focus anywhere else,
+    // however briefly, fails. After each press the check waits for rendered frames, not for a
+    // wall-clock deadline that a loaded browser delivering frames late can miss.
+    const focus = await dialog.evaluateHandle((modal) => {
+      const stray: string[] = [];
+      document.addEventListener(
+        'focusin',
+        (event) => {
+          const target = event.target as Element;
+          const ownGuard =
+            target.hasAttribute('data-base-ui-focus-guard') &&
+            (target === modal.previousElementSibling || target === modal.nextElementSibling);
+          if (!modal.contains(target) && !ownGuard) stray.push(target.outerHTML.slice(0, 120));
+        },
+        true,
+      );
+      return { modal, stray };
+    });
+    for (let step = 1; step <= 12; step += 1) {
+      await page.keyboard.press(step % 3 === 0 ? 'Shift+Tab' : 'Tab');
+      const settled = await focus.evaluate(async ({ modal }) => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const active = document.activeElement;
+        if (active === null) return 'nothing';
+        return modal.contains(active) ? 'inside' : active.outerHTML.slice(0, 120);
+      });
+      expect(settled, `focus after key press ${step}`).toBe('inside');
     }
+    expect(await focus.evaluate(({ stray }) => stray)).toEqual([]);
     // The page behind is inert or hidden from assistive technology while the modal is open.
     const behindReachable = await page.evaluate(() => {
       const main = document.querySelector('main');
