@@ -10,6 +10,7 @@ import { createDatabaseClient } from './index.js';
 const IAM_01 = '20260923013708_iam_persistence_foundation';
 const AUDIT = '20260923035742_audit_foundation';
 const IAM_SYSTEM_ROLE_CODE = '20260923041312_iam_system_role_code';
+const AUTH_SESSIONS = '20260923190000_auth_sessions';
 const migrationsRoot = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
 const schemaRoot = fileURLToPath(new URL('../prisma/schema', import.meta.url));
 
@@ -96,6 +97,7 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
         { name: IAM_01, finished: true, rolledBack: false },
         { name: AUDIT, finished: true, rolledBack: false },
         { name: IAM_SYSTEM_ROLE_CODE, finished: true, rolledBack: false },
+        { name: AUTH_SESSIONS, finished: true, rolledBack: false },
       ]);
       expect(await hasSystemCodeCheck(client)).toBe(true);
       expect(await roles(client)).toEqual(before);

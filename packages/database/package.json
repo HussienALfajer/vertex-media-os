@@ -25,6 +25,12 @@
       "types": "./dist/audit.d.ts",
       "import": "./dist/audit.js",
       "default": "./dist/audit.js"
+    },
+    "./auth": {
+      "@vertex-os/source": "./src/auth.ts",
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js",
+      "default": "./dist/auth.js"
     }
   },
   "dependencies": {

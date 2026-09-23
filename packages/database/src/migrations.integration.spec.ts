@@ -11,6 +11,7 @@ const MIGRATIONS = [
   '20260923013708_iam_persistence_foundation',
   '20260923035742_audit_foundation',
   '20260923041312_iam_system_role_code',
+  '20260923190000_auth_sessions',
 ];
 
 describe('IAM migration history against real PostgreSQL', () => {
