@@ -52,6 +52,7 @@ describe('committed secrets', () => {
   it('holds every client secret as a bare environment placeholder without a default', () => {
     const secrets = realm.clients.map((client) => [client.clientId, client.secret]);
     expect(secrets).toEqual([
+      ['admin-cli', undefined],
       ['vertex-web', '${KEYCLOAK_WEB_CLIENT_SECRET}'],
       ['vertex-provisioner', '${KEYCLOAK_PROVISIONER_CLIENT_SECRET}'],
     ]);
@@ -75,8 +76,10 @@ describe('committed secrets', () => {
     const template = workspaceFile('.env.example');
     const secretLines = template
       .split(/\r?\n/)
-      .filter((line) => /^[A-Z0-9_]*(SECRET|PASSWORD)[A-Z0-9_]*=/.test(line));
-    expect(secretLines.length).toBeGreaterThanOrEqual(4);
+      .filter((line) =>
+        /^([A-Z0-9_]*(SECRET|PASSWORD)[A-Z0-9_]*|[A-Z0-9_]*ADMIN_USERNAME)=/.test(line),
+      );
+    expect(secretLines.length).toBeGreaterThanOrEqual(5);
     for (const line of secretLines) expect(line).toMatch(/=<generated:[a-z0-9-]+>$/);
   });
 });

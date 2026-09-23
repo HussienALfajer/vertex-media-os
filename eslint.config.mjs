@@ -47,15 +47,23 @@ export const restrictedImportPatterns = [
 ];
 
 /**
- * `createRequire` resolves any specifier at run time and so bypasses every import restriction.
- * Only the black-box end-to-end project (`apps/web-e2e`) uses it, and its configuration drops
- * these paths.
+ * `node:module` (its `createRequire`) resolves any specifier at run time and so bypasses every
+ * import restriction. Only the black-box end-to-end project (`apps/web-e2e`) uses it, and its
+ * configuration drops these paths; `restrictedImportSyntax` closes the dynamic routes to it.
  */
+const CREATE_REQUIRE_MESSAGE = 'createRequire bypasses the import boundaries; use a static import.';
+
 export const restrictedImportPaths = ['node:module', 'module'].map((name) => ({
   name,
-  importNames: ['createRequire'],
-  message: 'createRequire bypasses the import boundaries; use a static import.',
+  message: CREATE_REQUIRE_MESSAGE,
 }));
+
+/**
+ * Matches a member or key written as an identifier, a string literal or a plain template literal,
+ * for example `x.env`, `x['env']` and `` x[`env`] ``.
+ */
+const named = (attribute, name) =>
+  `:matches([${attribute}.name='${name}'], [${attribute}.value='${name}'], [${attribute}.quasis.0.value.raw='${name}'])`;
 
 const PRIVATE_SUBPATH_MESSAGE =
   'Import @vertex-os packages statically and only through their approved entry points; dynamic imports and type queries of subpaths bypass the entry-point restriction.';
@@ -63,8 +71,9 @@ const PRIVATE_SUBPATH_MESSAGE =
 /**
  * `no-restricted-imports` sees only static import/export declarations. These selectors close the
  * remaining ways to name a module: dynamic `import()` and `import('…')` type queries of
- * `@vertex-os/<package>/<subpath>`, template-literal specifiers, and computed (unanalyzable)
- * specifiers. Applied to every linted file; no project negates them.
+ * `@vertex-os/<package>/<subpath>`, template-literal specifiers, computed (unanalyzable)
+ * specifiers, and every route to `createRequire`. Applied to every linted file; no project negates
+ * them.
  */
 export const restrictedImportSyntax = [
   {
@@ -89,6 +98,13 @@ export const restrictedImportSyntax = [
     selector: 'TSImportType[source.value=/^@vertex-os\\u002F[^\\u002F]+\\u002F./]',
     message: PRIVATE_SUBPATH_MESSAGE,
   },
+  ...[
+    'ImportExpression[source.value=/^(node:)?module$/]',
+    'ImportExpression > TemplateLiteral.source[quasis.0.value.raw=/^(node:)?module$/]',
+    'TSExternalModuleReference[expression.value=/^(node:)?module$/]',
+    `MemberExpression${named('property', 'createRequire')}`,
+    `CallExpression${named('callee.property', 'getBuiltinModule')}`,
+  ].map((selector) => ({ selector, message: CREATE_REQUIRE_MESSAGE })),
 ];
 
 const RAW_ENVIRONMENT_MESSAGE =
@@ -96,33 +112,23 @@ const RAW_ENVIRONMENT_MESSAGE =
 
 /**
  * Production source receives typed configuration from a bootstrap entry, never `process.env`:
- * not through `process`, `globalThis.process` or any other member named `process` (dot or bracket
- * form), not by destructuring `process`, and not through an import of `node:process`.
+ * not through `process`, `globalThis.process` or any other member named `process` (dot, bracket
+ * or template form), not by destructuring, and not through any import or re-export of
+ * `node:process`. Aliasing `process` or `Reflect.get` cannot be closed by syntax; they are
+ * deliberate circumvention that review rejects.
  */
 export const restrictedEnvSyntax = [
-  {
-    selector:
-      "MemberExpression:matches([property.name='env'], [property.value='env']):matches([object.name='process'], [object.property.name='process'], [object.property.value='process'])",
-    message: RAW_ENVIRONMENT_MESSAGE,
-  },
-  {
-    selector:
-      "VariableDeclarator:matches([init.name='process'], [init.property.name='process'], [init.property.value='process']) > ObjectPattern > Property:matches([key.name='env'], [key.value='env'])",
-    message: RAW_ENVIRONMENT_MESSAGE,
-  },
-  {
-    selector: 'ImportDeclaration[source.value=/^(node:)?process$/]',
-    message: RAW_ENVIRONMENT_MESSAGE,
-  },
-  {
-    selector: 'ImportExpression[source.value=/^(node:)?process$/]',
-    message: RAW_ENVIRONMENT_MESSAGE,
-  },
-];
+  `MemberExpression${named('property', 'env')}:matches([object.name='process'], [object.property.name='process'], [object.property.value='process'], [object.property.quasis.0.value.raw='process'])`,
+  `VariableDeclarator:matches([init.name='process'], [init.property.name='process'], [init.property.value='process']) > ObjectPattern > Property${named('key', 'env')}`,
+  `Property${named('key', 'process')} > ObjectPattern > Property${named('key', 'env')}`,
+  ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression)[source.value=/^(node:)?process$/]',
+  'ImportExpression > TemplateLiteral.source[quasis.0.value.raw=/^(node:)?process$/]',
+  'TSExternalModuleReference[expression.value=/^(node:)?process$/]',
+].map((selector) => ({ selector, message: RAW_ENVIRONMENT_MESSAGE }));
 
 /**
  * Unsafe raw SQL (string-built queries) is for tests only; production uses tagged `$queryRaw`.
- * Covers dot, bracket and destructuring access.
+ * Covers dot, bracket, template and destructuring access.
  */
 export const restrictedRawSqlSyntax = [
   ['$queryRawUnsafe', '$queryRaw'],
@@ -130,14 +136,8 @@ export const restrictedRawSqlSyntax = [
 ].flatMap(([unsafe, tagged]) => {
   const message = `Use the tagged ${tagged} template; ${unsafe} is reserved for tests.`;
   return [
-    {
-      selector: `MemberExpression:matches([property.name='${unsafe}'], [property.value='${unsafe}'])`,
-      message,
-    },
-    {
-      selector: `ObjectPattern > Property:matches([key.name='${unsafe}'], [key.value='${unsafe}'])`,
-      message,
-    },
+    { selector: `MemberExpression${named('property', unsafe)}`, message },
+    { selector: `ObjectPattern > Property${named('key', unsafe)}`, message },
   ];
 });
 

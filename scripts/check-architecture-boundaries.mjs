@@ -145,6 +145,49 @@ const violations = [
   ['V49', 'domains/iam', "globalThis.process.env['X'];", syntaxRule, rawEnvironment],
   ['V50', 'domains/iam', "globalThis['process']['env'];", syntaxRule, rawEnvironment],
   ['V51', 'apps/api', 'const { env } = process; void env;', syntaxRule, rawEnvironment],
+  // The persistence adapters override no-restricted-imports; the createRequire ban must survive.
+  [
+    'V52',
+    'domains/iam-persistence',
+    "import { createRequire } from 'node:module';",
+    importsRule,
+    createRequireBan,
+  ],
+  [
+    'V53',
+    'domains/audit-persistence',
+    "import { createRequire } from 'node:module';",
+    importsRule,
+    createRequireBan,
+  ],
+  // Every other route to createRequire.
+  ['V54', 'apps/api', "import mod from 'node:module'; void mod;", importsRule, createRequireBan],
+  ['V55', 'apps/api', "await import('node:module');", syntaxRule, createRequireBan],
+  [
+    'V56',
+    'domains/iam',
+    "process.getBuiltinModule('module').createRequire;",
+    syntaxRule,
+    createRequireBan,
+  ],
+  ['V57', 'apps/api', "import m = require('node:module'); void m;", syntaxRule, createRequireBan],
+  // Template, re-export and nested-destructuring routes to the raw environment and unsafe SQL.
+  ['V58', 'domains/iam', 'process[`env`];', syntaxRule, rawEnvironment],
+  ['V59', 'domains/iam', "export * from 'node:process';", syntaxRule, rawEnvironment],
+  [
+    'V60',
+    'domains/iam',
+    'const { process: { env } } = globalThis; void env;',
+    syntaxRule,
+    rawEnvironment,
+  ],
+  [
+    'V61',
+    'domains/iam-persistence',
+    'declare const c: any; c[`$queryRawUnsafe`](`x`);',
+    syntaxRule,
+    unsafeRawQuery,
+  ],
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);

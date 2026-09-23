@@ -35,7 +35,7 @@ pnpm iam:sync-reference                # synchronizes the IAM permission catalog
 pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-end tests
 ```
 
-`pnpm env:setup` generates the local database password, the Keycloak administrator password and
+`pnpm env:setup` generates the local database password, the Keycloak administrator credentials and
 the two Keycloak client secrets, and never prints them. It never rewrites an existing `.env`: run
 again after `.env.example` gains keys (for example after pulling a new service), it appends only
 the missing keys. It refuses to generate a value while the Docker volume that keeps it exists,
@@ -128,7 +128,7 @@ data.
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V51, C1–C8)                     |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V61, C1–C8)                     |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
 | `pnpm build`            | Production builds of every project with a build target                            |
@@ -187,5 +187,6 @@ docs/             Canonical documentation and execution plans
   no Audit read path and no IAM endpoint. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
 - The local Keycloak realm has no email (SMTP) configuration yet, so Keycloak cannot send
-  invitation, verification or password-reset email locally. Its back-channel logout URL points at
-  an API endpoint that does not exist yet.
+  invitation or verification email locally, and self-service password reset is off until a reset
+  flow that also requires the existing one-time code is added. Its back-channel logout URL points
+  at an API endpoint that does not exist yet.

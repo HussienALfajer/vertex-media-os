@@ -688,11 +688,41 @@ describe('sessions, tokens and realm entry points', () => {
       refreshTokenMaxReuse: 0,
       rememberMe: false,
       registrationAllowed: false,
-      resetPasswordAllowed: true,
       verifyEmail: true,
       bruteForceProtected: true,
       permanentLockout: false,
     });
+  });
+
+  it('offers no self-service reset, which would let a mailbox alone replace both factors', async () => {
+    const realm = await json<Record<string, unknown>>(keycloak.admin(''));
+    expect(realm['resetPasswordAllowed']).toBe(false);
+    const page = await (await new Browser().request(authorizationUrl())).text();
+    expect(page).toContain('id="kc-form-login"');
+    expect(page).not.toContain('login-actions/reset-credentials');
+  });
+
+  it('lets no client obtain a token through a password or implicit grant', async () => {
+    const clients = await json<
+      { clientId: string; directAccessGrantsEnabled: boolean; implicitFlowEnabled: boolean }[]
+    >(keycloak.admin('/clients'));
+    const permissive = clients
+      .filter((client) => !client.clientId.startsWith('contract-probe-'))
+      .filter((client) => client.directAccessGrantsEnabled || client.implicitFlowEnabled)
+      .map((client) => client.clientId);
+    expect(permissive).toEqual([]);
+
+    const email = uniqueEmail('admin-cli');
+    const user = await provisionUser(email);
+    await setTestPassword(user.id);
+    const adminCli = await tokenRequest({
+      grant_type: 'password',
+      client_id: 'admin-cli',
+      username: email,
+      password: TEST_PASSWORD,
+    });
+    expect(adminCli.body.error).toBe('unauthorized_client');
+    expect(adminCli.body.access_token).toBeUndefined();
   });
 });
 

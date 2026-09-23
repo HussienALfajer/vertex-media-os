@@ -10,7 +10,7 @@
   "duplicateEmailsAllowed": false,
   "rememberMe": false,
   "verifyEmail": true,
-  "resetPasswordAllowed": true,
+  "resetPasswordAllowed": false,
   "passwordPolicy": "length(15) and maxLength(128) and notUsername and notEmail and hashAlgorithm(argon2) and hashIterations(2)",
   "otpPolicyType": "totp",
   "otpPolicyAlgorithm": "HmacSHA1",
@@ -50,6 +50,21 @@
     "adminEventsExpiration": "7776000"
   },
   "clients": [
+    {
+      "clientId": "admin-cli",
+      "description": "Built-in client, kept inert: no grant may issue a token outside the MFA browser flow.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
     {
       "clientId": "vertex-web",
       "name": "Vertex OS web (BFF)",

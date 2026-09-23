@@ -30,6 +30,7 @@ const COMPOSE_PROJECT = 'vertexos';
 /** The Compose volume that keeps each generated value once the service has started. */
 const OWNING_VOLUME = {
   'postgres-password': 'postgres-data',
+  'keycloak-admin-username': 'keycloak-data',
   'keycloak-admin-password': 'keycloak-data',
   'keycloak-web-client-secret': 'keycloak-data',
   'keycloak-provisioner-client-secret': 'keycloak-data',
