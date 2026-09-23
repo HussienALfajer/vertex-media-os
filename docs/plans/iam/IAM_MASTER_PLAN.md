@@ -1636,7 +1636,7 @@ The `IAM-CP1` deep audit of `48ff7cc` (record `audits/IAM-CP1.md`) returned `IAM
 
 Fix run `IAM-R03F` (plan `IAM_R03F_SESSION_REVALIDATION_PLAN.md`) resolved CP1-01. It is `COMPLETE` once its pull request is merged. The API keeps each session's refresh token encrypted server-side (its own key purpose) and refreshes the Keycloak session at most once a minute while the Vertex session is used; the idle deadline slides only after a successful refresh, a refusal revokes the session (reason `PROVIDER_SESSION_ENDED`, Audit evidence), and an outage keeps the current deadline without sliding it (R03F D-01 to D-09). Real-Keycloak tests show a used session surviving the SSO idle timeout and its grace window and still receiving Keycloak's logout, and a silently ended Keycloak session or a disabled identity ending the Vertex session at its next re-validation (R03F D-10). It also closed CP1-02, CP1-10, CP1-12 and CP1-16 and the realm-contract brute-force flake (R03F D-11 to D-13). `/audit IAM-CP1` re-checks CP1-01 next.
 
-The `IAM-CP1` re-check 1 of `cd82811` (record `audits/IAM-CP1.md` Section 5) returned `IAM-CP1 FIXES REQUIRED`. CP1-01 is resolved, and so are CP1-02, CP1-10 and CP1-16; CP1-12 is resolved in the auth suites, and its remainder in the provisioning suite is CP1-26. The fix run introduced one blocking finding, CP1-21: review fix S-01 classes an identity-provider timeout as `rejected`, so a hung Keycloak revokes every session that comes due (reason `PROVIDER_SESSION_ENDED`) and a timed-out sign-in answers `AUTH_LOGIN_FAILED`. This contradicts R03F D-05 and Done means 3. By owner decision, CP1-21 was fixed in the re-check's own pull request instead of a separate fix run and re-check (record Section 5.7): openid-client's `OAUTH_TIMEOUT` and `OAUTH_ABORT` are `unavailable` again, proven by unit tests that fail without the fix and by a probe against a provider that never answers. `IAM-CP1` is accepted on that decision. Its non-blocking findings are attached to IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12 and IAM-MP-15 ("Carried forward from the `IAM-CP1` audit"); CP1-22 to CP1-25, first assigned to a fix run, go to IAM-MP-15.
+The `IAM-CP1` re-check 1 of `cd82811` (record `audits/IAM-CP1.md` Section 5) returned `IAM-CP1 FIXES REQUIRED`. CP1-01 is resolved, and so are CP1-02, CP1-10 and CP1-16; CP1-12 is resolved in the auth suites, and its remainder in the provisioning suite is CP1-26. The fix run introduced one blocking finding, CP1-21: review fix S-01 classes an identity-provider timeout as `rejected`, so a hung Keycloak revokes every session that comes due (reason `PROVIDER_SESSION_ENDED`) and a timed-out sign-in answers `AUTH_LOGIN_FAILED`. This contradicts R03F D-05 and Done means 3. By owner decision, CP1-21 was fixed in a follow-up pull request instead of a separate fix run and re-check (record Section 5.7): openid-client's `OAUTH_TIMEOUT` and `OAUTH_ABORT` are `unavailable` again, proven by unit tests that fail without the fix and by a probe against a provider that never answers. `IAM-CP1` is accepted on that decision. Its non-blocking findings are attached to IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12 and IAM-MP-15 ("Carried forward from the `IAM-CP1` audit"); CP1-22 to CP1-25, first assigned to a fix run, go to IAM-MP-15.
 
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
@@ -1664,7 +1664,7 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-05 Application Session Foundation | R03 | COMPLETE | R02 merged (satisfied) |
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | COMPLETE | R02 merged (satisfied) |
 | `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | COMPLETE | `IAM-CP1` record merged (satisfied) |
-| `IAM-CP1` Deep audit: authentication | — | COMPLETE | R03 merged (audited: FIXES REQUIRED); R03F merged (re-check 1: FIXES REQUIRED; CP1-21 fixed in the re-check pull request, accepted by owner decision) |
+| `IAM-CP1` Deep audit: authentication | — | COMPLETE | R03 merged (audited: FIXES REQUIRED); R03F merged (re-check 1: FIXES REQUIRED; CP1-21 fixed in a follow-up pull request, accepted by owner decision) |
 | IAM-MP-07 Default Protection & Authorization Context | R04 | READY | `IAM-CP1 ACCEPTED` (satisfied) |
 | IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | PLANNED | R04 merged |
@@ -1696,7 +1696,7 @@ The ledger changes only through the pull request of the run or audit that produc
 ### Amendment record — `IAM-CP1` accepted by owner decision (2026-09-23)
 
 - **What changed:** `IAM-CP1` → `COMPLETE` and IAM-MP-07 (`IAM-R04`) → `READY`. The `IAM-CP1` non-blocking findings are attached to IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12 and IAM-MP-15.
-- **Why:** re-check 1 returned `IAM-CP1 FIXES REQUIRED` for CP1-21, a small defect introduced by `IAM-R03F`. The owner decided to fix it directly in the re-check's pull request, without the separate fix run and re-check that `docs/PLANNING.md` Section 9 prescribes. This is a one-time exception, not a change of method.
+- **Why:** re-check 1 returned `IAM-CP1 FIXES REQUIRED` for CP1-21, a small defect introduced by `IAM-R03F`. The owner decided to fix it directly in a follow-up pull request, without the separate fix run and re-check that `docs/PLANNING.md` Section 9 prescribes. This is a one-time exception, not a change of method.
 - **Evidence:** `audits/IAM-CP1.md` Section 5.7; the pull request's CI.
 - **Accepted baselines:** IAM-MP-05 and IAM-MP-06 with the `IAM-R03F` correction and the CP1-21 fix.
 
@@ -1940,7 +1940,7 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-06 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, and IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`), and fix run `IAM-R03F` resolved its blocking finding CP1-01. Re-check 1 (record Section 5) found the new blocking finding CP1-21, which was fixed in the same pull request by owner decision, and `IAM-CP1` is accepted (record Section 5.7). The next step is run `IAM-R04` (IAM-MP-07). Start it in a new Claude Code session after that pull request is merged:
+The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`), and fix run `IAM-R03F` resolved its blocking finding CP1-01. Re-check 1 (record Section 5) found the new blocking finding CP1-21, which was fixed in a follow-up pull request by owner decision, and `IAM-CP1` is accepted (record Section 5.7). The next step is run `IAM-R04` (IAM-MP-07). Start it in a new Claude Code session after the follow-up pull request is merged:
 
 ```text
 /stage IAM-R04
