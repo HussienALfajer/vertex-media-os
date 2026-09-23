@@ -124,7 +124,7 @@ Carried-forward items and their resolution in this run:
 - [x] M4 Boundary lint (A-02, A2-02, A2-03) and probes
 - [x] M5 README; local compose verification
 - [x] M6 `pnpm verify` and integration suites green
-- [ ] M7 In-run review (three reviewers); findings resolved
+- [x] M7 In-run review (three reviewers); findings resolved
 - [ ] M8 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
@@ -135,6 +135,7 @@ Carried-forward items and their resolution in this run:
   - AB-1 (blocking): the persistence adapters' import overrides dropped the `createRequire` ban.
   - AB-2 and AB-3: other routes to `createRequire`, and template, re-export and nested-destructuring forms of the environment and unsafe-SQL bans.
   - AB-6, from the re-check: `packages/ui` now keeps the `node:module` ban while it drops the import patterns.
+  - R-1, from the tests re-check: the loopback test also rejects `network_mode`.
   - S-01: the mailbox-only takeover through self-service reset, fixed by turning reset off.
   - S-02: the built-in `admin-cli` password grant.
   - S-03: the committed admin username default.

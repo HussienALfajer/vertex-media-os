@@ -56,6 +56,8 @@ describe('local exposure', () => {
       '127.0.0.1:${KEYCLOAK_PORT:-8080}:8080',
     ]);
     expect(compose).not.toMatch(/:9000\b/);
+    // Host networking would bypass every published-port binding.
+    expect(compose).not.toMatch(/^\s*network_mode:/m);
   });
 
   it('runs Keycloak in development mode with the realm import', () => {
