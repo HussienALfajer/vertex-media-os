@@ -171,12 +171,18 @@ describe('CSRF wherever a session is used (D-03)', () => {
 describe('AccessGuard', () => {
   class Handlers {
     @RequirePermission(USERS_READ)
-    held(): void {}
+    held(): string {
+      return 'held';
+    }
 
     @RequirePermission(ROLES_MANAGE)
-    missing(): void {}
+    missing(): string {
+      return 'missing';
+    }
 
-    open(): void {}
+    open(): string {
+      return 'open';
+    }
   }
   const handlers = new Handlers();
 

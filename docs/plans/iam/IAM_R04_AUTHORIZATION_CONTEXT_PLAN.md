@@ -107,7 +107,7 @@ No owner decisions: nothing here changes an item under "Changes Requiring Explic
 - [x] M4 Domain context, rules, reader port, capability, denial record; unit tests
 - [x] M5 PostgreSQL reader; integration tests
 - [x] M6 Access guard, `@Public()`, `@RequirePermission()`, CSRF in `requireSession`, `requireAuthorization`, bound capability; API and integration tests
-- [ ] M7 Documentation (ENGINEERING Section 6, README); `pnpm verify` and integration suites green
+- [x] M7 Documentation (ENGINEERING Section 6, README); `pnpm verify` and integration suites green
 - [ ] M8 In-run review (three reviewers); findings resolved
 - [ ] M9 Master Plan ledger, hand-off, pull request, CI green
 
