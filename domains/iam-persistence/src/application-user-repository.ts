@@ -23,7 +23,8 @@ import {
   invitationToDatabase,
 } from './enum-mapping.js';
 
-const userSelect = {
+/** Columns of an ApplicationUser; shared with the transaction-bound identity store. */
+export const userSelect = {
   id: true,
   email: true,
   displayName: true,
@@ -40,7 +41,7 @@ const userSelect = {
   version: true,
 } as const;
 
-function mapUser(row: IamApplicationUser): ApplicationUser {
+export function mapUser(row: IamApplicationUser): ApplicationUser {
   return {
     id: row.id as UserId,
     email: row.email as NormalizedEmail,

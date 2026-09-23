@@ -72,7 +72,7 @@ Carried-forward items and their resolution:
 
 ### Owner decisions
 
-- **OD-1 Local mail sink (new infrastructure service).** The realm needs an SMTP server locally and in tests to deliver invitations and reset links. Options:
+- **OD-1 Local mail sink (new infrastructure service).** *Answered by the owner on 2026-09-23: option A.* The realm needs an SMTP server locally and in tests to deliver invitations and reset links. Options:
   - **A (recommended):** Mailpit, pinned by tag and digest, as a Compose service (SMTP on the Compose network only, web UI on `127.0.0.1:8025`, no volume) and as a Testcontainers sink in the Keycloak harness. Local development can then follow invitations and resets, and tests read messages through Mailpit's HTTP API.
   - **B:** Mailpit in tests only. Local SMTP points at an unreachable host, so local invitations record `FAILED` and developers set credentials in the Keycloak console.
   - **C:** No mail sink. Tests prove only the failure paths; neither the invitation link nor the OTP-requiring reset flow can be proven end to end, so self-service recovery stays off and the S-01 item is carried forward again.
@@ -118,9 +118,9 @@ Carried-forward items and their resolution:
 
 ## 9. Checklist
 
-- [ ] M1 Plan committed; owner decision OD-1 answered
-- [ ] M2 Core: ports, capabilities, unit tests with fakes
-- [ ] M3 Persistence store operations and integration tests
+- [x] M1 Plan committed; owner decision OD-1 answered
+- [x] M2 Core: ports, capabilities, unit tests with fakes
+- [x] M3 Persistence store operations and integration tests
 - [ ] M4 `domains/iam-keycloak` adapter, unit tests, boundary lint and probes
 - [ ] M5 Realm SMTP and reset flow; mail sink in Compose and harness; env setup; realm contract tests
 - [ ] M6 Typed configuration, composition, real-Keycloak and composed integration tests

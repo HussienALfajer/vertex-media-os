@@ -3,6 +3,7 @@ import type { DatabaseClient, DatabaseTransaction } from '@vertex-os/database';
 import { iamPersistenceOf, runInTransaction } from '@vertex-os/database/iam';
 import type { IamTransactionRunner, IamTransactionScope } from '@vertex-os/iam/persistence';
 import { createReferenceDataStore } from './reference-data-store.js';
+import { createUserIdentityStore } from './user-identity-store.js';
 
 export interface IamTransactionRunnerOptions {
   /**
@@ -26,13 +27,16 @@ export function createIamTransactionRunner(
     run<T>(work: (scope: IamTransactionScope) => Promise<T>): Promise<T> {
       return runInTransaction(
         database,
-        (transaction) =>
-          work(
+        (transaction) => {
+          const client = iamPersistenceOf(transaction);
+          return work(
             Object.freeze({
-              referenceData: createReferenceDataStore(iamPersistenceOf(transaction)),
+              referenceData: createReferenceDataStore(client),
+              users: createUserIdentityStore(client),
               audit: options.auditRecorderFor(transaction),
             }),
-          ),
+          );
+        },
         { isolationLevel: 'ReadCommitted' },
       );
     },

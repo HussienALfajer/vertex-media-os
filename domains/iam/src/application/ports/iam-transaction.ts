@@ -1,5 +1,6 @@
 import type { AuditRecorder } from '@vertex-os/audit';
 import type { ReferenceDataStore } from './reference-data-store.js';
+import type { UserIdentityStore } from './user-identity-store.js';
 
 /**
  * The IAM stores and the MOD-AUDIT append capability, all bound to one database transaction.
@@ -8,6 +9,7 @@ import type { ReferenceDataStore } from './reference-data-store.js';
  */
 export interface IamTransactionScope {
   readonly referenceData: ReferenceDataStore;
+  readonly users: UserIdentityStore;
   readonly audit: AuditRecorder;
 }
 

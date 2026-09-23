@@ -142,7 +142,8 @@ export function fakeRunner(
     runs: 0,
     async run<T>(work: (scope: IamTransactionScope) => Promise<T>): Promise<T> {
       runner.runs += 1;
-      return work({ referenceData: store, audit });
+      // Reference synchronization never touches users; a call would fail loudly.
+      return work({ referenceData: store, users: undefined as never, audit });
     },
   };
   return runner;
