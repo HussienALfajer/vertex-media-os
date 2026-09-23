@@ -1,0 +1,49 @@
+{
+  "validEmails": [
+    "user@example.com",
+    "first.last+tag@example.com",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com"
+  ],
+  "invalidEmails": [
+    "no-at-sign",
+    "two@@example.com",
+    "@example.com",
+    "user@",
+    "user name@example.com",
+    "user\tname@example.com",
+    "é@example.com",
+    "ı@example.com",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com"
+  ],
+  "validDepartmentRoleCodes": ["it", "team-2", "2-team"],
+  "invalidDepartmentRoleCodes": [
+    "A-team",
+    "équipe",
+    "ıteam",
+    "-team",
+    "a--b",
+    "a",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "validModuleCodes": ["iam", "project-2"],
+  "invalidModuleCodes": [
+    "IAm",
+    "équipe",
+    "ıteam",
+    "-iam",
+    "i--am",
+    "i",
+    "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+  ],
+  "validPermissionCodes": ["iam.users.read", "iam.user-roles.manage-access"],
+  "invalidPermissionCodes": [
+    "iam.users",
+    "iam.users.read.extra",
+    "iam.Users.read",
+    "iam.users.é",
+    "iam.users.ı",
+    "iam.users.-read",
+    "iam.users.manage--access",
+    "iam.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.read"
+  ]
+}

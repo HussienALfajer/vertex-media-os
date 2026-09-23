@@ -57,6 +57,7 @@ export class DatabaseUnavailableError extends Error {
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_STATEMENT_TIMEOUT_MS = 5_000;
+const persistenceClients = new WeakMap<DatabaseClient, PrismaClient>();
 
 export function createDatabaseClient(options: DatabaseClientOptions): DatabaseClient {
   const statementTimeoutMs = options.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS;
@@ -68,7 +69,7 @@ export function createDatabaseClient(options: DatabaseClientOptions): DatabaseCl
   });
   const prisma = new PrismaClient({ adapter });
 
-  return {
+  const database: DatabaseClient = {
     async ping(): Promise<void> {
       try {
         await prisma.$queryRaw`SELECT 1`;
@@ -84,6 +85,17 @@ export function createDatabaseClient(options: DatabaseClientOptions): DatabaseCl
       await prisma.$disconnect();
     },
   };
+  persistenceClients.set(database, prisma);
+  return database;
+}
+
+/** Restricted persistence entry only; never re-exported from the package root. */
+export function persistenceClientOf(
+  database: DatabaseClient,
+): Omit<PrismaClient, '$connect' | '$disconnect'> {
+  const client = persistenceClients.get(database);
+  if (!client) throw new TypeError('DatabaseClient was not created by createDatabaseClient.');
+  return client;
 }
 
 const FAILURE_KIND = /^[A-Za-z]{1,64}$/;

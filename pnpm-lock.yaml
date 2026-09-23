@@ -340,6 +340,15 @@ importers:
 
   domains/iam: {}
 
+  domains/iam-persistence:
+    dependencies:
+      '@vertex-os/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@vertex-os/iam':
+        specifier: workspace:*
+        version: link:../iam
+
   packages/database:
     dependencies:
       '@prisma/adapter-pg':

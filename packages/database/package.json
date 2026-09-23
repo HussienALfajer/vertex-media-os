@@ -13,6 +13,12 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./persistence": {
+      "@vertex-os/source": "./src/persistence.ts",
+      "types": "./dist/persistence.d.ts",
+      "import": "./dist/persistence.js",
+      "default": "./dist/persistence.js"
     }
   },
   "dependencies": {
@@ -60,6 +66,14 @@
         "outputs": [
           "{projectRoot}/src/generated"
         ]
+      },
+      "prisma-migrate-deploy": {
+        "command": "prisma migrate deploy",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": false,
+        "dependsOn": []
       },
       "typecheck": {
         "dependsOn": [

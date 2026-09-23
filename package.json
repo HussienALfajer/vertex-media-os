@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "nx run-many -t lint",
+    "lint:boundaries": "node scripts/check-architecture-boundaries.mjs",
     "typecheck": "nx run-many -t typecheck",
     "test": "nx run-many -t test",
     "test:integration": "nx run-many -t test:integration",
@@ -25,9 +26,10 @@
     "infra:reset": "docker compose --env-file .env -f infra/compose.yaml down --volumes",
     "db:validate": "nx run @vertex-os/database:prisma-validate",
     "db:generate": "nx run @vertex-os/database:prisma-generate",
+    "db:migrate": "nx run @vertex-os/database:prisma-migrate-deploy",
     "openapi:generate": "nx run @vertex-os/api:openapi",
     "deps:audit": "pnpm audit --audit-level=moderate",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "verify": "pnpm format:check && pnpm lint && pnpm lint:boundaries && pnpm typecheck && pnpm test && pnpm build",
     "verify:full": "pnpm verify && pnpm db:validate && pnpm db:generate && pnpm test:integration && pnpm test:e2e"
   },
   "devDependencies": {

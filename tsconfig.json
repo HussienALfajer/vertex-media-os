@@ -20,6 +20,9 @@
     },
     {
       "path": "./domains/iam"
+    },
+    {
+      "path": "./domains/iam-persistence"
     }
   ]
 }

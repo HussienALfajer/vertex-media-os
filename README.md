@@ -5,7 +5,8 @@ NestJS-on-Fastify API, a React/Vite web application and PostgreSQL through Prism
 
 This repository contains the **Phase 0 technical foundation**, the **Vertex Design System
 Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)), and the
-IAM architecture package (`domains/iam`). IAM has no business behavior, data or authentication yet.
+IAM persistence foundation (`domains/iam` and `domains/iam-persistence`). IAM tables exist, but no
+IAM behavior is reachable from the running application yet.
 The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
@@ -25,6 +26,7 @@ The product and architecture are defined in the canonical documents: [product](d
 pnpm install                           # installs exactly what pnpm-lock.yaml records
 pnpm env:setup                         # creates the ignored .env with a generated local DB password
 pnpm infra:up                          # starts PostgreSQL 18 on 127.0.0.1 and waits until healthy
+pnpm db:migrate                        # applies forward-only database migrations
 pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-end tests
 ```
 
@@ -61,12 +63,23 @@ request's `traceId`; every response carries an `x-request-id` header.
 ```sh
 pnpm db:validate   # validate the Prisma schema
 pnpm db:generate   # generate the Prisma client into packages/database/src/generated (ignored)
+pnpm db:migrate    # apply pending migrations; safe to run again (no reset)
 pnpm infra:down    # stop local PostgreSQL; the data volume is kept
 pnpm infra:reset   # stop it AND delete the local data volume (destructive)
 ```
 
-The Prisma schema intentionally has no models and there are no migrations yet: business tables
-arrive with their module specifications.
+The first migration, `20260923013708_iam_persistence_foundation`, creates seven IAM tables and
+their structural constraints. The schema lives in `packages/database/prisma/schema/`; migrations
+live in `packages/database/prisma/migrations/`. The API does not apply migrations on startup.
+
+If `pnpm db:migrate` fails with P3018, its explicit transaction wrapper leaves no partial IAM
+schema, but Prisma records a failed `_prisma_migrations` row. A transaction-aborted message may
+hide the original SQL error: reproduce the migration against a **disposable database only** with
+`psql -v ON_ERROR_STOP=1 -f <migration.sql>`. Correct the environment, privileges or data rather
+than editing an already committed migration. Then run
+`pnpm --filter @vertex-os/database exec prisma migrate resolve --rolled-back <migration_name>`
+and retry `pnpm db:migrate`. Prisma refuses a nonempty schema without migration history (P3005);
+do not bypass that check.
 
 ## Verification
 
@@ -74,12 +87,13 @@ arrive with their module specifications.
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V19, C1–C2)                     |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
 | `pnpm build`            | Production builds of the API, the web application and the database package        |
 | `pnpm test:integration` | Tests against real, ephemeral PostgreSQL through Testcontainers (Docker required) |
 | `pnpm test:e2e`         | Playwright: production smoke, design-system lab in 3 engines, visual baselines    |
-| `pnpm verify`           | Fast gate: format check → lint → typecheck → test → build                         |
+| `pnpm verify`           | Fast gate: format check → lint → lint:boundaries → typecheck → test → build       |
 | `pnpm verify:full`      | `verify` + Prisma validate/generate + integration tests + end-to-end tests        |
 | `pnpm deps:audit`       | Dependency vulnerability audit (reviewed exceptions are in `pnpm-workspace.yaml`) |
 | `pnpm openapi:generate` | Writes the OpenAPI document to `apps/api/generated/openapi.json` (ignored)        |
@@ -109,7 +123,8 @@ screenshots and report are kept as a run artifact for 7 days.
 apps/api          NestJS on Fastify: configuration, health endpoints, errors, logging, OpenAPI
 apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and the /dev/ui lab
 apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab and visual baselines
-domains/iam       @vertex-os/iam: backend domain core boundary, with no IAM behavior yet
+domains/iam       @vertex-os/iam: backend IAM domain core and private persistence contract
+domains/iam-persistence @vertex-os/iam-persistence: IAM-owned Prisma repository adapter
 packages/database Backend-only PostgreSQL/Prisma 7 client boundary
 packages/ui       @vertex-os/ui: business-neutral design system (tokens, fonts, components)
 infra/compose.yaml Local PostgreSQL for development
@@ -122,5 +137,6 @@ docs/             Canonical documentation and execution plans
 - **No authentication or authorization yet.** The approved design (Keycloak over OIDC with the API as
   a backend-for-frontend holding the session) is specified in `docs/modules/iam.md`. The only
   endpoints are the public technical health endpoints.
-- No business behavior, tables, migrations or seed data. The `/dev/ui` proof scenarios (IAM, CRM,
-  Projects, Finance) are static design fixtures, not module implementations.
+- IAM tables and the private repository adapter exist, but the API does not use them. There is no
+  IAM reference data, seed user, authentication or reachable IAM business operation. The `/dev/ui`
+  proof scenarios (IAM, CRM, Projects, Finance) are static design fixtures.

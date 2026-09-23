@@ -15,8 +15,31 @@ import nx from '@nx/eslint-plugin';
  *   - `layer:ui`      the business-neutral design system `packages/ui` (no router, query,
  *                     application or domain dependencies)
  *   - `layer:domain` backend business core (no infrastructure/framework imports)
+ *   - `layer:adapter` domain-owned persistence infrastructure implementing private ports
+ *   - `layer:shared` reserved for a future domain-neutral shared kernel (unused today)
  *   - `domain:iam`   the IAM ownership boundary
  */
+export const restrictedImportPatterns = [
+  {
+    group: ['@base-ui/*', '@floating-ui/*'],
+    message: 'Import the Vertex component from @vertex-os/ui; primitives are internal to it.',
+  },
+  {
+    group: ['@vertex-os/ui/*', '!@vertex-os/ui/styles.css'],
+    message: 'Import from the @vertex-os/ui entry point only.',
+  },
+  {
+    group: [
+      '@vertex-os/iam/*',
+      '@vertex-os/database/*',
+      '@vertex-os/iam-persistence/*',
+      '**/domains/iam/src/**',
+      '**/domains/iam-persistence/src/**',
+    ],
+    message: 'Import persistence internals only through approved root entry points.',
+  },
+];
+
 export default [
   ...nx.configs['flat/base'],
   ...nx.configs['flat/typescript'],
@@ -42,21 +65,7 @@ export default [
       'no-restricted-imports': [
         'error',
         {
-          patterns: [
-            {
-              group: ['@base-ui/*', '@floating-ui/*'],
-              message:
-                'Import the Vertex component from @vertex-os/ui; primitives are internal to it.',
-            },
-            {
-              group: ['@vertex-os/ui/*', '!@vertex-os/ui/styles.css'],
-              message: 'Import from the @vertex-os/ui entry point only.',
-            },
-            {
-              group: ['@vertex-os/iam/*', '**/domains/iam/src/**'],
-              message: 'Import IAM through the @vertex-os/iam public entry point only.',
-            },
-          ],
+          patterns: restrictedImportPatterns,
         },
       ],
     },
@@ -118,6 +127,7 @@ export default [
                 '@nestjs/*',
                 '@prisma/*',
                 'prisma',
+                'pg',
                 'fastify',
                 '@fastify/*',
                 'react',
@@ -128,6 +138,27 @@ export default [
                 '@keycloak/*',
                 'keycloak-*',
               ],
+            },
+            {
+              sourceTag: 'layer:adapter',
+              onlyDependOnLibsWithTags: ['layer:domain', 'layer:infrastructure', 'layer:shared'],
+              bannedExternalImports: [
+                '@prisma/*',
+                'prisma',
+                'pg',
+                '@nestjs/*',
+                'fastify',
+                '@fastify/*',
+                'react',
+                'react-dom',
+                '@tanstack/*',
+                'vite',
+                '@vitejs/*',
+              ],
+            },
+            {
+              sourceTag: 'domain:iam',
+              onlyDependOnLibsWithTags: ['domain:iam', 'layer:infrastructure', 'layer:shared'],
             },
           ],
         },

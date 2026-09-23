@@ -388,6 +388,12 @@ Every schema change MUST have an intentional migration strategy.
 
 Production migrations MUST be forward-safe and reviewable.
 
+Every PostgreSQL migration MUST be wrapped in one explicit `BEGIN;` ... `COMMIT;` transaction,
+with no `CREATE INDEX CONCURRENTLY` or other statement that cannot run inside it, unless an
+explicitly planned exception documents the alternative. Prisma 7.10 does not make migration
+application atomic by itself (IAM-01 planning probe P-05); the wrapper prevents a failed
+migration from leaving a partial schema.
+
 Destructive schema changes MUST include an explicit data-migration/rollout plan.
 
 ---

@@ -2,7 +2,7 @@
 
 **Repository path:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`  
 **Master Plan item:** `IAM-MP-01` — IAM Persistence Model & First Business Migration  
-**Status:** READY — written 2026-09-23 from the accepted IAM-00 baseline; not yet implemented  
+**Status:** AUDIT_REQUIRED — implementation finished 2026-09-23 from `30c02d6`; independent audit pending  
 **Plan type:** Living execution plan  
 **Prepared:** 2026-09-23  
 **Planning baseline:** `main` at `a1e087f9c467028cedc34d8066efcaa14bc09d37`, clean working tree  
@@ -1217,51 +1217,51 @@ Before closeout, search the tree and interpret the matches:
 
 ### Persistence model
 
-- [ ] Seven IAM tables and seven enums exist exactly as in Section 15, with explicit names.
-- [ ] Every Section 15 check, unique constraint, partial unique index and RESTRICT foreign key exists and is proven by a named-constraint test.
-- [ ] No database default exists for lifecycle states or `is_system`.
-- [ ] No trigger, function, preview feature or seed row exists.
+- [x] Seven IAM tables and seven enums exist exactly as in Section 15, with explicit names.
+- [x] Every Section 15 check, unique constraint, partial unique index and RESTRICT foreign key exists and is proven by a named-constraint test.
+- [x] No database default exists for lifecycle states or `is_system`.
+- [x] No trigger, function, preview feature or seed row exists.
 
 ### Migration
 
-- [ ] One migration, wrapped `BEGIN;`/`COMMIT;`, without `CREATE SCHEMA`, generated section faithful.
-- [ ] `migration_lock.toml` present.
-- [ ] Reproducible from empty, idempotent, and drift-free (tests).
-- [ ] `pnpm db:migrate` works locally and has no destructive mode.
-- [ ] Recovery procedure documented; ENGINEERING Section 14 rule added.
+- [x] One migration, wrapped `BEGIN;`/`COMMIT;`, without `CREATE SCHEMA`, generated section faithful.
+- [x] `migration_lock.toml` present.
+- [x] Reproducible from empty, idempotent, and drift-free (tests).
+- [x] `pnpm db:migrate` works locally and has no destructive mode.
+- [x] Recovery procedure documented; ENGINEERING Section 14 rule added.
 
 ### IAM core
 
-- [ ] Domain types, validators, draft factory and port per Section 17; root export still empty.
-- [ ] Validation rules identical to the database checks (parity tests).
-- [ ] No Prisma, `pg`, framework or environment access.
-- [ ] Unit-test target exists and passes.
+- [x] Domain types, validators, draft factory and port per Section 17; root export still empty.
+- [x] Validation rules identical to the database checks (parity tests).
+- [x] No Prisma, `pg`, framework or environment access.
+- [x] Unit-test target exists and passes.
 
 ### Adapter
 
-- [ ] `@vertex-os/iam-persistence` with the four tags, a closed root export and only the factory exported.
-- [ ] Shares the pool through `persistenceClientOf`; never disconnects.
-- [ ] Typed outcomes; exhaustive enum mapping; constraint-name-based classification with observed shapes recorded.
-- [ ] Prisma types absent from its public declarations.
+- [x] `@vertex-os/iam-persistence` with the four tags, a closed root export and only the factory exported.
+- [x] Shares the pool through `persistenceClientOf`; never disconnects.
+- [x] Typed outcomes; exhaustive enum mapping; constraint-name-based classification with observed shapes recorded.
+- [x] Prisma types absent from its public declarations.
 
 ### Boundaries
 
-- [ ] D-02/D-03 rules active; A-03 `pg` ban active.
-- [ ] `pnpm lint:boundaries` in `pnpm verify`; all Section 27.5 cases pass; sanity break observed failing.
+- [x] D-02/D-03 rules active; A-03 `pg` ban active.
+- [x] `pnpm lint:boundaries` in `pnpm verify`; all Section 27.5 cases pass; sanity break observed failing.
 
 ### Verification
 
-- [ ] Section 28 commands pass, including `pnpm verify:full` and `pnpm deps:audit`.
-- [ ] Integration suites pass three consecutive runs without retry.
-- [ ] Search gates are clean; no probe or scratch file remains; the working tree contains only Section 25 changes.
+- [x] Section 28 commands pass, including `pnpm verify:full` and `pnpm deps:audit` (with the local sibling-worktree exclusion detailed in Section 36).
+- [x] Integration suites pass three consecutive runs without retry.
+- [x] Search gates are clean; no probe or scratch file remains; the working tree contains only Section 25 changes.
 
 ### Documentation
 
-- [ ] README, ENGINEERING Section 14, the Master Plan (`AUDIT_REQUIRED` plus an amendment record) and this plan's living sections are synchronized.
+- [x] README, ENGINEERING Section 14, the Master Plan (`AUDIT_REQUIRED` plus an amendment record) and this plan's living sections are synchronized.
 
 ### Scope control
 
-- [ ] No IAM-MP-02+ work: no reference data, Audit, Keycloak, sessions, lifecycle transitions, administration, API or UI; no `apps/api` source change.
+- [x] No IAM-MP-02+ work: no reference data, Audit, Keycloak, sessions, lifecycle transitions, administration, API or UI; no `apps/api` source change.
 
 ---
 
@@ -1348,7 +1348,8 @@ At acceptance, the next planner can rely on:
 
 Planning decisions D-01…D-12 are in Section 11 and locked. The executing agent records here only decisions taken during execution (implementation choices the plan left open, or deviations forced by a stop condition). Use the format: Date / Decision / Why / Evidence / Consequences / Revisit trigger.
 
-*(none yet)*
+- **2026-09-23 / Accept Nx's cycle diagnostic for V5 and V7 / Why:** the forbidden reverse imports produce a circular dependency before Nx reports the tag restriction / **Evidence:** both probes fail under `@nx/enforce-module-boundaries` with `Circular dependency`; the remaining tag probes show their expected tag diagnostics / **Consequences:** the regression script asserts the observed diagnostic while the locked `layer:domain` and `layer:infrastructure` allowed lists remain unchanged / **Revisit trigger:** Nx changes diagnostic precedence or the independent audit finds a boundary escape.
+- **2026-09-23 / Assert CHECK names from test-only driver messages / Why:** Prisma 7.10 exposes SQLSTATE `23514` but drops the structured CHECK constraint name / **Evidence:** the real PostgreSQL constraint tests observe `originalMessage` with the named constraint / **Consequences:** only test assertions read that message; production error classification uses structured names and SQLSTATE only / **Revisit trigger:** the driver exposes CHECK names structurally.
 
 ---
 
@@ -1356,29 +1357,42 @@ Planning decisions D-01…D-12 are in Section 11 and locked. The executing agent
 
 Record every observation that differs from this plan or that a later reader needs, especially the observed Prisma 7.10 error shapes (Section 18.3) and how CI obtained the schema engine (R-07). Use the format: Observed / Evidence / Impact / Action.
 
-*(none yet)*
+- **Observed:** Nx reports a circular dependency for V5 (`database → iam-persistence`) and V7 (`iam → iam-persistence`) before it reports the disallowed layer tag. **Evidence:** first `pnpm lint:boundaries` run: all other cases passed, V5/V7 each emitted `@nx/enforce-module-boundaries: Circular dependency …` and exited 1. **Impact:** these two reverse imports are rejected by the intended Nx rule, but the diagnostic is a cycle rather than a tag. **Action:** the regression check now asserts that exact Nx diagnostic for V5/V7; the configured `layer:infrastructure` and `layer:domain` allowed lists remain unchanged.
+- **Observed:** the shell's `pnpm` resolves to 11.25.0, while the repository pins 12.5.1. **Evidence:** `pnpm --version` 11.25.0; `corepack pnpm --version` 12.5.1 after an escalated download. The first sandboxed install could not remove `node_modules/.pnpm`; lockfile-only install could not reach npm. **Impact:** use `corepack pnpm` for the required commands. **Action:** escalated lockfile-only install completed with only the new importer added; escalated frozen install completed, adding two local workspace links without changing dependency versions.
+- **Observed:** the new boundary check detects a deliberately removed rule. **Evidence:** with `pg` temporarily removed from `layer:domain`'s ban, `lint:boundaries` exited 1 and printed `V8 FAIL`; after restoring the rule it passed all V1–V19 and C1–C2. **Impact:** the check is a live regression gate, not a vacuous pass. **Action:** no probe or temporary configuration remains.
+- **Observed:** Prisma 7.10.0 with `@prisma/adapter-pg` reports a duplicate-email write as `P2002`, with `meta.driverAdapterError.cause = { kind: 'UniqueConstraintViolation', originalCode: '23505', constraint: { index: 'iam_application_user_email_key' }, table: 'iam_application_user', originalMessage: ... }`. A raw foreign-key violation reports `P2010` with `cause = { kind: 'ForeignKeyConstraintViolation', originalCode: '23503', constraint: { index: 'iam_department_membership_department_id_fkey' }, originalMessage: ... }`. **Evidence:** ephemeral PostgreSQL 18.6 probe, then a durable assertion in `error-shape.integration.spec.ts`. **Impact:** classification must read `cause.constraint.index` and SQLSTATE, never `originalMessage`. **Action:** the adapter classifies only recognized names and states, and rethrows every other shape.
+- **Observed:** Prisma's driver adapter exposes SQLSTATE `23514` for CHECK failures but omits structured `constraint.index`; its `originalMessage` contains the named CHECK. PostgreSQL's `RESTRICT` delete reports SQLSTATE `23001`, while inserting a missing foreign key reports `23503`. PostgreSQL 18 also lists named NOT NULL constraints (`contype = 'n'`) in `pg_constraint`. **Evidence:** first full constraint-suite run against PostgreSQL 18.6. **Impact:** the test helper asserts SQLSTATE plus the CHECK name in test-only `originalMessage`; production code never parses error text. RESTRICT tests assert `23001`; the exact catalog filters to the planned PK/unique/FK/CHECK names and separately checks enum names. **Action:** adjusted test assertions, preserving all constraints and negative cases.
+- **Observed:** enum input errors (`22P02`) have no `pg_constraint` name, and omitted required-value errors (`23502`) expose the column rather than a structured constraint index. **Evidence:** raw PostgreSQL tests with Prisma's driver adapter; the catalog test separately confirms all seven enum type names and the no-default test confirms all four required columns. **Impact:** Section 27.2's blanket "SQLSTATE and constraint name" wording cannot literally apply to enum parsing or omitted values. **Action:** assert SQLSTATE plus enum catalog or named column as appropriate; no production classifier relies on these error messages.
+- **Observed:** an invalid `owning_module` with a different permission prefix trips `iam_permission_code_module_ck` first, before `iam_permission_owning_module_ck`. **Evidence:** the initial parity tests returned the named prefix check for every invalid module fixture. **Impact:** a rejection alone cannot identify which check enforced it when both fail. **Action:** parity cases assert the actual prefix check; a 33-character lowercase module with an identical valid code prefix isolates and proves `iam_permission_owning_module_ck`.
+- **Observed:** the local pnpm executable selected by the shell is 11.25.0; nested `pnpm` calls from `corepack pnpm verify` selected 12.4.1 even though Corepack's top-level pnpm was 12.5.1. **Evidence:** the first `verify` stopped at `ERR_PNPM_BAD_PM_VERSION` before its checks; a temporary PATH shim to `corepack.cmd pnpm` reported 12.5.1 and let the gates run. **Impact:** verification needed a local command-resolution workaround. **Action:** the temporary shim was used for the gates and removed at closeout.
+- **Observed:** the main checkout's `prettier --check .` scans two pre-existing sibling worktrees under `.claude/worktrees/` and fails on 22 generated files there. **Evidence:** the first pinned `verify` stopped at those 22 paths; `prettier --check . '!.claude/**'` passed. **Impact:** the unqualified root gate fails for unrelated local worktree content. **Action:** `.claude/worktrees/` was added to `.prettierignore` only while each required gate ran, then the original file bytes were restored; the full and uncached gates passed with that exclusion. No sibling file was changed.
+- **Observed (R-07):** this Windows checkout contains Prisma 7.10.0's schema engine at `node_modules/.pnpm/@prisma+engines@7.10.0/node_modules/@prisma/engines/schema-engine-windows.exe` while `pnpm-workspace.yaml` has `@prisma/engines: false` under `allowBuilds`. **Evidence:** local `prisma migrate deploy` applied the first migration and was subsequently idempotent; the fresh Testcontainers migration also passed. **Impact:** local migration is proven, but acquisition of the engine in a clean Linux CI install is not proven without CI on an implementation commit. **Action:** keep R-07 open for the independent audit/CI; do not change dependency build policy without evidence.
 
 ---
 
 ## 37. Progress
 
-- [ ] M0 Preflight and baseline freeze
-- [ ] M1 Projects, entry points and boundary rules
-- [ ] M2 IAM core domain types, validation and port
-- [ ] M3 Prisma schema folder and IAM models
-- [ ] M4 Migration
-- [ ] M5 Database package entry, migrate command, migration tests
-- [ ] M6 Adapter implementation
-- [ ] M7 Persistence integration tests
-- [ ] M8 Documentation
-- [ ] M9 Full verification
-- [ ] M10 Closeout
+- [x] M0 Preflight and baseline freeze — 2026-09-23 01:22 UTC. `git status --short` empty; HEAD `30c02d6232961a8e61455dcf9b73326d3ddf2677`; last five: `30c02d6`, `a1e087f`, `ea8b16c`, `5bae341`, `54107b0`. Diff `a1e087f..HEAD` changes only this plan and the Master Plan. P-01 still holds. `docker info` passed with Docker Desktop 29.2.1 server after filesystem/named-pipe escalation. Master Plan moved to `IN_PROGRESS`.
+- [x] M1 Projects, entry points and boundary rules — 2026-09-23 02:02 UTC. New adapter project has the four required tags (`nx show project`), and the Nx graph has only adapter → IAM/database, with no reverse edge. Pinned `corepack pnpm` 12.5.1 frozen install added only the new lockfile importer. `nx sync:check`, root `pnpm lint` and `lint:boundaries` pass. V1–V19 and C1–C2 pass; V5/V7 produce Nx cycle diagnostics (Section 36). Removing the domain `pg` ban temporarily caused V8 to fail, and restoration passed.
+- [x] M2 IAM core domain types, validation and port — 2026-09-23 02:02 UTC. Seven closed tuples, branded IDs/codes, email and code-point text validation, draft factory and the three-operation private port are implemented. `@vertex-os/iam` test, typecheck, lint and build pass; 51 unit tests use shared fixtures. Root export remains empty.
+- [x] M3 Prisma schema folder and IAM models — 2026-09-23 02:02 UTC. Schema folder contains seven IAM models and seven enums. `pnpm db:validate`, `pnpm db:generate` and database build pass with Prisma 7.10.0. Explicit map names and RESTRICT FKs are present.
+- [x] M4 Migration — 2026-09-23 02:02 UTC. Generated section compared byte-for-byte after newline normalization with a fresh `migrate diff --from-empty` output minus the one `CREATE SCHEMA` statement: match. The file has one `BEGIN;`/`COMMIT;`, reviewed checks and the partial unique index. The database Testcontainers suite passed fresh deploy, second no-op deploy and exit-code-zero drift gate; 60 constraint cases plus catalog tests passed.
+- [x] M5 Database package entry, migrate command, migration tests — 2026-09-23 02:02 UTC. Private client registry and migrate target are implemented; database integration suite passed (10/10). `pnpm infra:up` created only the `vertexos` Compose project; `pnpm db:migrate` applied the migration, a second run reported no pending migrations, and `prisma migrate status` said up to date on local port 5440. Migration tests assert the container URL host, mapped port and database before invoking the real CLI.
+- [x] M6 Adapter implementation — 2026-09-23 02:02 UTC. The factory shares the database pool; create is transactional; display-name update is one version-conditional returning write; expected errors are typed. The three projects' lint, typecheck and build passed, and neither `domains/iam-persistence/dist/index.d.ts` nor `domains/iam/dist/index.d.ts` contains Prisma/generated references.
+- [x] M7 Persistence integration tests — 2026-09-23 02:02 UTC. Three consecutive `@vertex-os/iam-persistence:test:integration` runs passed 73/73 tests each, with suite durations 10.42 s, 10.19 s and 10.03 s; retry remains 0. Tests cover named constraints, shared validation fixtures, rollback, concurrency, immutable columns, typed outcomes and pool ownership.
+- [x] M8 Documentation — 2026-09-23 02:02 UTC. README documents migration, recovery, verification, layout and limitations. ENGINEERING Section 14 defines atomic migrations; `pnpm-workspace.yaml` notes the schema-engine risk. The Master Plan is `IN_PROGRESS`, pending the M10 evidence/status update.
+- [x] M9 Full verification — 2026-09-23 02:14 UTC. Section 28's install, sync, Prisma, three-project, boundary, migration, graph, fast, uncached, full and audit commands passed. The post-format adapter suite passed three more consecutive runs (73/73 each; 10.11 s, 10.84 s, 10.57 s). `verify:full` passed all three integration projects and 130 Playwright tests. The two initial `verify` attempts failed before the gate because of local pnpm resolution and sibling-worktree formatting; the temporary workarounds and exact scope are recorded in Section 36. Section 29 searches found only permitted private-entry imports and `retry: 0`.
+- [x] M10 Closeout — 2026-09-23 02:14 UTC. Living sections and Master Plan moved to `AUDIT_REQUIRED`; independent audit remains the next gate. No commit, push, branch, IAM-MP-02 work or API source change.
 
 ---
 
 ## 38. Outcomes & Retrospective
 
-*(completed at closeout: delivered, deliberately not delivered, verification evidence (command → result), deviations, remaining risks, final working tree)*
+Delivered: seven IAM tables and seven enums, named structural constraints, one atomic migration, a private database client entry, IAM core validators and repository port, the private adapter, and boundary regression checks. README and ENGINEERING describe migration use and atomicity. No reference data, Audit, Keycloak, sessions, lifecycle transitions, API or UI integration was delivered.
+
+Verification: `git status --short`/`git rev-parse HEAD` PASS (HEAD unchanged); pinned `pnpm install` PASS; `nx sync:check` PASS; `db:validate` PASS; `db:generate` PASS; IAM unit test PASS (51); three-project lint/typecheck/build PASS; `lint:boundaries` PASS (V1–V19, C1–C2); database integration PASS (10); adapter integration PASS three consecutive times (73 each); `infra:up`, two `db:migrate` calls, project inspection and Nx graph PASS; `verify` PASS; uncached `verify` PASS; `verify:full` PASS (including 130 Playwright tests); `deps:audit` PASS (four previously reviewed exceptions). The three root gates used the temporary sibling-worktree exclusion, which was removed afterward. `prettier --check . '!.claude/**'` PASS; Section 29 search gates PASS with the expected `retry: 0` matches.
+
+Deviations and remaining risks: Nx gives cycle diagnostics for V5/V7; Prisma's adapter omits structured CHECK names, and enum/NOT NULL failures do not provide a named constraint index; R-07's clean Linux engine acquisition awaits CI. Two unqualified `verify` attempts failed before any gate checks because of this machine's pnpm resolution and unrelated sibling-worktree generated files; the temporary fixes are detailed in Section 36. Additional read-only probes confirmed that Nx rejects a relative adapter-to-IAM deep import and private subpath imports from `packages/ui`. The final working tree contains only IAM-MP-01 implementation and documentation, with no commit or branch change. The independent audit decides acceptance before IAM-MP-02.
 
 ---
 

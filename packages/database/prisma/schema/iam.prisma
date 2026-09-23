@@ -1,0 +1,170 @@
+enum IamUserAccessState {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+  TERMINATED
+
+  @@map("iam_user_access_state")
+}
+
+enum IamIdentitySyncState {
+  PENDING
+  SYNCED
+  FAILED
+
+  @@map("iam_identity_sync_state")
+}
+
+enum IamInvitationDeliveryState {
+  NOT_SENT
+  SENT
+  FAILED
+
+  @@map("iam_invitation_delivery_state")
+}
+
+enum IamDepartmentState {
+  ACTIVE
+  INACTIVE
+
+  @@map("iam_department_state")
+}
+
+enum IamRoleState {
+  ACTIVE
+  INACTIVE
+
+  @@map("iam_role_state")
+}
+
+enum IamPermissionState {
+  ACTIVE
+  DEPRECATED
+  RETIRED
+
+  @@map("iam_permission_state")
+}
+
+enum IamPermissionSensitivity {
+  STANDARD
+  SENSITIVE
+  PRIVILEGED
+
+  @@map("iam_permission_sensitivity")
+}
+
+/// Database-only checks: iam_application_user_email_normalized_ck,
+/// iam_application_user_display_name_ck, iam_application_user_identity_pair_ck,
+/// iam_application_user_active_ck, iam_application_user_invited_ck,
+/// iam_application_user_invitation_sent_ck, iam_application_user_version_ck.
+model IamApplicationUser {
+  id                       String                     @id(map: "iam_application_user_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                    String                     @unique(map: "iam_application_user_email_key") @db.Text
+  displayName              String                     @map("display_name") @db.Text
+  accessState              IamUserAccessState         @map("access_state")
+  identityIssuer           String?                    @map("identity_issuer") @db.Text
+  identitySubject          String?                    @map("identity_subject") @db.Text
+  identitySyncState        IamIdentitySyncState       @map("identity_sync_state")
+  invitationDeliveryState  IamInvitationDeliveryState @map("invitation_delivery_state")
+  invitationSentAt         DateTime?                  @map("invitation_sent_at") @db.Timestamptz(3)
+  firstActivatedAt         DateTime?                  @map("first_activated_at") @db.Timestamptz(3)
+  lastAccessStateChangedAt DateTime                   @default(now()) @map("last_access_state_changed_at") @db.Timestamptz(3)
+  createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version                  Int                        @default(1)
+  memberships              IamDepartmentMembership[]
+  roleAssignments          IamUserRoleAssignment[]
+
+  @@unique([identityIssuer, identitySubject], map: "iam_application_user_identity_key")
+  @@map("iam_application_user")
+}
+
+/// Database-only checks: iam_department_code_ck, iam_department_name_ck,
+/// iam_department_description_ck, iam_department_version_ck.
+model IamDepartment {
+  id          String                    @id(map: "iam_department_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String                    @unique(map: "iam_department_code_key") @db.Text
+  name        String                    @db.Text
+  description String?                   @db.Text
+  state       IamDepartmentState
+  createdAt   DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version     Int                       @default(1)
+  memberships IamDepartmentMembership[]
+
+  @@map("iam_department")
+}
+
+/// Database-only checks: iam_role_code_ck, iam_role_name_ck,
+/// iam_role_description_ck, iam_role_system_active_ck, iam_role_version_ck.
+model IamRole {
+  id              String                  @id(map: "iam_role_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code            String                  @unique(map: "iam_role_code_key") @db.Text
+  name            String                  @db.Text
+  description     String?                 @db.Text
+  state           IamRoleState
+  isSystem        Boolean                 @map("is_system")
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version         Int                     @default(1)
+  userAssignments IamUserRoleAssignment[]
+  permissions     IamRolePermission[]
+
+  @@map("iam_role")
+}
+
+/// Database-only checks: iam_permission_code_ck, iam_permission_owning_module_ck,
+/// iam_permission_code_module_ck, iam_permission_name_ck, iam_permission_description_ck.
+model IamPermission {
+  code         String                   @id(map: "iam_permission_pkey") @db.Text
+  owningModule String                   @map("owning_module") @db.Text
+  name         String                   @db.Text
+  description  String                   @db.Text
+  state        IamPermissionState
+  sensitivity  IamPermissionSensitivity
+  createdAt    DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  roles        IamRolePermission[]
+
+  @@map("iam_permission")
+}
+
+/// Database-only index: iam_department_membership_one_primary_key.
+model IamDepartmentMembership {
+  userId       String             @map("user_id") @db.Uuid
+  departmentId String             @map("department_id") @db.Uuid
+  isPrimary    Boolean            @map("is_primary")
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user         IamApplicationUser @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "iam_department_membership_user_id_fkey")
+  department   IamDepartment      @relation(fields: [departmentId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "iam_department_membership_department_id_fkey")
+
+  @@id([userId, departmentId], map: "iam_department_membership_pkey")
+  @@index([departmentId], map: "iam_department_membership_department_id_idx")
+  @@map("iam_department_membership")
+}
+
+model IamUserRoleAssignment {
+  userId    String             @map("user_id") @db.Uuid
+  roleId    String             @map("role_id") @db.Uuid
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      IamApplicationUser @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "iam_user_role_assignment_user_id_fkey")
+  role      IamRole            @relation(fields: [roleId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "iam_user_role_assignment_role_id_fkey")
+
+  @@id([userId, roleId], map: "iam_user_role_assignment_pkey")
+  @@index([roleId], map: "iam_user_role_assignment_role_id_idx")
+  @@map("iam_user_role_assignment")
+}
+
+model IamRolePermission {
+  roleId         String        @map("role_id") @db.Uuid
+  permissionCode String        @map("permission_code") @db.Text
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  role           IamRole       @relation(fields: [roleId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "iam_role_permission_role_id_fkey")
+  permission     IamPermission @relation(fields: [permissionCode], references: [code], onDelete: Restrict, onUpdate: Restrict, map: "iam_role_permission_permission_code_fkey")
+
+  @@id([roleId, permissionCode], map: "iam_role_permission_pkey")
+  @@index([permissionCode], map: "iam_role_permission_permission_code_idx")
+  @@map("iam_role_permission")
+}

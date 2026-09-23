@@ -1,0 +1,11 @@
+// Vertex OS PostgreSQL schema (Prisma ORM 7).
+// Each domain owns its model file. The connection URL lives in prisma.config.ts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

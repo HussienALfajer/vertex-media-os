@@ -1,8 +1,8 @@
 {
-  "name": "@vertex-os/iam",
+  "name": "@vertex-os/iam-persistence",
   "version": "0.0.0",
   "private": true,
-  "description": "Backend IAM domain core and public capability boundary",
+  "description": "IAM-owned PostgreSQL persistence adapter",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,23 +12,21 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    },
-    "./persistence": {
-      "@vertex-os/source": "./src/persistence.ts",
-      "types": "./dist/persistence.d.ts",
-      "import": "./dist/persistence.js",
-      "default": "./dist/persistence.js"
     }
+  },
+  "dependencies": {
+    "@vertex-os/database": "workspace:*",
+    "@vertex-os/iam": "workspace:*"
   },
   "nx": {
     "tags": [
       "type:lib",
       "scope:backend",
-      "layer:domain",
+      "layer:adapter",
       "domain:iam"
     ],
     "targets": {
-      "test": {}
+      "test:integration": {}
     }
   }
 }

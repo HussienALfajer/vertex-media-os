@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-01` — `READY` (IAM-MP-00 `COMPLETE`: audited `IAM-00 ACCEPTED` and baseline accepted by the owner on 2026-09-23; its executable plan `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` was written on 2026-09-23 and is not yet implemented)  
+**Next executable stage:** `IAM-MP-01` — `AUDIT_REQUIRED` (implementation finished 2026-09-23 from `30c02d6`; IAM-MP-02 awaits acceptance)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -597,10 +597,10 @@ Establish the first real business-domain package boundary and the platform integ
 
 ## IAM-MP-01 — IAM Persistence Model & First Business Migration
 
-**Status:** READY  
+**Status:** AUDIT_REQUIRED  
 **Parent specification area:** IAM-1  
 **Depends on:** IAM-MP-00 COMPLETE (satisfied 2026-09-23)  
-**Executable plan:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` (written 2026-09-23; not yet implemented)
+**Executable plan:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` (implemented 2026-09-23; independent audit pending)
 
 ### Objective
 
@@ -1473,14 +1473,14 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 ## 15. Stage Status Ledger
 
-The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No later IAM stage has started.
+The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 awaits independent audit; no subsequent IAM stage has started.
 
-The next executable stage is `IAM-MP-01`, which is `READY`. Its executable plan, `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`, was written on 2026-09-23 from `main` at `a1e087f` and has not yet been implemented.
+The next executable stage is `IAM-MP-01`, which is `AUDIT_REQUIRED`. Its executable plan, `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`, was written on 2026-09-23 from `main` at `a1e087f`; implementation began from `30c02d6` with a clean working tree and finished as uncommitted changes for independent review.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
 | IAM-MP-00 Architecture & Domain Boundary Foundation | COMPLETE | IAM spec execution gate (closed) |
-| IAM-MP-01 IAM Persistence & First Migration | READY | MP-00 COMPLETE (satisfied) |
+| IAM-MP-01 IAM Persistence & First Migration | AUDIT_REQUIRED | MP-00 COMPLETE (satisfied) |
 | IAM-MP-02 Reference Data & Minimal Audit Foundation | PLANNED | MP-01 COMPLETE |
 | IAM-MP-03 Keycloak Environment & Realm Contract | PLANNED | MP-02 COMPLETE |
 | IAM-MP-04 Identity Reconciliation & Invitations | PLANNED | MP-03 COMPLETE |
@@ -1513,6 +1513,14 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **Evidence:** the plan's Section 6.3 records planning-time probes against the repository's own Prisma 7.10.0 CLI and a throwaway PostgreSQL 18.6 container. One notable finding: `prisma migrate deploy` does not apply a migration atomically, so the plan requires an explicit transaction wrapper.
 - **Stages affected:** none reordered. Within the stage's own scope, IAM-MP-01 delivers repository operations for the user aggregate only; department, role and permission write operations arrive with IAM-MP-02, IAM-MP-08 and IAM-MP-09, while all seven tables and their constraints are created in IAM-MP-01.
 - **Accepted baselines:** remain valid.
+
+### Amendment record — IAM-MP-01 implementation ready for independent audit (2026-09-23)
+
+- **What changed:** IAM-MP-01 `IN_PROGRESS` → `AUDIT_REQUIRED`. The stage delivered seven IAM tables/enums with named database constraints, an atomic first business migration, a private IAM repository adapter and enforced boundary probes. IAM-MP-02 remains `PLANNED` and cannot start until audit and owner acceptance.
+- **Evidence:** `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Sections 36–38: fresh migration and drift tests, 51 IAM unit tests, 10 database integration tests, three consecutive 73-test adapter integration runs, V1–V19/C1–C2 boundary probes, uncached `pnpm verify`, `pnpm verify:full` with 130 Playwright tests, and `pnpm deps:audit`. The root gates used a temporary local exclusion for two existing sibling worktrees; it was restored after each run. No source under `apps/api` changed.
+- **Stages affected:** IAM-MP-01 only; no stage order or ownership change.
+- **Remaining audit focus:** Nx cycle diagnostics for reverse-edge probes V5/V7, Prisma's missing structured CHECK names, and R-07's clean Linux schema-engine acquisition. Independent audit determines acceptance.
+- **Accepted baselines:** unchanged; IAM-MP-01 is not yet accepted.
 
 ---
 
