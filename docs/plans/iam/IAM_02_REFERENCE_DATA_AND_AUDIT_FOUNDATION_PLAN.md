@@ -2,7 +2,7 @@
 
 **Repository path:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md`  
 **Master Plan item:** `IAM-MP-02` — Permission/System-Role Reference Data & Minimal Audit Foundation  
-**Status:** AUDIT_REQUIRED — written 2026-09-23 from the accepted IAM-01 baseline and accepted by the owner the same day (Section 12.1); implemented 2026-09-23 on `9e9e464` (uncommitted); independent audit returned `IAM-02 ACCEPTED` (Section 46A); owner baseline acceptance pending  
+**Status:** COMPLETE — written 2026-09-23 from the accepted IAM-01 baseline and accepted by the owner the same day (Section 12.1); implemented 2026-09-23 on `9e9e464` and committed as `2b7e103`; independent audit `IAM-02 ACCEPTED` (Section 46A, `a40f5a2`); baseline accepted by the owner on 2026-09-23  
 **Plan type:** Living execution plan  
 **Prepared:** 2026-09-23  
 **Planning baseline:** `main` at `21f536ce4b2b71d78e28d0a804ec4a7d7b780462`, clean working tree, CI run 35811565312 green  
@@ -11,7 +11,7 @@
 **Planning authority:** `docs/PLANNING.md`  
 **Decision authority:** The planning agent wrote this plan and its decisions at the owner's request on 2026-09-23. The owner accepted the plan on 2026-09-23 and delegated every flagged decision to the planning agent, which ruled on them in Section 12.1. Decisions D-01…D-17 (Section 11) and interpretations I-1…I-8 (Section 12) are therefore locked. D-03 and D-04 are architecture-significant (first per-domain persistence scoping, first cross-module atomic transaction). An executing agent does not reopen a locked decision except through a stop condition (Section 38).  
 **Execution target:** One Claude Code conversation operating from the repository root  
-**Required follow-up:** Independent audit (Section 46), owner baseline acceptance, then the IAM-MP-03 executable plan
+**Required follow-up:** The IAM-MP-03 executable plan, written from the accepted `main` (Section 46A, "Owner acceptance")
 
 > IAM-02 gives IAM its deterministic security reference data (the code-defined permission catalog and the protected `system-administrator` role) and gives the platform the smallest correctly owned MOD-AUDIT capability: an immutable, validated append that participates atomically in the caller's transaction. The reference synchronization is the Audit capability's first real consumer, so every catalog or system-role change is itself durable accountability evidence. The stage also closes the two security items the IAM-01 audit carried forward (A1-01 dynamic-import bypass, A1-02 personal data in logs) because it is the first stage to compose IAM and Audit persistence into `apps/api`. It is deliberately **not** Keycloak, sessions, authentication, authorization context, administration, HTTP endpoints or UI work, and it builds no Audit search, reporting or UI.
 
@@ -1886,6 +1886,16 @@ All runs used the built command (`node --enable-source-maps apps/api/dist/comman
 | `pnpm deps:audit` | PASS | 4 previously reviewed exceptions (1 moderate, 3 high); none new |
 
 The local `vertexos` compose project was not used: the auditor's own container replaced it for every database run.
+
+### Owner acceptance — 2026-09-23
+
+The owner accepted this audited repository state as the IAM-02 baseline:
+
+- implementation `2b7e103`;
+- audit record `a40f5a2`;
+- CI run 35824072798 green on `ubuntu-24.04`.
+
+IAM-MP-02 is `COMPLETE` and IAM-MP-03 is `READY` in `IAM_MASTER_PLAN.md`. The IAM-MP-03 executable plan is written from that `main`. It must carry A2-02 and A2-03, pass A2-01 on until IAM or Audit persistence enters the HTTP runtime, and carry the Section 40 open items. The acceptance was recorded in a documentation-only commit on `main`; no IAM code changed after the audit.
 
 ---
 

@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-02` — `AUDIT_REQUIRED` (implemented 2026-09-23 on `9e9e464`; independent audit `IAM-02 ACCEPTED` on 2026-09-23, executable plan Section 46A; owner baseline acceptance pending, after which IAM-MP-03 planning may start)  
+**Next executable stage:** `IAM-MP-03` — `READY` (IAM-MP-02 `COMPLETE`: implemented in `2b7e103`, audited `IAM-02 ACCEPTED` (`a40f5a2`) and baseline accepted by the owner on 2026-09-23; the IAM-MP-03 executable plan is not yet written)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -669,10 +669,11 @@ The resolutions become effective when that plan is implemented and audited.
 
 ## IAM-MP-02 — Permission/System-Role Reference Data & Minimal Audit Foundation
 
-**Status:** AUDIT_REQUIRED (implemented 2026-09-23 on `9e9e464`, uncommitted; independent audit pending)  
+**Status:** COMPLETE  
 **Parent specification area:** IAM-1, Sections 18–21, 34–35, 48–49  
 **Depends on:** IAM-MP-01 COMPLETE (satisfied 2026-09-23)  
-**Executable plan:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` (written from `21f536c`; implemented 2026-09-23, evidence in its Sections 43–44; independent audit `IAM-02 ACCEPTED`, plan Section 46A; owner baseline acceptance pending)
+**Executable plan:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` (written from `21f536c`; implemented in `2b7e103`; audit record `a40f5a2`)  
+**Accepted:** 2026-09-23 — independent audit verdict `IAM-02 ACCEPTED` with no blocking findings (executable plan Section 46A; CI run 35824072798 green); baseline accepted by the owner
 
 ### Objective
 
@@ -735,9 +736,9 @@ The executable plan resolves these at plan level (its Section 5.1 and decisions 
 
 ## IAM-MP-03 — Keycloak Environment, Realm Contract & Integration Harness
 
-**Status:** PLANNED  
+**Status:** READY  
 **Parent specification area:** IAM-2, Sections 7, 37–39, 46.4  
-**Depends on:** IAM-MP-02 COMPLETE
+**Depends on:** IAM-MP-02 COMPLETE (satisfied 2026-09-23)
 
 ### Objective
 
@@ -1504,16 +1505,16 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 ## 15. Stage Status Ledger
 
-The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 is `COMPLETE`: its independent audit returned `IAM-01 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No subsequent IAM stage has started.
+The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 is `COMPLETE`: its independent audit returned `IAM-01 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-02 is `COMPLETE`: its independent audit returned `IAM-02 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No subsequent IAM stage has started.
 
-The next stage is `IAM-MP-02`, which is `AUDIT_REQUIRED`: its executable plan `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` was written from `21f536c` and implemented on 2026-09-23 on top of `9e9e464` (left uncommitted for the independent audit). The independent audit on 2026-09-23 returned `IAM-02 ACCEPTED` with no blocking finding (plan Section 46A). The stage becomes `COMPLETE` when the owner accepts that baseline; IAM-MP-03 stays `PLANNED` until then.
+The next stage eligible for detailed planning is `IAM-MP-03`, which is `READY`: its executable plan may be written from the current `main`, but it has not yet been created or implemented. It must carry the items listed under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in its section.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
 | IAM-MP-00 Architecture & Domain Boundary Foundation | COMPLETE | IAM spec execution gate (closed) |
 | IAM-MP-01 IAM Persistence & First Migration | COMPLETE | MP-00 COMPLETE (satisfied) |
-| IAM-MP-02 Reference Data & Minimal Audit Foundation | AUDIT_REQUIRED | MP-01 COMPLETE (satisfied) |
-| IAM-MP-03 Keycloak Environment & Realm Contract | PLANNED | MP-02 COMPLETE |
+| IAM-MP-02 Reference Data & Minimal Audit Foundation | COMPLETE | MP-01 COMPLETE (satisfied) |
+| IAM-MP-03 Keycloak Environment & Realm Contract | READY | MP-02 COMPLETE (satisfied) |
 | IAM-MP-04 Identity Reconciliation & Invitations | PLANNED | MP-03 COMPLETE |
 | IAM-MP-05 Application Session Foundation | PLANNED | MP-04 COMPLETE |
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | PLANNED | MP-05 COMPLETE |
@@ -1600,6 +1601,13 @@ The ledger MUST be updated only from real implementation/audit evidence.
   - verification: uncached lint/typecheck/test/build, `pnpm test:integration`, the three new or changed suites three times each, Playwright 130/130, `pnpm verify:full` (with a temporary, restored sibling-worktree exclusion) and `pnpm deps:audit` all pass.
 - **Stages affected:** IAM-MP-03 receives the carried-forward items. A2-01 is owned by the first stage that composes IAM into the HTTP runtime (IAM-MP-05/06/07). Stage order and ownership are unchanged.
 - **Accepted baselines:** unchanged until the owner's acceptance.
+
+### Amendment record — IAM-MP-02 acceptance (2026-09-23)
+
+- **What changed:** IAM-MP-02 `AUDIT_REQUIRED` → `COMPLETE`, and IAM-MP-03 `PLANNED` → `READY`. The owner accepted the audited IAM-02 state on `main` (implementation `2b7e103`, audit record `a40f5a2`) as the baseline for IAM-MP-03 planning.
+- **Evidence:** `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 46A (verdict `IAM-02 ACCEPTED`, no blocking findings, no implementation fix), and CI run 35824072798 on `a40f5a2`: frozen install, `pnpm verify:full` including `lint:boundaries` V1–V40/C1–C5, fresh-container migration, upgrade-path and drift tests, the Audit adapter, IAM adapter and command integration suites on `ubuntu-24.04`, Playwright 130/130, and `pnpm deps:audit`.
+- **Stages affected:** IAM-MP-03 becomes eligible for detailed planning. It carries A2-02 and A2-03, passes A2-01 on until IAM or Audit persistence enters the HTTP runtime, and carries the IAM-02 plan's Section 40 open items, together with the IAM-MP-00 items A-04 and A-02. Stage order and ownership are unchanged.
+- **Accepted baselines:** IAM-MP-00, IAM-MP-01 and IAM-MP-02.
 
 ---
 
@@ -1785,14 +1793,17 @@ docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md
 
 It was written from `main` at `21f536c` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A1-01, A1-02, A1-03, A1-05, A1-07 and R-06 (its Section 5.1).
 
-The owner accepted that plan on 2026-09-23 (plan Section 12.1). It has been implemented (on `9e9e464`, uncommitted at audit time) and independently audited with the verdict `IAM-02 ACCEPTED` and no blocking finding (plan Section 46A).
+The owner accepted that plan on 2026-09-23 (plan Section 12.1). IAM-MP-02 has been completed through the same cycle: implemented (`2b7e103`), independently audited (`IAM-02 ACCEPTED`, executable plan Section 46A, recorded in `a40f5a2`) and accepted by the owner on 2026-09-23.
 
-The next steps are:
+The next step is to create the executable plan for IAM-MP-03, and only that plan:
 
-1. the owner accepts the audited IAM-02 baseline, which marks IAM-MP-02 `COMPLETE` and IAM-MP-03 `READY`;
-2. then create the executable plan for IAM-MP-03 from that accepted `main`, carrying the IAM-MP-02 audit items listed in the IAM-MP-03 section.
+```text
+docs/plans/iam/IAM_03_KEYCLOAK_ENVIRONMENT_AND_REALM_CONTRACT_PLAN.md   (recommended name)
+```
 
-Do **not** create detailed implementation plans for IAM-MP-03 through IAM-MP-15 now.
+Write it from the accepted `main`, using the structure required by `docs/PLANNING.md`. Carry the items listed under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in the IAM-MP-03 section. Then implement it in one conversation, audit it independently, and accept its baseline before planning IAM-MP-04.
+
+Do **not** create detailed implementation plans for IAM-MP-04 through IAM-MP-15 now.
 
 That would defeat the rolling-wave planning method that `docs/PLANNING.md` was added to enforce.
 
