@@ -267,6 +267,54 @@ describe('application sessions against real PostgreSQL', () => {
     ]);
   });
 
+  it('discards the ID token of an expired session when it is seen, and in the sign-in sweep', async () => {
+    const seen = await establish();
+    const unseen = await establish();
+    advance(30 * MINUTE);
+    expect(await sessions.authenticate(seen.secret)).toEqual({ outcome: 'expired' });
+    const tokens = () =>
+      postgres.sql(
+        `SELECT id_token_ciphertext IS NULL FROM auth_session ORDER BY id = '${seen.session.id}' DESC`,
+      );
+    expect((await tokens()).split(/\s+/)).toEqual(['t', 'f']);
+    await sessions.startLogin({ state: 's', nonce: 'n', codeVerifier: 'v' });
+    expect((await tokens()).split(/\s+/)).toEqual(['t', 't']);
+    expect(unseen.session.id).not.toBe(seen.session.id);
+  });
+
+  it('rolls a revocation back when its Audit append fails', async () => {
+    const { secret, session } = await establish();
+    const failing = createSessionStore(database, {
+      auditRecorderFor: () => ({
+        append: async () => {
+          throw new Error('audit append failed');
+        },
+      }),
+    });
+    await expect(
+      failing.revoke({ id: session.id, reason: 'LOGOUT', now: clock, attribution: attribution() }),
+    ).rejects.toThrow('audit append failed');
+    expect(await sessions.authenticate(secret)).toMatchObject({ outcome: 'valid' });
+  });
+
+  it('revokes once under concurrent revocations and touches, and stays revoked', async () => {
+    const { secret, session } = await establish();
+    advance(2 * MINUTE);
+    const results = await Promise.all([
+      sessions.revoke(session, 'LOGOUT', attribution()),
+      sessions.authenticate(secret),
+      sessions.revoke(session, 'LOGOUT', attribution()),
+      sessions.revokeUserSessions(session.userId, 'ACCESS_REVOKED', attribution()),
+      sessions.authenticate(secret),
+    ]);
+    const revocations = [results[0], results[2], results[3] === 1];
+    expect(revocations.filter(Boolean)).toHaveLength(1);
+    expect(await sessions.authenticate(secret)).toEqual({ outcome: 'invalid' });
+    expect(
+      (await auditActions()).filter((action) => action.startsWith('iam.session.revoked')),
+    ).toHaveLength(1);
+  });
+
   it('checks the CSRF token of the same session only', async () => {
     const first = await establish();
     const second = await establish();

@@ -31,6 +31,8 @@ export interface AuthorizeOptions {
   readonly state?: string;
   /** An authorization error instead of a code (`error=`). */
   readonly error?: string;
+  /** Replaces the RFC 9207 `iss` response parameter, or removes it (`null`). */
+  readonly iss?: string | null;
 }
 
 export class FakeOidcProvider {
@@ -42,6 +44,10 @@ export class FakeOidcProvider {
   tokenStatus: number | undefined;
   /** Makes every request fail as a network error. */
   offline = false;
+  /** ID tokens presented to the end-session endpoint by the relying party's server. */
+  readonly endedSessions: string[] = [];
+  /** Answers the next end-session request with this HTTP status. */
+  logoutStatus: number | undefined;
   private readonly codes = new Map<string, IssuedCode>();
 
   private constructor(
@@ -87,6 +93,9 @@ export class FakeOidcProvider {
     if (path === '/.well-known/openid-configuration') return json(this.metadata);
     if (path === '/protocol/openid-connect/certs') return json({ keys: [this.jwk] });
     if (path === '/protocol/openid-connect/token') return this.token(init);
+    if (path === '/protocol/openid-connect/logout' && init?.method === 'POST') {
+      return this.endSession(init);
+    }
     return new Response('not found', { status: 404 });
   };
 
@@ -97,12 +106,14 @@ export class FakeOidcProvider {
     const redirectUri = parameters.get('redirect_uri') ?? '';
     const callback = new URL(redirectUri);
     const state = options.state ?? parameters.get('state') ?? '';
+    const iss =
+      options.iss === undefined
+        ? { iss: this.issuer }
+        : options.iss === null
+          ? {}
+          : { iss: options.iss };
     if (options.error) {
-      callback.search = new URLSearchParams({
-        error: options.error,
-        state,
-        iss: this.issuer,
-      }).toString();
+      callback.search = new URLSearchParams({ error: options.error, state, ...iss }).toString();
       return callback.href;
     }
     const code = randomBytes(24).toString('base64url');
@@ -116,7 +127,7 @@ export class FakeOidcProvider {
       signWith: options.signWith ?? 'provider',
     });
     this.issued.push(code);
-    callback.search = new URLSearchParams({ code, state, iss: this.issuer }).toString();
+    callback.search = new URLSearchParams({ code, state, ...iss }).toString();
     return callback.href;
   }
 
@@ -140,6 +151,20 @@ export class FakeOidcProvider {
       }),
       signWith,
     );
+  }
+
+  private endSession(init: RequestInit): Response {
+    if (this.logoutStatus !== undefined) {
+      const status = this.logoutStatus;
+      this.logoutStatus = undefined;
+      return new Response('logout failure', { status });
+    }
+    const body = new URLSearchParams(String(init.body ?? ''));
+    this.endedSessions.push(body.get('id_token_hint') ?? '');
+    return new Response(null, {
+      status: 302,
+      headers: { location: body.get('post_logout_redirect_uri') ?? '/' },
+    });
   }
 
   private async token(init: RequestInit | undefined): Promise<Response> {

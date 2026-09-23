@@ -222,7 +222,8 @@ sends the `__Host-vertex-*` cookies to the local Keycloak, which ignores them.
   default routing and the authorization context arrive with IAM-MP-07.
 - IAM tables, the IAM permission catalog and the protected System Administrator role exist
   (`pnpm iam:sync-reference`), and MOD-AUDIT appends immutable records (sign-in, activation and
-  session events among them). The HTTP API reads only users and their identities, for sign-in.
+  session events among them). The HTTP API touches IAM only for sign-in: it reads users by identity
+  and records first activation and sign-in refusals.
   There is no seed user, no user holding any role, no authorization, no Audit read path and no
   IAM endpoint. Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.

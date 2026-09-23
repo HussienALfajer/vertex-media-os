@@ -333,12 +333,11 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       expect(logout.headers['set-cookie']).toBe(
         '__Host-vertex-session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict',
       );
-      const logoutUrl = new URL((logout.json() as { logoutUrl: string }).logoutUrl);
-      expect(`${logoutUrl.origin}${logoutUrl.pathname}`).toBe(
-        `${FAKE_ISSUER}/protocol/openid-connect/logout`,
-      );
-      expect(provider.issued).toContain(logoutUrl.searchParams.get('id_token_hint'));
-      expect(logoutUrl.searchParams.get('post_logout_redirect_uri')).toBe('http://127.0.0.1:4300/');
+      // The API ended the provider session itself; the browser gets no token (invariant 2).
+      expect(logout.json()).toEqual({ logoutUrl: 'http://127.0.0.1:4300/' });
+      for (const token of provider.issued) expect(logout.body).not.toContain(token);
+      expect(provider.endedSessions).toHaveLength(1);
+      expect(provider.issued).toContain(provider.endedSessions[0]);
 
       const after = await app.inject({
         method: 'GET',

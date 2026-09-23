@@ -222,6 +222,13 @@ describe('signIn', () => {
     expect(iam.audit).toEqual([]);
   });
 
+  it('rolls the FAILED mismatch back when the refusal cannot be audited', async () => {
+    const { iam, dependencies, request } = setup(active({ accessState: 'SUSPENDED' }));
+    iam.failAuditOnAction = 'iam.user.sign-in-refused';
+    await expect(signIn(dependencies, request)).rejects.toThrow('audit append failed');
+    expect(iam.get()).toEqual(active({ accessState: 'SUSPENDED' }));
+  });
+
   it('rolls the activation back when its Audit append fails', async () => {
     const { iam, dependencies, request } = setup(bound());
     iam.failAuditOnAction = 'iam.user.first-activated';

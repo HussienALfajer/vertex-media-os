@@ -10,6 +10,7 @@ export function createOpenApiDocument(app: INestApplication): OpenAPIObject {
     .setTitle('Vertex OS API')
     .setDescription('Internal REST API of Vertex OS.')
     .setVersion('0.0.0')
+    .addCookieAuth('__Host-vertex-session', { type: 'apiKey', in: 'cookie' }, 'session')
     .build();
 
   return SwaggerModule.createDocument(app, config);

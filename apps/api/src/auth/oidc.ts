@@ -25,8 +25,14 @@ export interface OidcClient {
     readonly nonce: string;
     readonly codeVerifier: string;
   }): Promise<OidcResult<AuthenticatedIdentity>>;
-  /** The end-session URL for RP-initiated logout, or `undefined` when discovery is unavailable. */
-  endSessionUrl(idTokenHint: string | undefined): Promise<string | undefined>;
+  /**
+   * Ends the Keycloak session of a logged-out application session (spec Section 32). The API posts
+   * the ID token to the end-session endpoint itself, so the token never reaches the browser
+   * (invariant 2). Returns where the browser goes next: the post-logout URI when Keycloak ended
+   * its session; otherwise the end-session URL without any token, where Keycloak asks the user to
+   * confirm; or the post-logout URI when Keycloak cannot be reached at all.
+   */
+  endProviderSession(idTokenHint: string | undefined): Promise<ProviderLogout>;
   verifyLogoutToken(token: string): Promise<OidcResult<LogoutTarget>>;
 }
 
@@ -43,6 +49,13 @@ export interface AuthenticatedIdentity {
   readonly subject: string;
   readonly idpSessionId: string | undefined;
   readonly idToken: string;
+}
+
+export interface ProviderLogout {
+  /** Whether Keycloak confirmed the end of its session to the API. */
+  readonly ended: boolean;
+  /** Where the browser navigates next; it never carries a token. */
+  readonly browserUrl: string;
 }
 
 /** What a valid logout token asks to end: a Keycloak session, or every session of a subject. */
@@ -140,11 +153,11 @@ export function createOidcClient(
       ...(config.allowInsecureRequests ? [client.allowInsecureRequests] : []),
     ],
   };
-  const fetchImplementation = options.fetch;
-  if (fetchImplementation !== undefined) {
-    discoveryOptions[client.customFetch] = (url, init) =>
-      fetchImplementation(url, init as RequestInit);
+  const customFetch = options.fetch;
+  if (customFetch !== undefined) {
+    discoveryOptions[client.customFetch] = (url, init) => customFetch(url, init as RequestInit);
   }
+  const fetchImplementation: typeof fetch = customFetch ?? fetch;
   let discovered: Promise<client.Configuration> | undefined;
   let keys: JWTVerifyGetKey | undefined;
 
@@ -234,17 +247,43 @@ export function createOidcClient(
       }
     },
 
-    async endSessionUrl(idTokenHint: string | undefined) {
+    async endProviderSession(idTokenHint: string | undefined): Promise<ProviderLogout> {
+      let oidc: client.Configuration;
       try {
-        const oidc = await configuration();
-        return client.buildEndSessionUrl(oidc, {
+        oidc = await configuration();
+      } catch {
+        return { ended: false, browserUrl: config.postLogoutRedirectUri };
+      }
+      const endpoint = oidc.serverMetadata().end_session_endpoint;
+      if (endpoint === undefined) return { ended: false, browserUrl: config.postLogoutRedirectUri };
+      if (idTokenHint !== undefined) {
+        try {
+          // A form POST (OIDC RP-Initiated Logout 1.0 Section 2) keeps the token out of URLs.
+          const response = await fetchImplementation(endpoint, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              id_token_hint: idTokenHint,
+              client_id: config.clientId,
+              post_logout_redirect_uri: config.postLogoutRedirectUri,
+            }).toString(),
+            redirect: 'manual',
+            signal: AbortSignal.timeout(TIMEOUT_SECONDS * 1000),
+          });
+          await response.body?.cancel();
+          if (response.status < 400)
+            return { ended: true, browserUrl: config.postLogoutRedirectUri };
+        } catch {
+          // Fall through: the browser ends the Keycloak session itself, with confirmation.
+        }
+      }
+      return {
+        ended: false,
+        browserUrl: client.buildEndSessionUrl(oidc, {
           client_id: config.clientId,
           post_logout_redirect_uri: config.postLogoutRedirectUri,
-          ...(idTokenHint === undefined ? {} : { id_token_hint: idTokenHint }),
-        }).href;
-      } catch {
-        return undefined;
-      }
+        }).href,
+      };
     },
 
     async verifyLogoutToken(token: string) {

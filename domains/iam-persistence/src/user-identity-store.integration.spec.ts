@@ -284,6 +284,20 @@ describe('UserIdentityStore against real PostgreSQL', () => {
     expect(await row(user.id)).toMatchObject({ accessState: 'SUSPENDED', firstActivatedAt: null });
   });
 
+  it('activates once when several first sign-ins write at the same version', async () => {
+    const user = await boundUser();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        runner.run(({ users }) =>
+          users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
+        ),
+      ),
+    );
+    expect(results.filter((result) => result.outcome === 'updated')).toHaveLength(1);
+    expect(results.filter((result) => result.outcome === 'version-conflict')).toHaveLength(5);
+    expect((await row(user.id)).version).toBe(user.version + 1);
+  });
+
   it('lets exactly one of a first activation and a concurrent suspension commit', async () => {
     for (let round = 0; round < 5; round += 1) {
       await postgres.client.$executeRawUnsafe('TRUNCATE iam_application_user CASCADE');

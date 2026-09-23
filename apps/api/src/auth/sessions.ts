@@ -133,17 +133,21 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
         stored.idleExpiresAt.getTime() <= at.getTime() ||
         stored.absoluteExpiresAt.getTime() <= at.getTime()
       ) {
+        if (stored.idToken !== undefined)
+          await store.discardExpiredIdToken({ id: stored.id, now: at });
         return { outcome: 'expired' };
       }
       let idleExpiresAt = stored.idleExpiresAt;
       if (at.getTime() - stored.lastSeenAt.getTime() >= TOUCH_INTERVAL_MS) {
-        idleExpiresAt = idleDeadline(at, stored.absoluteExpiresAt);
-        await store.touch({
+        const slid = idleDeadline(at, stored.absoluteExpiresAt);
+        const written = await store.touch({
           id: stored.id,
           now: at,
           seenBefore: new Date(at.getTime() - TOUCH_INTERVAL_MS),
-          idleExpiresAt,
+          idleExpiresAt: slid,
         });
+        // A concurrent touch or revocation won: report only what is stored (review D-7).
+        if (written) idleExpiresAt = slid;
       }
       return {
         outcome: 'valid',

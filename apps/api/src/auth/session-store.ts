@@ -67,14 +67,16 @@ export interface SessionStore {
   findByTokenHash(tokenHash: string): Promise<StoredSession | undefined>;
   /**
    * Slides the idle deadline of a session that is still valid at `now` and was last seen at or
-   * before `seenBefore`. Never revives a revoked or expired session.
+   * before `seenBefore`. Never revives a revoked or expired session. `true` when it wrote.
    */
   touch(change: {
     readonly id: string;
     readonly now: Date;
     readonly seenBefore: Date;
     readonly idleExpiresAt: Date;
-  }): Promise<void>;
+  }): Promise<boolean>;
+  /** Discards the ID token of a session that has expired (SECURITY Section 11). */
+  discardExpiredIdToken(change: { readonly id: string; readonly now: Date }): Promise<void>;
   /** Revokes one live session; `false` when it was already revoked or expired. */
   revoke(change: {
     readonly id: string;
@@ -100,11 +102,15 @@ export interface SessionStore {
 
 export interface SessionStoreOptions {
   /**
-   * Binds MOD-AUDIT's append capability to a database handle. The composition root supplies the
-   * Audit adapter's `createAuditRecorder`; this area never imports the Audit adapter itself.
+   * Binds MOD-AUDIT's append capability to a database handle. The area's composition root
+   * (`auth-runtime.ts`) supplies the Audit adapter's `createAuditRecorder`; the store never imports
+   * an adapter.
    */
   readonly auditRecorderFor: (handle: DatabaseClient | DatabaseTransaction) => AuditRecorder;
 }
+
+/** Rows each sweep handles, so one statement stays well inside the statement timeout. */
+const SWEEP_BATCH = 200;
 
 const sessionSelect = {
   id: true,
@@ -181,6 +187,25 @@ export function createSessionStore(
 ): SessionStore {
   const client = authPersistenceOf(database);
 
+  /**
+   * Bounded housekeeping on each new sign-in (IAM-R03 review D-1, D-2): removes a batch of expired
+   * login attempts and discards the ID tokens of a batch of expired sessions (SECURITY Section 11).
+   * Each is one small statement outside any transaction, so a backlog can slow the sweep down but
+   * never blocks a sign-in; a failed sweep is left to the next one.
+   */
+  async function sweep(now: Date): Promise<void> {
+    try {
+      await client.$executeRaw`DELETE FROM auth_login_attempt WHERE id IN (
+        SELECT id FROM auth_login_attempt WHERE expires_at <= ${now} LIMIT ${SWEEP_BATCH})`;
+      await client.$executeRaw`UPDATE auth_session
+        SET id_token_ciphertext = NULL, id_token_key_version = NULL
+        WHERE id IN (SELECT id FROM auth_session WHERE id_token_ciphertext IS NOT NULL
+          AND (idle_expires_at <= ${now} OR absolute_expires_at <= ${now}) LIMIT ${SWEEP_BATCH})`;
+    } catch {
+      // Housekeeping only: the attempt is already stored.
+    }
+  }
+
   /** Revokes the live sessions `where` selects and records one Audit entry per session. */
   async function revokeWhere(
     where: Record<string, unknown>,
@@ -218,22 +243,17 @@ export function createSessionStore(
 
   const store: SessionStore = {
     async createLoginAttempt(attempt) {
-      await runInTransaction(database, async (transaction) => {
-        const scoped = authPersistenceOf(transaction);
-        await scoped.authLoginAttempt.deleteMany({
-          where: { expiresAt: { lte: attempt.createdAt } },
-        });
-        await scoped.authLoginAttempt.create({
-          data: {
-            handleHash: attempt.handleHash,
-            state: attempt.state,
-            nonce: attempt.nonce,
-            codeVerifier: attempt.codeVerifier,
-            createdAt: attempt.createdAt,
-            expiresAt: attempt.expiresAt,
-          },
-        });
+      await client.authLoginAttempt.create({
+        data: {
+          handleHash: attempt.handleHash,
+          state: attempt.state,
+          nonce: attempt.nonce,
+          codeVerifier: attempt.codeVerifier,
+          createdAt: attempt.createdAt,
+          expiresAt: attempt.expiresAt,
+        },
       });
+      await sweep(attempt.createdAt);
     },
 
     async consumeLoginAttempt(handleHash, now) {
@@ -293,7 +313,7 @@ export function createSessionStore(
     },
 
     async touch({ id, now, seenBefore, idleExpiresAt }) {
-      await client.authSession.updateMany({
+      const { count } = await client.authSession.updateMany({
         where: {
           id,
           revokedAt: null,
@@ -302,6 +322,18 @@ export function createSessionStore(
           lastSeenAt: { lte: seenBefore },
         },
         data: { lastSeenAt: now, idleExpiresAt },
+      });
+      return count === 1;
+    },
+
+    async discardExpiredIdToken({ id, now }) {
+      await client.authSession.updateMany({
+        where: {
+          id,
+          idTokenCiphertext: { not: null },
+          OR: [{ idleExpiresAt: { lte: now } }, { absoluteExpiresAt: { lte: now } }],
+        },
+        data: { idTokenCiphertext: null, idTokenKeyVersion: null },
       });
     },
 

@@ -30,7 +30,8 @@ export interface AuthConfig {
   readonly tokenEncryptionSecret: string;
 }
 
-const REALM_ISSUER = /^https?:\/\/[^/]+(\/[^?#]*)?\/realms\/[^/?#]+$/;
+/** `<origin>/realms/<realm>`: the Keycloak issuer form both Keycloak loaders accept. */
+export const REALM_ISSUER = /^https?:\/\/[^/]+(\/[^?#]*)?\/realms\/[^/?#]+$/;
 
 const url = z.string().refine((value) => URL.canParse(value), 'must be a well-formed URL');
 const httpUrl = url.refine((value) => /^https?:\/\//.test(value), 'must be an http(s) URL');

@@ -6,7 +6,7 @@ import {
   type AuditAttribution,
   type TraceId,
 } from '@vertex-os/audit';
-import { resolveSessionUser, type SessionUser } from '@vertex-os/iam';
+import type { SessionUser } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthRuntime } from './auth-runtime.js';
 import { clearedCookie, readCookie, SESSION_COOKIE } from './cookies.js';
@@ -79,7 +79,7 @@ export async function requireSession(
     );
   }
 
-  const user = await resolveSessionUser(runtime.iam, lookup.session.userId);
+  const user = await runtime.iam.resolveSessionUser(lookup.session.userId);
   if (user.outcome !== 'active') {
     await runtime.sessions.revoke(
       lookup.session,

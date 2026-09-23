@@ -342,19 +342,20 @@ describe('logout through the real Keycloak', () => {
       headers: { 'x-csrf-token': token },
     });
     expect(logout.status).toBe(200);
-    const { logoutUrl } = (await logout.json()) as { logoutUrl: string };
+    // The API ended the Keycloak session itself: the browser only learns where to go next.
+    expect(await logout.json()).toEqual({ logoutUrl: keycloak.uris.postLogoutRedirect });
+    expect(await keycloakSessions(user.subject)).toEqual([]);
+    for (const received of browser.fromApi) expect(received).not.toMatch(JWT);
     // The browser now sends the emptied cookie, which names no session.
     expect(await sessionStatus(browser)).toMatchObject({ status: 401 });
     expect(
       await postgres.sql(`SELECT revocation_reason FROM auth_session WHERE user_id = '${user.id}'`),
     ).toBe('LOGOUT');
 
-    // RP-initiated logout with id_token_hint: Keycloak ends its session without asking.
-    const ended = await open(browser, logoutUrl, keycloak.baseUrl);
-    expect(ended.location).toBe(keycloak.uris.postLogoutRedirect);
-    expect(await keycloakSessions(user.subject)).toEqual([]);
-    // The hint is the only place a token appears, and it went to Keycloak, not to the page.
-    expect(new URL(logoutUrl).searchParams.get('id_token_hint')).toMatch(JWT);
+    // A later sign-in in the same browser needs the password and OTP again (no silent SSO).
+    const login = await browser.api('/api/auth/login');
+    const page = await open(browser, login.headers.get('location') ?? '', keycloak.baseUrl);
+    expect(hasForm(page, FORMS.login)).toBe(true);
   });
 
   it('revokes the Vertex session when Keycloak logs the user out (back-channel)', async () => {

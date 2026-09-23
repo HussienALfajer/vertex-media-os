@@ -1,12 +1,8 @@
 import type { AuditRecorder } from '@vertex-os/audit';
 import { createAuditRecorder } from '@vertex-os/audit-persistence';
 import type { DatabaseClient, DatabaseTransaction } from '@vertex-os/database';
-import type { SignInDependencies } from '@vertex-os/iam';
-import {
-  createApplicationUserRepository,
-  createIamTransactionRunner,
-} from '@vertex-os/iam-persistence';
 import type { AuthConfig } from '../config/auth-config.js';
+import { createIamSignIn, type IamSignIn } from '../iam/sign-in.js';
 import { createOidcClient, type OidcClient } from './oidc.js';
 import { createSessionStore } from './session-store.js';
 import { createSessionService, type SessionService } from './sessions.js';
@@ -17,8 +13,8 @@ export interface AuthRuntime {
   readonly config: AuthConfig;
   readonly sessions: SessionService;
   readonly oidc: OidcClient;
-  /** IAM's sign-in capabilities bound to the IAM adapters and the Audit adapter. */
-  readonly iam: SignInDependencies;
+  /** IAM's sign-in capabilities, bound; never IAM's repositories or transaction runner. */
+  readonly iam: IamSignIn;
 }
 
 export interface AuthRuntimeOptions {
@@ -32,7 +28,8 @@ export interface AuthRuntimeOptions {
 
 /**
  * Composition root of browser authentication (IAM-R03 D-01): the session service over PostgreSQL,
- * the OIDC client, and IAM sign-in, sharing the process's database client.
+ * the OIDC client, and IAM sign-in, sharing the process's database client. The only file of the
+ * area that may import an adapter (the Audit adapter here; lint-enforced).
  */
 export function createAuthRuntime(
   config: AuthConfig,
@@ -52,9 +49,6 @@ export function createAuthRuntime(
       config.oidc,
       options.oidcFetch === undefined ? {} : { fetch: options.oidcFetch },
     ),
-    iam: {
-      users: createApplicationUserRepository(database),
-      runner: createIamTransactionRunner(database, { auditRecorderFor }),
-    },
+    iam: createIamSignIn(database, { auditRecorderFor }),
   });
 }

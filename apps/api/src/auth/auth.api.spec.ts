@@ -101,6 +101,29 @@ describe('authentication endpoints without PostgreSQL or Keycloak', () => {
     expect(response.body).not.toContain(SENTINEL);
   });
 
+  it('refuses a logout token sent as JSON', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/backchannel-logout',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ logout_token: SENTINEL }),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it('redirects with a stable code when the callback fails unexpectedly', async () => {
+    // A well-formed login handle makes the callback query PostgreSQL, which is unreachable here.
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/auth/callback?code=c&state=s',
+      headers: { cookie: `__Host-vertex-login=${'a'.repeat(43)}` },
+    });
+    expect(response.statusCode).toBe(303);
+    expect(response.headers['location']).toBe('/?authError=AUTH_LOGIN_FAILED');
+    expect(response.headers['set-cookie']).toContain('__Host-vertex-login=; Path=/; Max-Age=0');
+  });
+
   it('sends the browser back with a stable code when the provider is unreachable', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(response.statusCode).toBe(303);
@@ -132,6 +155,10 @@ describe('authentication endpoints without PostgreSQL or Keycloak', () => {
     expect(paths['/api/auth/session']?.get?.responses).toHaveProperty('401');
     expect(paths['/api/auth/csrf']?.get?.responses).toHaveProperty('200');
     expect(paths['/api/auth/logout']?.post?.responses).toHaveProperty('403');
+    expect(paths['/api/auth/logout']?.post?.parameters).toContainEqual(
+      expect.objectContaining({ name: 'X-CSRF-Token', in: 'header', required: true }),
+    );
+    expect(paths['/api/auth/logout']?.post?.security).toEqual([{ session: [] }]);
     expect(paths['/api/auth/backchannel-logout']?.post?.responses).toHaveProperty('400');
   });
 

@@ -139,17 +139,40 @@ describe('OIDC client against a fake provider', () => {
     await expect(oidc.authorizationRequest()).resolves.toMatchObject({ ok: true });
   });
 
-  it('builds the end-session URL with the hint, the client and the post-logout URI', async () => {
-    const url = new URL((await oidc.endSessionUrl('id-token-hint')) ?? '');
-    expect(`${url.origin}${url.pathname}`).toBe(`${FAKE_ISSUER}/protocol/openid-connect/logout`);
-    expect(Object.fromEntries(url.searchParams)).toEqual({
-      client_id: FAKE_CLIENT_ID,
-      post_logout_redirect_uri: 'http://127.0.0.1:4300/',
-      id_token_hint: 'id-token-hint',
-    });
+  it('ends the provider session from the server, so no token reaches the browser', async () => {
+    const result = await oidc.endProviderSession('id-token-hint');
+    expect(result).toEqual({ ended: true, browserUrl: 'http://127.0.0.1:4300/' });
+    expect(provider.endedSessions).toEqual(['id-token-hint']);
+    expect(provider.requests).toContain('POST /realms/vertex/protocol/openid-connect/logout');
+  });
+
+  it('falls back to a token-free end-session URL when the provider refuses or there is no hint', async () => {
+    provider.logoutStatus = 400;
+    for (const result of [
+      await oidc.endProviderSession('id-token-hint'),
+      await oidc.endProviderSession(undefined),
+    ]) {
+      expect(result.ended).toBe(false);
+      const url = new URL(result.browserUrl);
+      expect(`${url.origin}${url.pathname}`).toBe(`${FAKE_ISSUER}/protocol/openid-connect/logout`);
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        client_id: FAKE_CLIENT_ID,
+        post_logout_redirect_uri: 'http://127.0.0.1:4300/',
+      });
+    }
     provider.offline = true;
     const offline = createOidcClient(oidcConfig(), { fetch: provider.fetch });
-    await expect(offline.endSessionUrl(undefined)).resolves.toBeUndefined();
+    await expect(offline.endProviderSession('id-token-hint')).resolves.toEqual({
+      ended: false,
+      browserUrl: 'http://127.0.0.1:4300/',
+    });
+  });
+
+  it.each([
+    ['a missing', null],
+    ['a foreign', 'http://op.test/realms/other'],
+  ])('rejects a callback with %s iss response parameter (RFC 9207)', async (_label, iss) => {
+    await expect(signIn({ iss })).resolves.toMatchObject({ ok: false, failure: 'rejected' });
   });
 
   describe('logout tokens', () => {

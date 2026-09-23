@@ -2,13 +2,14 @@ import { Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs/commo
 import {
   ApiBadRequestResponse,
   ApiConsumes,
+  ApiCookieAuth,
+  ApiHeader,
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { resolveIdentityUser, signIn } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PROBLEM_CONTENT_TYPE } from '../http/problem-details.js';
 import { ProblemDetailsSchema } from '../openapi/problem-details.schema.js';
@@ -50,6 +51,17 @@ export class AuthController {
   @ApiResponse({ status: 302, description: 'Redirect to the identity provider.' })
   @ApiResponse({ status: 303, description: 'Sign-in cannot start: back to the app (`authError`).' })
   async login(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
+    // Every outcome, including an unexpected failure, ends in a redirect back to the app (D-23).
+    try {
+      await this.startSignIn(request, reply);
+    } catch (error) {
+      if (reply.sent) throw error;
+      request.log.error({ err: error, auth: 'sign-in-failed' }, 'sign-in failed unexpectedly');
+      this.signInFailed(reply, 'AUTH_LOGIN_FAILED');
+    }
+  }
+
+  private async startSignIn(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const authorization = await this.runtime.oidc.authorizationRequest();
     if (!authorization.ok) {
       request.log.warn(
@@ -85,6 +97,17 @@ export class AuthController {
       '`AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`.',
   })
   async callback(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
+    // Every outcome, including an unexpected failure, ends in a redirect back to the app (D-23).
+    try {
+      await this.completeSignIn(request, reply);
+    } catch (error) {
+      if (reply.sent) throw error;
+      request.log.error({ err: error, auth: 'sign-in-failed' }, 'sign-in failed unexpectedly');
+      this.signInFailed(reply, 'AUTH_LOGIN_FAILED');
+    }
+  }
+
+  private async completeSignIn(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     // The login attempt is single-use whatever happens next: every answer below clears its cookie.
     const attempt = await this.runtime.sessions.finishLogin(
       readCookie(request.headers.cookie, LOGIN_COOKIE),
@@ -115,7 +138,7 @@ export class AuthController {
       );
     }
 
-    const result = await signIn(this.runtime.iam, {
+    const result = await this.runtime.iam.signIn({
       issuer: identity.value.issuer,
       subject: identity.value.subject,
       traceId: traceIdOf(request),
@@ -156,6 +179,7 @@ export class AuthController {
 
   /** The current session and its user; never a token or a session identifier. */
   @Get('session')
+  @ApiCookieAuth('session')
   @ApiOkResponse({ type: SessionResponse })
   @ApiUnauthorizedResponse({
     description: '`AUTHENTICATION_REQUIRED`, `AUTH_SESSION_INVALID` or `AUTH_SESSION_EXPIRED`.',
@@ -179,6 +203,7 @@ export class AuthController {
 
   /** The session's CSRF token, for the browser to hold in memory only (spec Section 15). */
   @Get('csrf')
+  @ApiCookieAuth('session')
   @ApiOkResponse({ type: CsrfTokenResponse })
   @ApiUnauthorizedResponse({ description: 'No valid session.', ...problem })
   @ApiForbiddenResponse({ description: '`IAM_USER_INACTIVE`.', ...problem })
@@ -197,6 +222,12 @@ export class AuthController {
    */
   @Post('logout')
   @HttpCode(200)
+  @ApiCookieAuth('session')
+  @ApiHeader({
+    name: 'X-CSRF-Token',
+    required: true,
+    description: 'The session’s token from `GET /api/auth/csrf`; every unsafe request needs it.',
+  })
   @ApiOkResponse({ type: LogoutResponse })
   @ApiUnauthorizedResponse({ description: 'No valid session.', ...problem })
   @ApiForbiddenResponse({
@@ -210,15 +241,16 @@ export class AuthController {
     const { session, user } = await requireSession(this.runtime, request, reply);
     const idToken = this.runtime.sessions.idTokenOf(session);
     await this.runtime.sessions.revoke(session, 'LOGOUT', userAttribution(request, user.id));
-    // Built after the revocation committed; it may need the provider's metadata (invariant 10).
-    const logoutUrl =
-      (await this.runtime.oidc.endSessionUrl(idToken)) ??
-      this.runtime.config.oidc.postLogoutRedirectUri;
+    // After the revocation committed: Keycloak I/O never runs inside a transaction (invariant 10).
+    const provider = await this.runtime.oidc.endProviderSession(idToken);
     void reply
       .header('cache-control', NO_STORE)
       .header('set-cookie', clearedCookie(SESSION_COOKIE));
-    request.log.info({ auth: 'logout' }, 'application session ended');
-    return { logoutUrl };
+    request.log.info(
+      { auth: 'logout', providerSessionEnded: provider.ended },
+      'application session ended',
+    );
+    return { logoutUrl: provider.browserUrl };
   }
 
   /** Keycloak back-channel logout (spec Section 33), validated by the logout token alone. */
@@ -232,7 +264,9 @@ export class AuthController {
     @Res() reply: FastifyReply,
   ): Promise<void> {
     void reply.header('cache-control', NO_STORE);
-    const token = logoutTokenOf(request.body);
+    // Form bodies only (OIDC Back-Channel Logout 1.0 Section 2.5); JSON is parsed on every route.
+    const form = request.headers['content-type']?.startsWith('application/x-www-form-urlencoded');
+    const token = form ? logoutTokenOf(request.body) : undefined;
     const verified =
       token === undefined
         ? ({ ok: false, failure: 'rejected' } as const)
@@ -255,7 +289,7 @@ export class AuthController {
         attribution,
       );
     } else {
-      const userId = await resolveIdentityUser(this.runtime.iam, {
+      const userId = await this.runtime.iam.resolveIdentityUser({
         issuer: this.runtime.config.oidc.issuer,
         subject: verified.value.subject,
       });

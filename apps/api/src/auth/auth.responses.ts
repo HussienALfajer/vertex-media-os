@@ -41,7 +41,9 @@ export class LogoutResponse {
   @ApiProperty({
     type: String,
     format: 'uri',
-    description: 'The identity provider end-session URL, or the post-logout URI when unavailable.',
+    description:
+      'The post-logout URI when the API ended the Keycloak session; otherwise the end-session ' +
+      'URL, without any token, where Keycloak asks the user to confirm. Never carries a token.',
   })
   readonly logoutUrl!: string;
 }
