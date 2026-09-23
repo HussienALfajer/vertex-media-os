@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   KEYCLOAK_IMAGE,
+  MAILPIT_IMAGE,
   REALM_FILE,
   REALM_PLACEHOLDERS,
   readServerOptions,
@@ -22,6 +23,7 @@ const realmText = readFileSync(REALM_FILE, 'utf8');
 const realm = JSON.parse(realmText) as {
   clients: { clientId: string; secret?: string }[];
   users?: { credentials?: unknown }[];
+  smtpServer?: Record<string, string>;
 };
 
 describe('Keycloak image', () => {
@@ -32,6 +34,14 @@ describe('Keycloak image', () => {
     expect(images.filter((image) => image?.startsWith('quay.io/keycloak/'))).toEqual([
       KEYCLOAK_IMAGE,
     ]);
+  });
+});
+
+describe('mail sink image', () => {
+  it('is pinned by tag and digest, identically in Compose and the test harness', () => {
+    expect(MAILPIT_IMAGE).toMatch(/^axllent\/mailpit:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
+    const images = [...compose.matchAll(/^\s+image:\s*(\S+)\s*$/gm)].map((match) => match[1]);
+    expect(images.filter((image) => image?.startsWith('axllent/mailpit'))).toEqual([MAILPIT_IMAGE]);
   });
 });
 
@@ -54,10 +64,23 @@ describe('local exposure', () => {
     expect(published).toEqual([
       '127.0.0.1:${POSTGRES_PORT:-5432}:5432',
       '127.0.0.1:${KEYCLOAK_PORT:-8080}:8080',
+      '127.0.0.1:${MAILPIT_PORT:-8025}:8025',
     ]);
     expect(compose).not.toMatch(/:9000\b/);
+    // SMTP stays on the Compose network.
+    expect(compose).not.toMatch(/:1025\b/);
     // Host networking would bypass every published-port binding.
     expect(compose).not.toMatch(/^\s*network_mode:/m);
+  });
+
+  it('tears the local services down without the local .env', () => {
+    // A .env that predates new keys must never block `infra:reset`, which env:setup asks for.
+    const scripts = (
+      JSON.parse(workspaceFile('package.json')) as { scripts: Record<string, string> }
+    ).scripts;
+    for (const name of ['infra:down', 'infra:reset']) {
+      expect(scripts[name]).toContain('--env-file .env.example');
+    }
   });
 
   it('runs Keycloak in development mode with the realm import', () => {
@@ -74,6 +97,20 @@ describe('committed secrets', () => {
       ['vertex-provisioner', '${KEYCLOAK_PROVISIONER_CLIENT_SECRET}'],
     ]);
     expect(realm.users?.every((user) => user.credentials === undefined)).toBe(true);
+  });
+
+  it('takes every SMTP setting but the fixed ones from placeholders, the password included', () => {
+    expect(realm.smtpServer).toEqual({
+      host: '${KEYCLOAK_SMTP_HOST}',
+      port: '${KEYCLOAK_SMTP_PORT}',
+      from: '${KEYCLOAK_SMTP_FROM}',
+      fromDisplayName: 'Vertex OS',
+      auth: 'true',
+      user: '${KEYCLOAK_SMTP_USER}',
+      password: '${KEYCLOAK_SMTP_PASSWORD}',
+      starttls: '${KEYCLOAK_SMTP_STARTTLS}',
+      ssl: '${KEYCLOAK_SMTP_SSL}',
+    });
   });
 
   it('resolves exactly the placeholders that Compose and the harness supply', () => {
@@ -96,7 +133,7 @@ describe('committed secrets', () => {
       .filter((line) =>
         /^([A-Z0-9_]*(SECRET|PASSWORD)[A-Z0-9_]*|[A-Z0-9_]*ADMIN_USERNAME)=/.test(line),
       );
-    expect(secretLines.length).toBeGreaterThanOrEqual(5);
+    expect(secretLines.length).toBeGreaterThanOrEqual(6);
     for (const line of secretLines) expect(line).toMatch(/=<generated:[a-z0-9-]+>$/);
   });
 });

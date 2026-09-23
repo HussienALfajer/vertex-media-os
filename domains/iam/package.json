@@ -18,6 +18,12 @@
       "types": "./dist/persistence.d.ts",
       "import": "./dist/persistence.js",
       "default": "./dist/persistence.js"
+    },
+    "./identity-provider": {
+      "@vertex-os/source": "./src/identity-provider.ts",
+      "types": "./dist/identity-provider.d.ts",
+      "import": "./dist/identity-provider.js",
+      "default": "./dist/identity-provider.js"
     }
   },
   "dependencies": {

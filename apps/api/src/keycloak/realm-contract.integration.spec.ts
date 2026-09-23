@@ -1,6 +1,22 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { REALM, type StartedKeycloak, startKeycloak } from '../../test-support/keycloak.js';
+import {
+  Browser,
+  FORMS,
+  freshTotp,
+  hasForm,
+  links,
+  open,
+  submit,
+  totpSecret,
+  type Page,
+} from '../../test-support/keycloak-browser.js';
+import {
+  MAIL_FROM,
+  REALM,
+  type StartedKeycloak,
+  startKeycloak,
+} from '../../test-support/keycloak.js';
 
 /**
  * The Vertex realm contract (docs/modules/iam.md Sections 7, 8, 37; docs/SECURITY.md Sections
@@ -117,25 +133,6 @@ async function setTestPassword(userId: string): Promise<void> {
     body: JSON.stringify({ emailVerified: true }),
   });
   expect(verified.status).toBe(204);
-}
-
-/** Minimal browser: follows nothing automatically and keeps cookies per host. */
-class Browser {
-  private readonly cookies = new Map<string, string>();
-
-  async request(url: string, init: RequestInit = {}): Promise<Response> {
-    const headers = new Headers(init.headers);
-    const cookie = [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
-    if (cookie) headers.set('cookie', cookie);
-    const response = await fetch(url, { ...init, headers, redirect: 'manual' });
-    for (const line of response.headers.getSetCookie()) {
-      const [pair] = line.split(';');
-      const separator = pair?.indexOf('=') ?? -1;
-      if (pair && separator > 0)
-        this.cookies.set(pair.slice(0, separator), pair.slice(separator + 1));
-    }
-    return response;
-  }
 }
 
 function pkcePair(): { verifier: string; challenge: string } {
@@ -776,14 +773,6 @@ describe('sessions, tokens and realm entry points', () => {
     });
   });
 
-  it('offers no self-service reset, which would let a mailbox alone replace both factors', async () => {
-    const realm = await json<Record<string, unknown>>(keycloak.admin(''));
-    expect(realm['resetPasswordAllowed']).toBe(false);
-    const page = await (await new Browser().request(authorizationUrl())).text();
-    expect(page).toContain('id="kc-form-login"');
-    expect(page).not.toContain('login-actions/reset-credentials');
-  });
-
   it('lets no client obtain a token through a password or implicit grant', async () => {
     const clients = await json<
       { clientId: string; directAccessGrantsEnabled: boolean; implicitFlowEnabled: boolean }[]
@@ -808,6 +797,200 @@ describe('sessions, tokens and realm entry points', () => {
   });
 });
 
+/** A user with the test password and an enrolled TOTP, enrolled through the real sign-in flow. */
+async function enrolledUser(label: string): Promise<{
+  email: string;
+  id: string;
+  secret: string;
+  used: Set<string>;
+}> {
+  const email = uniqueEmail(label);
+  const user = await provisionUser(email);
+  await setTestPassword(user.id);
+  const browser = new Browser();
+  const login = await open(browser, authorizationUrl(), keycloak.baseUrl);
+  const enrolment = await submit(
+    browser,
+    login,
+    FORMS.login,
+    { username: email, password: TEST_PASSWORD },
+    keycloak.baseUrl,
+  );
+  expect(hasForm(enrolment, FORMS.totpEnrolment)).toBe(true);
+  const { secret, ...page } = await totpSecret(browser, enrolment, keycloak.baseUrl);
+  const used = new Set<string>();
+  const done = await submit(
+    browser,
+    page,
+    FORMS.totpEnrolment,
+    { totp: freshTotp(secret, used), userLabel: 'test device' },
+    keycloak.baseUrl,
+  );
+  expect(done.location?.startsWith(`${keycloak.uris.redirect}?`)).toBe(true);
+  return { email, id: user.id, secret, used };
+}
+
+/** Requests a reset for `username` from the sign-in page; returns the emailed link, if any. */
+async function requestReset(username: string): Promise<string | undefined> {
+  const browser = new Browser();
+  const login = await open(browser, authorizationUrl(), keycloak.baseUrl);
+  const resetLink = links(login.html).find((link) =>
+    link.includes('/login-actions/reset-credentials'),
+  );
+  expect(resetLink).toBeDefined();
+  const form = await open(
+    browser,
+    new URL(resetLink ?? '', keycloak.baseUrl).href,
+    keycloak.baseUrl,
+  );
+  const sent = await submit(browser, form, FORMS.resetRequest, { username }, keycloak.baseUrl);
+  expect(sent.status).toBe(200);
+  return sent.html;
+}
+
+async function resetLinkFor(email: string): Promise<string> {
+  const message = await keycloak.mail.waitFor(email);
+  const link = /(https?:\/\/\S+\/login-actions\/action-token\S+)/.exec(message.text)?.[1];
+  if (!link) throw new Error('reset message without an action link');
+  return link;
+}
+
+/** Opens a link from an email in a fresh browser, as the mailbox holder would. */
+async function followMailLink(link: string): Promise<{ browser: Browser; page: Page }> {
+  const browser = new Browser();
+  return { browser, page: await open(browser, link, keycloak.baseUrl) };
+}
+
+describe('self-service credential recovery', () => {
+  it('uses a reset flow that demands the enrolled OTP and removes no factor', async () => {
+    const realm = await json<Record<string, unknown>>(keycloak.admin(''));
+    expect(realm).toMatchObject({
+      resetPasswordAllowed: true,
+      resetCredentialsFlow: 'vertex reset credentials',
+      actionTokenGeneratedByUserLifespan: 300,
+    });
+    const executions = await json<{ providerId?: string; requirement: string }[]>(
+      keycloak.admin(
+        `/authentication/flows/${encodeURIComponent('vertex reset credentials')}/executions`,
+      ),
+    );
+    expect(executions.map((execution) => [execution.providerId, execution.requirement])).toEqual([
+      ['reset-credentials-choose-user', 'REQUIRED'],
+      ['reset-credential-email', 'REQUIRED'],
+      ['auth-otp-form', 'REQUIRED'],
+      ['reset-password', 'REQUIRED'],
+    ]);
+  });
+
+  it('asks the mailbox holder for the enrolled OTP before a new password, and rejects a wrong code', async () => {
+    const user = await enrolledUser('reset-otp');
+    await requestReset(user.email);
+
+    const { browser, page } = await followMailLink(await resetLinkFor(user.email));
+    // The link alone leads to the OTP form, not to a password form or a new enrolment.
+    expect(hasForm(page, FORMS.otp)).toBe(true);
+    expect(hasForm(page, FORMS.passwordUpdate)).toBe(false);
+    expect(hasForm(page, FORMS.totpEnrolment)).toBe(false);
+
+    const wrong = await submit(browser, page, FORMS.otp, { otp: '000000' }, keycloak.baseUrl);
+    expect(hasForm(wrong, FORMS.otp)).toBe(true);
+    expect(hasForm(wrong, FORMS.passwordUpdate)).toBe(false);
+
+    const passwordPage = await submit(
+      browser,
+      wrong,
+      FORMS.otp,
+      { otp: freshTotp(user.secret, user.used) },
+      keycloak.baseUrl,
+    );
+    expect(hasForm(passwordPage, FORMS.passwordUpdate)).toBe(true);
+    const newPassword = 'a brand new passphrase, local test only';
+    await submit(
+      browser,
+      passwordPage,
+      FORMS.passwordUpdate,
+      { 'password-new': newPassword, 'password-confirm': newPassword },
+      keycloak.baseUrl,
+    );
+
+    // The OTP credential survived the reset.
+    const credentials = await json<{ type: string }[]>(
+      keycloak.admin(`/users/${user.id}/credentials`),
+    );
+    expect(credentials.map((credential) => credential.type).sort()).toEqual(['otp', 'password']);
+  });
+
+  it('makes a user without OTP enrol one before the reset completes', async () => {
+    const email = uniqueEmail('reset-enrol');
+    const user = await provisionUser(email);
+    await setTestPassword(user.id);
+    await requestReset(email);
+
+    const { browser, page } = await followMailLink(await resetLinkFor(email));
+    const seen: string[] = [];
+    let current = page;
+    const used = new Set<string>();
+    for (let step = 0; step < 4 && current.status === 200; step += 1) {
+      if (hasForm(current, FORMS.totpEnrolment)) {
+        seen.push('enrol');
+        const { secret, ...enrolment } = await totpSecret(browser, current, keycloak.baseUrl);
+        current = await submit(
+          browser,
+          enrolment,
+          FORMS.totpEnrolment,
+          { totp: freshTotp(secret, used), userLabel: 'test device' },
+          keycloak.baseUrl,
+        );
+      } else if (hasForm(current, FORMS.passwordUpdate)) {
+        seen.push('password');
+        const password = 'another new passphrase, local test only';
+        current = await submit(
+          browser,
+          current,
+          FORMS.passwordUpdate,
+          { 'password-new': password, 'password-confirm': password },
+          keycloak.baseUrl,
+        );
+      } else {
+        break;
+      }
+    }
+
+    expect(seen).toContain('enrol');
+    const credentials = await json<{ type: string }[]>(
+      keycloak.admin(`/users/${user.id}/credentials`),
+    );
+    expect(credentials.map((credential) => credential.type)).toContain('otp');
+  });
+
+  it('answers a reset request for an unknown account like a known one and sends nothing', async () => {
+    const known = await enrolledUser('reset-known');
+    const unknown = uniqueEmail('nobody');
+
+    const knownAnswer = await requestReset(known.email);
+    const unknownAnswer = await requestReset(unknown);
+    await keycloak.mail.waitFor(known.email);
+
+    const message = (html: string) => /<[^>]*kc-feedback-text[^>]*>([^<]*)</.exec(html)?.[1];
+    expect(message(unknownAnswer ?? '')).toBe(message(knownAnswer ?? ''));
+    expect(await keycloak.mail.messages(unknown)).toEqual([]);
+  });
+
+  it('sends realm email from the configured sender through the SMTP settings', async () => {
+    const realm = await json<{ smtpServer: Record<string, string> }>(keycloak.admin(''));
+    expect(realm.smtpServer).toMatchObject({
+      host: 'mailpit',
+      port: '1025',
+      from: MAIL_FROM,
+      auth: 'true',
+      user: 'keycloak',
+      starttls: 'false',
+      ssl: 'false',
+    });
+    expect(JSON.stringify(realm.smtpServer)).not.toContain(keycloak.secrets.smtpPassword);
+  });
+});
+
 describe('secret handling', () => {
   it('never writes a generated secret to the Keycloak log', async () => {
     const output = await keycloak.logs();
@@ -816,6 +999,7 @@ describe('secret handling', () => {
       keycloak.secrets.webClient,
       keycloak.secrets.provisionerClient,
       keycloak.secrets.adminPassword,
+      keycloak.secrets.smtpPassword,
     ]) {
       expect(output).not.toContain(secret);
     }

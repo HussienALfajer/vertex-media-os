@@ -280,6 +280,9 @@ importers:
       '@vertex-os/iam':
         specifier: workspace:*
         version: link:../../domains/iam
+      '@vertex-os/iam-keycloak':
+        specifier: workspace:*
+        version: link:../../domains/iam-keycloak
       '@vertex-os/iam-persistence':
         specifier: workspace:*
         version: link:../../domains/iam-persistence
@@ -369,6 +372,12 @@ importers:
       '@vertex-os/audit':
         specifier: workspace:*
         version: link:../audit
+
+  domains/iam-keycloak:
+    dependencies:
+      '@vertex-os/iam':
+        specifier: workspace:*
+        version: link:../iam
 
   domains/iam-persistence:
     dependencies:

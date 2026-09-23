@@ -10,7 +10,7 @@
   "duplicateEmailsAllowed": false,
   "rememberMe": false,
   "verifyEmail": true,
-  "resetPasswordAllowed": false,
+  "resetPasswordAllowed": true,
   "passwordPolicy": "length(15) and maxLength(128) and notUsername and notEmail and hashAlgorithm(argon2) and hashIterations(2)",
   "otpPolicyType": "totp",
   "otpPolicyAlgorithm": "HmacSHA1",
@@ -46,6 +46,18 @@
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
   "browserFlow": "vertex browser",
+  "resetCredentialsFlow": "vertex reset credentials",
+  "smtpServer": {
+    "host": "${KEYCLOAK_SMTP_HOST}",
+    "port": "${KEYCLOAK_SMTP_PORT}",
+    "from": "${KEYCLOAK_SMTP_FROM}",
+    "fromDisplayName": "Vertex OS",
+    "auth": "true",
+    "user": "${KEYCLOAK_SMTP_USER}",
+    "password": "${KEYCLOAK_SMTP_PASSWORD}",
+    "starttls": "${KEYCLOAK_SMTP_STARTTLS}",
+    "ssl": "${KEYCLOAK_SMTP_SSL}"
+  },
   "attributes": {
     "adminEventsExpiration": "7776000"
   },
@@ -280,6 +292,43 @@
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "vertex reset credentials",
+      "description": "Self-service reset: the emailed link, then the enrolled OTP (a user without one enrols it), then a new password. No step removes an enrolled factor.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "reset-credentials-choose-user",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "reset-credential-email",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 30,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "reset-password",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 40,
           "userSetupAllowed": false
         }
       ]

@@ -33,3 +33,7 @@ export type {
   IamTransactionRunner,
   IamTransactionScope,
 } from './application/ports/iam-transaction.js';
+export type {
+  UserIdentityStore,
+  UserIdentityWriteResult,
+} from './application/ports/user-identity-store.js';
