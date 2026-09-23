@@ -174,3 +174,57 @@ export const FORMS = {
 } as const;
 
 export const hasForm = (page: Page, id: string) => findForm(page.html, id) !== undefined;
+
+/** The first Keycloak action-token link in an email body. */
+export function actionLink(text: string): string {
+  const link = /(https?:\/\/\S+\/login-actions\/action-token\S+)/.exec(text)?.[1];
+  if (!link) throw new Error('message without an action link');
+  return link;
+}
+
+/**
+ * Follows an invitation link as its recipient: proceeds through Keycloak's pages, enrolling a
+ * TOTP and setting `password` when asked. Returns which forms appeared and the TOTP secret.
+ */
+export async function followInvitation(
+  link: string,
+  origin: string,
+  password: string,
+): Promise<{ seen: string[]; secret: string | undefined; used: Set<string>; last: Page }> {
+  const browser = new Browser();
+  const used = new Set<string>();
+  const seen: string[] = [];
+  let secret: string | undefined;
+  let page = await open(browser, link, origin);
+  for (let step = 0; step < 8 && page.status === 200; step += 1) {
+    if (hasForm(page, FORMS.totpEnrolment)) {
+      seen.push('enrol-totp');
+      const enrolment = await totpSecret(browser, page, origin);
+      secret = enrolment.secret;
+      page = await submit(
+        browser,
+        enrolment,
+        FORMS.totpEnrolment,
+        { totp: freshTotp(enrolment.secret, used), userLabel: 'test device' },
+        origin,
+      );
+    } else if (hasForm(page, FORMS.passwordUpdate)) {
+      seen.push('set-password');
+      page = await submit(
+        browser,
+        page,
+        FORMS.passwordUpdate,
+        { 'password-new': password, 'password-confirm': password },
+        origin,
+      );
+    } else {
+      const proceed = links(page.html).find((target) =>
+        target.includes('/login-actions/action-token'),
+      );
+      if (!proceed) break;
+      seen.push('proceed');
+      page = await open(browser, new URL(proceed, origin).href, origin);
+    }
+  }
+  return { seen, secret, used, last: page };
+}

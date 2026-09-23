@@ -6,15 +6,14 @@ import { createKeycloakIdentityProvider } from '@vertex-os/iam-keycloak';
 import { createApplicationUserRepository } from '@vertex-os/iam-persistence';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  actionLink,
   Browser,
+  followInvitation,
   FORMS,
   freshTotp,
   hasForm,
-  links,
   open,
   submit,
-  totpSecret,
-  type Page,
 } from '../../test-support/keycloak-browser.js';
 import { startKeycloak, type StartedKeycloak } from '../../test-support/keycloak.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
@@ -136,58 +135,9 @@ async function sessionsOf(subject: string): Promise<unknown[]> {
   return adminJson<unknown[]>(`/users/${subject}/sessions`);
 }
 
-function actionLink(text: string): string {
-  const link = /(https?:\/\/\S+\/login-actions\/action-token\S+)/.exec(text)?.[1];
-  if (!link) throw new Error('message without an action link');
-  return link;
-}
-
-/**
- * Follows an invitation link as its recipient: proceeds through Keycloak's pages, enrolling a
- * TOTP and setting a password when asked. Returns which forms appeared and the TOTP secret.
- */
-async function completeActions(link: string): Promise<{
-  seen: string[];
-  secret: string | undefined;
-  used: Set<string>;
-  last: Page;
-}> {
-  const browser = new Browser();
-  const used = new Set<string>();
-  const seen: string[] = [];
-  let secret: string | undefined;
-  let page = await open(browser, link, keycloak.baseUrl);
-  for (let step = 0; step < 8 && page.status === 200; step += 1) {
-    if (hasForm(page, FORMS.totpEnrolment)) {
-      seen.push('enrol-totp');
-      const enrolment = await totpSecret(browser, page, keycloak.baseUrl);
-      secret = enrolment.secret;
-      page = await submit(
-        browser,
-        enrolment,
-        FORMS.totpEnrolment,
-        { totp: freshTotp(enrolment.secret, used), userLabel: 'test device' },
-        keycloak.baseUrl,
-      );
-    } else if (hasForm(page, FORMS.passwordUpdate)) {
-      seen.push('set-password');
-      page = await submit(
-        browser,
-        page,
-        FORMS.passwordUpdate,
-        { 'password-new': TEST_PASSWORD, 'password-confirm': TEST_PASSWORD },
-        keycloak.baseUrl,
-      );
-    } else {
-      const proceed = links(page.html).find((target) =>
-        target.includes('/login-actions/action-token'),
-      );
-      if (!proceed) break;
-      seen.push('proceed');
-      page = await open(browser, new URL(proceed, keycloak.baseUrl).href, keycloak.baseUrl);
-    }
-  }
-  return { seen, secret, used, last: page };
+/** Follows an invitation link as its recipient (see `followInvitation`). */
+function completeActions(link: string) {
+  return followInvitation(link, keycloak.baseUrl, TEST_PASSWORD);
 }
 
 /** Signs in through vertex-web with password and TOTP; returns the final redirect location. */
