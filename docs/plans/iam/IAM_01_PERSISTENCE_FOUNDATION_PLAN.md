@@ -2,7 +2,7 @@
 
 **Repository path:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`  
 **Master Plan item:** `IAM-MP-01` — IAM Persistence Model & First Business Migration  
-**Status:** AUDIT_REQUIRED — implementation finished 2026-09-23 from `30c02d6`; independent audit pending  
+**Status:** AUDIT_REQUIRED — implemented 2026-09-23 from `30c02d6` and committed as `5056c9f`; independent audit returned `IAM-01 ACCEPTED` (Section 40A); owner baseline acceptance pending  
 **Plan type:** Living execution plan  
 **Prepared:** 2026-09-23  
 **Planning baseline:** `main` at `a1e087f9c467028cedc34d8066efcaa14bc09d37`, clean working tree  
@@ -11,7 +11,7 @@
 **Planning authority:** `docs/PLANNING.md`  
 **Decision authority:** On 2026-09-23 the owner delegated the resolution of the carried-forward audit items A-03, A-06 and A-08, and every design decision in this plan, to the planning agent. The decisions are locked in Section 11. An executing agent does not reopen them except through a stop condition (Section 32).  
 **Execution target:** One Claude Code conversation operating from the repository root  
-**Required follow-up:** Independent audit (Section 40), then the IAM-MP-02 executable plan
+**Required follow-up:** Owner baseline acceptance of the audited state (Section 40A), then the IAM-MP-02 executable plan
 
 > IAM-01 gives IAM its authoritative PostgreSQL model and the repository its first business migration. It proves the structural invariants against real PostgreSQL and establishes, with tooling rather than convention, how a domain owns persistence without Prisma entering its core. It is deliberately **not** reference-data synchronization, Audit, Keycloak, sessions, lifecycle behavior, administration, API or UI work. The IAM tables exist at the end of this stage, but no IAM behavior is reachable from the running application.
 
@@ -1446,6 +1446,95 @@ IAM-01 REJECTED — FIXES REQUIRED
 ```
 
 Only `IAM-01 ACCEPTED`, followed by the owner's baseline acceptance, marks IAM-MP-01 `COMPLETE` and unlocks the IAM-MP-02 plan.
+
+---
+
+## 40A. Independent Audit Record — 2026-09-23
+
+### Basis
+
+Separate conversation, not relying on the implementation report. The audit reviewed the uncommitted implementation on `30c02d6` against `AGENTS.md`, `docs/PLANNING.md`, `docs/modules/iam.md` (Sections 6, 9–11, 16, 19–20, 28–30, 43–44, 46, 48–49), `IAM_MASTER_PLAN.md` (IAM-MP-01/02), this plan (Sections 5–40) and the executable repository state. Every changed file was read. Findings were recorded before any change. The local checkout was then fast-forwarded to `origin/main` `effd95c` (which changes only `apps/web-e2e/src/lab/chromium/media.spec.ts`), and the implementation was committed unchanged as `5056c9f`. Windows 11, Node 24.21.0, pnpm 12.5.1, Docker 29.2.1, `NX_DAEMON=false`, `CI` unset.
+
+### Verdict
+
+```text
+IAM-01 ACCEPTED
+```
+
+No blocking finding exists, and no implementation fix was required or made. Every Section 30 Definition of Done item was re-verified from repository evidence, and every Master Plan IAM-MP-01 exit criterion holds. This audit changed only this plan, the Master Plan and one inaccurate comment in `pnpm-workspace.yaml` (A1-04). Updating the Master Plan ledger to `COMPLETE` is left to the owner's baseline acceptance.
+
+### Findings
+
+| ID | Severity | Blocks IAM-01 | Evidence | Impact | Recommended fix / owner |
+|---|---|---|---|---|---|
+| A1-01 | Minor | No | Auditor probes: `await import('@vertex-os/database/persistence')` and the type query `import('@vertex-os/iam/persistence').UserId` in `apps/api/src` produce no lint message. `no-restricted-imports` inspects only static `import`/`export … from` declarations (static `import type` and `export *` are rejected, as expected), and Nx tags allow `apps/api` → `@vertex-os/database`. | A deliberate dynamic import could reach the Prisma-typed client from the composition root without a lint error. No such import exists (Section 29 search gate). Comparable to A-02. | Extend the restriction to `ImportExpression` and `TSImportType` sources (for example `no-restricted-syntax` selectors, with the adapter's two negations) and add matching `lint:boundaries` cases. Owner: IAM-MP-02, the next stage that changes boundary configuration. |
+| A1-02 | Major (forward; not reachable today) | No | A rethrown, unexpected constraint error carries the whole row, email included, in `meta.driverAdapterError.cause.detail` (auditor probe: a CHECK violation through the persistence client). `apps/api/src/http/problem-details.ts:76` logs unexpected errors as `{ err: exception }` through pino, and no redaction is configured. | Typed outcomes are clean (Section 27.3 hygiene tests pass), and the adapter is not composed into `apps/api` in IAM-01, so nothing leaks today. Once it is composed, an unexpected persistence error would write personal data to the logs (`docs/SECURITY.md` logging rules; Section 24). | The first stage that composes `@vertex-os/iam-persistence` into `apps/api` must stop driver `detail`/`originalMessage` from reaching logs, by redaction at the API error boundary or by sanitizing in the adapter, and prove it with a test. Recorded in the Master Plan under IAM-MP-02 so each next planner carries it until done. |
+| A1-03 | Minor (documentation) | No | `docs/modules/iam.md` Sections 6.4, 16.1 and 16.3 and `docs/SECURITY.md:434` use the two-segment example `projects.edit`; spec Section 9.5 normatively requires `<module>.<resource>.<action>`, and every Section 19 code has three segments (as does `finance.payments.record` in Section 6.4). | The examples contradict the normative rule the database now enforces (`iam_permission_code_ck`). | I-4 is upheld (see below). The owner should correct the illustrative examples to three segments in a documentation change. |
+| A1-04 | Minor (record accuracy); R-07 resolved | No | Prisma CLI 7.10.0 calls `@prisma/engines` `ensureNeededBinariesExist` (`failSilent: false`) before the `version`, `init`, `migrate`, `db`, `generate`, `validate`, `format` and `telemetry` commands; it downloads the schema engine when it is missing, independently of the denied postinstall. CI has no Nx cache, so every CI run since the workflow was added executed `prisma generate` and `prisma validate` fresh on `ubuntu-24.04` through the same download path. The local Windows engine file dates from one minute after this checkout's dependency installation. | The `pnpm-workspace.yaml` comment said Prisma "needs none for validate/generate" and described the engine as merely "present"; both misdescribe what happens. The engine download is not a new supply-chain step: IAM-01 only adds `migrate` as another caller. | Comment corrected in the audit commit; CI on the pushed commits is the final Linux evidence. No `allowBuilds` change is needed. |
+| A1-05 | Minor (test determinism) | No | `application-user-repository.integration.spec.ts:210` asserts that `updatedAt` strictly advances, using millisecond application-clock timestamps taken at create and at update. Auditor measurement against real PostgreSQL: 0 of 800 create→read→update cycles failed to advance; minimum gap 7 ms. | Only a create-to-update path faster than 1 ms could fail it; not observed. | When the adapter tests are next touched, backdate the row's `updated_at` in test setup so the assertion no longer depends on elapsed time. Optional. |
+| A1-06 | Informational | No | V5 and V7 assert Nx's `Circular dependency` diagnostic, which Nx reports before evaluating tags. The `layer:infrastructure` and `layer:domain` constraints are exercised directly by V4 and V6. | If the adapter ever stops depending on both projects, V5/V7 would fail loudly with a tag message, not pass vacuously. | Accepted as recorded in Section 35. |
+| A1-07 | Informational | No | Delete-RESTRICT tests cover four of six foreign keys, and `ON UPDATE RESTRICT` is not exercised directly; the lower module-length bound of `iam_permission_owning_module_ck` is not isolated by a test. The auditor's catalog shows all six foreign keys as `r/r`, not deferrable, and the drift gate compares referential actions with the Prisma schema; a probe confirmed the one-character module with a matching prefix is rejected by `iam_permission_owning_module_ck`. | The behavior is correct and guarded by the drift gate, but not by a named-constraint test. | Optionally assert `confupdtype`/`confdeltype` in the catalog test and add the one-character module case when the suite is next touched. |
+| A1-08 | Informational (local environment) | No | In this audit, `pnpm` resolved to the pinned 12.5.1 in every shell, so the implementation's PATH shim was not needed. The two sibling worktrees under `.claude/worktrees/` still make an unqualified root `prettier --check .` fail in this checkout. | Local only; CI is unaffected. | Owner choice: remove stale worktrees or add `.claude/` to `.prettierignore`. |
+
+### Migration and catalog review
+
+- `migration.sql` was reviewed line by line against Sections 15 and 16.3. Its generated section is byte-identical (after newline normalization) to a fresh `prisma migrate diff --from-empty --to-schema prisma/schema --script` run by the auditor, minus the `CREATE SCHEMA` statement; its `-- CreateSchema` comment remains. It has exactly one `BEGIN;` and one `COMMIT;`, and no `CONCURRENTLY`, `CREATE SCHEMA`, `DROP`, `TRUNCATE`, `DELETE` or `INSERT`. Every check predicate matches Sections 15 and 17.2.
+- A fresh `postgres:18.6-alpine` container (auditor's own, UTF8, `en_US.utf8`, since removed) was migrated with the repository's `prisma migrate deploy`. A second deploy reported no pending migration, the drift gate exited 0, and `migrate status` reported up to date.
+- The catalog derived from `pg_constraint`/`pg_indexes`/`pg_enum` matches Section 15 exactly: 7 primary keys, 21 checks, 6 foreign keys (all `ON UPDATE RESTRICT ON DELETE RESTRICT`, not deferrable), 4 unique indexes, the partial unique index `… WHERE is_primary`, 3 plain indexes, and 7 enums with their values in specification order. There are no triggers and no functions, and the longest name is 44 bytes.
+- Predicate probes under that locale: `[a-z]` matches neither `A` nor `Z`; `lower('I') = 'i'`; `İ@…`, a DEL character, and a whitespace-only display name are all rejected by their named checks; INVITED with a set `first_activated_at` is rejected; a one-character owning module is rejected.
+- Atomicity (D-09) was reproduced with a scratch copy of the migrations and a deliberately failing second migration. With the wrapper, 0 of its tables remained, only a failed `_prisma_migrations` row was left, and a redeploy refused with P3009; the README recovery procedure (fix, `migrate resolve --rolled-back`, redeploy) then succeeded. Without the wrapper, the same migration left 2 partial tables (P3018). P-05 and the `docs/ENGINEERING.md` Section 14 rule are confirmed.
+
+### D-12 interpretation rulings
+
+- **I-1** (issuer and subject NULL together): consistent with spec Section 11.2 step 5, which binds both together.
+- **I-2** (invitation fields): matches the spec Section 11.3 definitions exactly.
+- **I-3** (a system role is ACTIVE): stricter than "not through ordinary UI or API" (spec Section 20), and consistent with "protected isSystem semantics" (spec Section 28.4). V1 has one system role, so no specified behavior is lost.
+- **I-4** (three-segment permission codes): **upheld.** Spec Section 9.5 is normative and every Section 19 code conforms; the two-segment `projects.edit` examples are illustrative prose (A1-03).
+- **I-5 … I-10**: no specified semantic changes. On I-7: memberships and join rows carry no version, so IAM-MP-08/09 must make membership and assignment changes concurrency-safe by other means (spec Section 30), for example by locking or version-checking the user row. The schema does not preclude either.
+
+### Negative boundary evidence (auditor's own probes)
+
+The auditor linted virtual files with each project's own ESLint configuration (ESLint `lintText`; nothing was written to the repository):
+
+| Probe | Result |
+|---|---|
+| Adapter → `../../iam/src/domain/email.js`; adapter → `../../../packages/database/src/generated/prisma/client.js`; IAM → `../../iam-persistence/src/index.js` | Rejected: Nx relative-path rule |
+| Adapter → `@vertex-os/iam/src/domain/email.js`, `@vertex-os/database/src/generated/prisma/client.js`; IAM → `@vertex-os/iam-persistence/package.json` | Rejected: `no-restricted-imports` |
+| Adapter → `@prisma/adapter-pg`; adapter → `@vertex-os/ui` | Rejected: `layer:adapter` ban; `scope:backend` |
+| `packages/ui` → `@vertex-os/iam/persistence`, `@vertex-os/database/persistence`, `@vertex-os/iam-persistence` | Rejected: `layer:ui` (Nx attributes the subpaths to their projects, even though `packages/ui` switches `no-restricted-imports` off) |
+| `apps/web` → both private subpaths | Rejected: `no-restricted-imports` and `scope:web` |
+| IAM → `@vertex-os/database/persistence` | Rejected: `no-restricted-imports` and `layer:domain` |
+| `packages/database` → `../../domains/iam/src/persistence.js` | Rejected: both rules |
+| `apps/api`: `export * from '@vertex-os/iam/persistence'`; `import type … from '@vertex-os/iam/persistence'` | Rejected: `no-restricted-imports` |
+| `apps/web-e2e` → `@vertex-os/iam-persistence` | Rejected: `type:e2e` |
+| `apps/api` → `@vertex-os/iam-persistence` (allowed direction) | Accepted |
+| Not rejected | `await import(…)` and `import(…)` type queries of the private subpaths (A1-01); `import { env } from 'node:process'` in the adapter (A-02; the adapter's `types: []` still fails compilation of that import) |
+
+### Scope and data-protection checks
+
+- The Section 29 search gates are clean: no Prisma or `pg` in the IAM core or the adapter source, and none in either `dist` declaration file; the private entries are used only by the adapter, the boundary script and the ESLint configuration; no `process.env`, `$disconnect`, preview feature, trigger, function, `CONCURRENTLY`, seed, Nest decorator, or Keycloak/session/audit/OIDC code appears in the new executable code; no `.only`/`.skip`; `retry: 0` everywhere.
+- `git diff` shows no change under `apps/`. The lockfile diff is only the new importer's two `workspace:` links. No reference data, Audit, Keycloak, session, lifecycle, administration, API or UI work was added.
+- Typed outcomes carry no email, driver text or constraint names (tests plus auditor review). The only new error, `persistenceClientOf`'s `TypeError`, carries no data. Rethrown driver errors are unchanged by design (Section 24; A1-02).
+
+### Verification (every command actually run by the auditor)
+
+| Command | Result | Notes |
+|---|---|---|
+| `git status`, `git log`, `git fetch`, `git worktree list` | Evidence | `30c02d6` plus the uncommitted IAM-01 tree; `origin/main` one commit ahead (`effd95c`, E2E test only) |
+| `pnpm install --frozen-lockfile`; `pnpm nx sync:check` | PASS | Lockfile up to date; workspace in sync |
+| `pnpm lint:boundaries` | PASS | V1–V19, C1–C2 |
+| Auditor probes (above); `migrate diff --from-empty` comparison; fresh-database catalog; atomicity and recovery reproduction | As recorded | Scratch files and the container removed |
+| `prettier --check . '!.claude/**'` | PASS | Sibling-worktree exclusion given on the command line (A1-08); `.prettierignore` untouched |
+| `NX_SKIP_NX_CACHE=true`: `pnpm lint && pnpm lint:boundaries && pnpm typecheck && pnpm test && pnpm build` | PASS | Lint 7 projects, typecheck 7, test 4 (IAM 51 unit tests), build 6; no cache hit. Run before the fast-forward to `effd95c`. |
+| `pnpm db:validate`, `pnpm db:generate` | PASS | — |
+| `pnpm test:integration` | PASS | api 3, database 10, iam-persistence 73 |
+| `pnpm test:e2e` before the fast-forward | FAIL (1/130) | The known `media.spec.ts:116` flake (43.99997 < 44), fixed on `main` by `effd95c`; not related to IAM-01 |
+| After the fast-forward: `pnpm nx run-many -t test:integration`, `pnpm test:e2e`, then two more adapter runs | PASS | Integration 3/10/73; Playwright 130/130; adapter 73/73 three consecutive times (13.60 s, 10.71 s, 9.41 s), retry 0 |
+| `pnpm deps:audit` | PASS | 4 previously reviewed exceptions (1 moderate, 3 high); none new |
+
+### Owner acceptance
+
+Pending. On acceptance, IAM-MP-01 becomes `COMPLETE` in `IAM_MASTER_PLAN.md`, and the IAM-MP-02 executable plan is written from the accepted `main`, carrying A1-01, A1-02, A1-03, A1-05 and A1-07 together with the Section 34 open items.
 
 ---
 

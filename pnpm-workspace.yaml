@@ -13,10 +13,10 @@ allowBuilds:
   nx: false
   # prisma's preinstall only prints a Node.js support notice.
   prisma: false
-  # @prisma/engines' postinstall pre-downloads engine binaries; Prisma 7 with the
-  # `client` engine type and driver adapters needs none for validate/generate.
-  # `migrate deploy` does need the schema engine; it is present in the local
-  # @prisma/engines package with builds denied. A fresh CI install is the R-07 gate.
+  # @prisma/engines' postinstall only pre-downloads the schema engine. The Prisma CLI
+  # downloads it itself on first use anyway (validate, generate and migrate call
+  # ensureNeededBinariesExist), and the runtime client needs no engine binary with
+  # the `client` engine type and driver adapters.
   '@prisma/engines': false
   # Testcontainers -> ssh2: its install script only tries to compile an optional
   # native crypto binding (pure-JS fallback is used); cpu-features is ssh2's

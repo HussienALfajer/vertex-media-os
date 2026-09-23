@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-01` — `AUDIT_REQUIRED` (implementation finished 2026-09-23 from `30c02d6`; IAM-MP-02 awaits acceptance)  
+**Next executable stage:** `IAM-MP-01` — `AUDIT_REQUIRED` (implemented in `5056c9f`; independent audit `IAM-01 ACCEPTED` on 2026-09-23; owner baseline acceptance pending, after which IAM-MP-02 planning may start)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -600,7 +600,7 @@ Establish the first real business-domain package boundary and the platform integ
 **Status:** AUDIT_REQUIRED  
 **Parent specification area:** IAM-1  
 **Depends on:** IAM-MP-00 COMPLETE (satisfied 2026-09-23)  
-**Executable plan:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` (implemented 2026-09-23; independent audit pending)
+**Executable plan:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` (implemented 2026-09-23 in `5056c9f`; independent audit `IAM-01 ACCEPTED`, plan Section 40A; owner baseline acceptance pending)
 
 ### Objective
 
@@ -691,6 +691,16 @@ Establish deterministic security reference data and the smallest correctly owned
 
 - IAM persistence model is accepted;
 - Audit ownership from `docs/MODULES.md` remains unchanged.
+
+### Carried forward from the IAM-MP-01 audit
+
+Details and evidence: `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Section 40A.
+
+- **A1-01:** the private-entry restriction covers static imports only. Extend it to dynamic `import()` and `import('…')` type queries of `@vertex-os/iam/persistence` and `@vertex-os/database/persistence`, and add `lint:boundaries` cases, when this stage changes boundary configuration (for example for the Audit package).
+- **A1-02:** a rethrown persistence error carries row data (including email) in `meta.driverAdapterError.cause.detail`, and the API error boundary logs unexpected errors unredacted. Whichever stage first composes an IAM (or Audit) persistence adapter into `apps/api` must keep that data out of logs and prove it with a test. Until then, each next executable plan carries this item forward.
+- **A1-03 (owner, documentation):** replace the two-segment `projects.edit` examples in `docs/modules/iam.md` Sections 6.4, 16.1 and 16.3 and `docs/SECURITY.md` with three-segment codes; the audit upheld interpretation I-4.
+- **A1-05, A1-07 (optional):** make the `updatedAt` advance assertion time-independent, and assert foreign-key referential actions and the lower module-length bound by name, when the adapter tests are next touched.
+- Open items passed on by the IAM-01 plan (Section 34): API statement-timeout sizing when IAM persistence is first composed; primary-membership switch ordering (IAM-MP-08); A-02 and A-04 (IAM-MP-03/06).
 
 ### Exit criteria
 
@@ -1473,9 +1483,9 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 ## 15. Stage Status Ledger
 
-The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 awaits independent audit; no subsequent IAM stage has started.
+The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01's independent audit returned `IAM-01 ACCEPTED`; the owner's baseline acceptance is pending. No subsequent IAM stage has started.
 
-The next executable stage is `IAM-MP-01`, which is `AUDIT_REQUIRED`. Its executable plan, `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`, was written on 2026-09-23 from `main` at `a1e087f`; implementation began from `30c02d6` with a clean working tree and finished as uncommitted changes for independent review.
+The next executable stage is `IAM-MP-01`, which is `AUDIT_REQUIRED`. Its executable plan, `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`, was written on 2026-09-23 from `main` at `a1e087f`; implementation began from `30c02d6`, was committed as `5056c9f` and was audited independently on 2026-09-23 (plan Section 40A). It becomes `COMPLETE` when the owner accepts that baseline.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
@@ -1521,6 +1531,13 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **Stages affected:** IAM-MP-01 only; no stage order or ownership change.
 - **Remaining audit focus:** Nx cycle diagnostics for reverse-edge probes V5/V7, Prisma's missing structured CHECK names, and R-07's clean Linux schema-engine acquisition. Independent audit determines acceptance.
 - **Accepted baselines:** unchanged; IAM-MP-01 is not yet accepted.
+
+### Amendment record — IAM-MP-01 independent audit (2026-09-23)
+
+- **What changed:** the independent audit returned `IAM-01 ACCEPTED` with no blocking finding and no implementation fix. IAM-MP-01 stays `AUDIT_REQUIRED` until the owner accepts the baseline. Non-blocking items A1-01, A1-02, A1-03, A1-05 and A1-07 are attached to IAM-MP-02 as "Carried forward from the IAM-MP-01 audit". R-07 is resolved: the Prisma CLI downloads its schema engine on first use, the same path CI has exercised through `prisma generate` since the workflow was added, and the `pnpm-workspace.yaml` comment now says so (A1-04).
+- **Evidence:** `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Section 40A: line-by-line migration review against a fresh `migrate diff`, a constraint catalog derived from a freshly migrated database, a reproduction of migration atomicity and recovery, the auditor's own boundary probes, D-12 rulings (I-4 upheld), uncached lint/typecheck/test/build, all integration suites, Playwright 130/130, three consecutive adapter runs and `pnpm deps:audit`.
+- **Stages affected:** IAM-MP-02 (carried-forward items). Stage order and ownership are unchanged.
+- **Accepted baselines:** unchanged until the owner's acceptance.
 
 ---
 
@@ -1696,11 +1713,12 @@ docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md
 
 It was written from `main` at `a1e087f` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A-03, A-06 and A-08 (its decisions D-01…D-04).
 
+That plan has been implemented (`5056c9f`) and independently audited with the verdict `IAM-01 ACCEPTED` and no blocking finding (plan Section 40A).
+
 The next steps are:
 
-1. implement that plan in one implementation conversation, then stop;
-2. perform an independent audit and accept the resulting baseline only after blocking findings are closed;
-3. then create the executable plan for IAM-MP-02.
+1. the owner accepts the audited IAM-01 baseline, which marks IAM-MP-01 `COMPLETE` and IAM-MP-02 `READY`;
+2. then create the executable plan for IAM-MP-02 from that accepted `main`, carrying the IAM-MP-01 audit items listed in the IAM-MP-02 section.
 
 Do **not** create detailed implementation plans for IAM-MP-02 through IAM-MP-15 now.
 
