@@ -163,7 +163,9 @@ A run stops and asks only for the reasons in the Run Contract (`AGENTS.md`) and 
 
 ### 6.9 Acceptance
 
-The owner reads **Needs the owner**, reviews the pull request and merges it. The merge is the accepted baseline. If the owner does not accept the change, the pull request stays open for fixes or is closed.
+The owner reads **Needs the owner**, reviews the pull request and accepts it by merging, or by enabling auto-merge so GitHub merges it as soon as the required CI check passes. The merge is the accepted baseline. If the owner does not accept the change, the pull request stays open for fixes or is closed.
+
+`main` is protected: every change arrives through a pull request, the `Verify (verify:full, deps:audit)` check must pass on an up-to-date branch, history stays linear, and force-pushes and deletion are refused. Merged branches are deleted automatically. A Claude Code `SessionStart` hook (`.claude/hooks/sync-main.sh`) fast-forwards the local `main` at the start of each session and never overwrites local work.
 
 ---
 
