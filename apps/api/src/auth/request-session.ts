@@ -6,11 +6,16 @@ import {
   type AuditAttribution,
   type TraceId,
 } from '@vertex-os/audit';
-import type { SessionUser } from '@vertex-os/iam';
+import type { AuthorizationContext, SessionUser } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthRuntime } from './auth-runtime.js';
 import { clearedCookie, readCookie, SESSION_COOKIE } from './cookies.js';
 import type { ValidSession } from './sessions.js';
+
+/** Header carrying the CSRF synchronizer token on unsafe requests (IAM-R03 D-18). */
+export const CSRF_HEADER = 'x-csrf-token';
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** The authenticated context of one request. The raw secret lives only for the request. */
 export interface RequestSession {
@@ -20,6 +25,7 @@ export interface RequestSession {
 }
 
 const resolved = new WeakMap<FastifyRequest, RequestSession>();
+const authorized = new WeakMap<FastifyRequest, AuthorizationContext>();
 
 /** The request's trace ID; request IDs share the Audit trace-ID grammar (IAM-02 I-8). */
 export function traceIdOf(request: FastifyRequest): TraceId {
@@ -46,11 +52,31 @@ function failWith(reply: FastifyReply, error: Error): never {
   throw error;
 }
 
+/** Revokes the session of a user who is no longer ACTIVE and refuses the request. */
+async function refuseInactiveUser(
+  runtime: AuthRuntime,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  session: ValidSession,
+): Promise<never> {
+  await runtime.sessions.revoke(
+    session,
+    'ACCESS_REVOKED',
+    systemAttribution(request, 'iam.session-check'),
+  );
+  request.log.info({ auth: 'session-revoked', reason: 'user-not-active' }, 'session revoked');
+  return failWith(
+    reply,
+    new ForbiddenException('The account is not active.', { errorCode: 'IAM_USER_INACTIVE' }),
+  );
+}
+
 /**
  * Resolves the request's application session (IAM-R03 D-11, D-24): the cookie must name a live,
  * unrevoked session that the identity provider still backs (IAM-R03F D-05), and its user must be
- * ACTIVE in committed IAM state. A user who is no longer ACTIVE loses the session at once. The
- * result is memoized for the request only.
+ * ACTIVE in committed IAM state. A user who is no longer ACTIVE loses the session at once. On an
+ * unsafe method the session is usable only with its CSRF token in `X-CSRF-Token` (spec Section 15;
+ * IAM-R04 D-03), whoever resolves it. The result is memoized for the request only.
  */
 export async function requireSession(
   runtime: AuthRuntime,
@@ -97,20 +123,41 @@ export async function requireSession(
   }
 
   const user = await runtime.iam.resolveSessionUser(lookup.session.userId);
-  if (user.outcome !== 'active') {
-    await runtime.sessions.revoke(
-      lookup.session,
-      'ACCESS_REVOKED',
-      systemAttribution(request, 'iam.session-check'),
-    );
-    request.log.info({ auth: 'session-revoked', reason: 'user-not-active' }, 'session revoked');
-    failWith(
-      reply,
-      new ForbiddenException('The account is not active.', { errorCode: 'IAM_USER_INACTIVE' }),
-    );
+  if (user.outcome !== 'active') return refuseInactiveUser(runtime, request, reply, lookup.session);
+
+  if (!SAFE_METHODS.has(request.method)) {
+    const presented = request.headers[CSRF_HEADER];
+    if (typeof presented !== 'string' || !runtime.sessions.verifyCsrf(lookup.session, presented)) {
+      request.log.warn({ auth: 'csrf-rejected' }, 'CSRF validation failed');
+      throw new ForbiddenException('CSRF validation failed.', {
+        errorCode: 'CSRF_VALIDATION_FAILED',
+      });
+    }
   }
 
   const context: RequestSession = { secret, session: lookup.session, user: user.user };
   resolved.set(request, context);
   return context;
+}
+
+/**
+ * The current actor's IAM authorization context (spec Section 17; IAM-R04 D-08 to D-10): the
+ * request's session first, then the context projected from committed IAM state. Memoized for the
+ * request only, never across requests (invariant 11). A user found not ACTIVE here, restricted
+ * after the session check, loses the session exactly as in {@link requireSession}.
+ */
+export async function requireAuthorization(
+  runtime: AuthRuntime,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<AuthorizationContext> {
+  const known = authorized.get(request);
+  if (known) return known;
+
+  const { session } = await requireSession(runtime, request, reply);
+  const result = await runtime.authorization.resolveAuthorizationContext(session.userId);
+  if (result.outcome !== 'active') return refuseInactiveUser(runtime, request, reply, session);
+
+  authorized.set(request, result.context);
+  return result.context;
 }

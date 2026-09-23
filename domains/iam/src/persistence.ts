@@ -4,6 +4,7 @@ export type { NormalizedEmail } from './domain/email.js';
 export type { Description, DisplayName, EntityName } from './domain/text.js';
 export type { ModuleCode, PermissionCode, RoleCode } from './domain/codes.js';
 export type {
+  DepartmentState,
   UserAccessState,
   IdentitySyncState,
   InvitationDeliveryState,
@@ -37,3 +38,5 @@ export type {
   UserIdentityStore,
   UserIdentityWriteResult,
 } from './application/ports/user-identity-store.js';
+export type { AuthorizationFacts } from './domain/authorization-context.js';
+export type { AuthorizationReader } from './application/ports/authorization-reader.js';

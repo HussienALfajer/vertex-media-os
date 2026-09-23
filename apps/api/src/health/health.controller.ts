@@ -2,6 +2,7 @@ import { Controller, Get, Inject, Req, ServiceUnavailableException } from '@nest
 import { ApiOkResponse, ApiServiceUnavailableResponse, ApiTags } from '@nestjs/swagger';
 import { type DatabaseClient, DatabaseUnavailableError } from '@vertex-os/database';
 import type { FastifyRequest } from 'fastify';
+import { Public } from '../auth/access.guard.js';
 import { DATABASE_CLIENT } from '../database/database.module.js';
 import { PROBLEM_CONTENT_TYPE } from '../http/problem-details.js';
 import { ProblemDetailsSchema } from '../openapi/problem-details.schema.js';
@@ -14,6 +15,7 @@ export class HealthController {
 
   /** The process and its HTTP stack are running. Deliberately independent of PostgreSQL. */
   @Get('live')
+  @Public()
   @ApiOkResponse({ description: 'The API process is live.', type: LivenessResponse })
   live(): LivenessResponse {
     return { status: 'ok' };
@@ -21,6 +23,7 @@ export class HealthController {
 
   /** The API can serve traffic: every required dependency (PostgreSQL) answers. */
   @Get('ready')
+  @Public()
   @ApiOkResponse({
     description: 'All required dependencies are reachable.',
     type: ReadinessResponse,

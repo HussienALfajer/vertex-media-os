@@ -1,15 +1,12 @@
 /**
- * Public IAM package entry point (spec Section 44). It exposes only what composition roots need:
- * the reference-data synchronization command, the IAM permission manifest, the identity
- * provisioning capabilities, and sign-in resolution (IAM-R03 D-09), with the dependency types
- * composition supplies. Stores and adapter
- * contracts stay behind the private `@vertex-os/iam/persistence` and
- * `@vertex-os/iam/identity-provider` entries.
+ * Public IAM package entry point (spec Section 44): identifiers, codes, the authorization context
+ * and its permission check, the permission manifest, and the request and result types of the IAM
+ * capabilities. It exposes no repository, store, transaction runner, dependency type or mutable
+ * entity. The use cases that take those as dependencies are behind the private composition entry
+ * `@vertex-os/iam/composition`, which only the API's composition roots import (IAM-R04 D-12);
+ * adapter contracts stay behind `@vertex-os/iam/persistence` and `@vertex-os/iam/identity-provider`.
  */
-export {
-  synchronizeIamReferenceData,
-  type ReferenceSyncResult,
-} from './application/synchronize-reference-data.js';
+export type { ReferenceSyncResult } from './application/synchronize-reference-data.js';
 export {
   iamPermissionManifest,
   type PermissionDefinition,
@@ -17,33 +14,19 @@ export {
 } from './domain/permission-catalog.js';
 export type { PermissionCode } from './domain/codes.js';
 export type { ReferenceSyncRefusalReason } from './domain/reference-sync-plan.js';
-export {
-  reconcileIdentity,
-  type ReconcileIdentityResult,
-  type ReconciliationStep,
-} from './application/reconcile-identity.js';
-export {
-  resendInvitation,
-  type InvitationDispatchResult,
-} from './application/invitation-dispatch.js';
-export {
-  provisionIdentity,
-  type ProvisionIdentityResult,
-} from './application/provision-identity.js';
 export type {
   IdentityFailure,
-  IdentityProvisioningDependencies,
   IdentityProvisioningRequest,
 } from './application/identity-provisioning-dependencies.js';
-export {
-  resolveIdentityUser,
-  resolveSessionUser,
-  signIn,
-  type ResolveSessionUserResult,
-  type SessionUser,
-  type SignInDependencies,
-  type SignInRequest,
-  type SignInResult,
+export type {
+  ResolveSessionUserResult,
+  SessionUser,
+  SignInRequest,
+  SignInResult,
 } from './application/sign-in.js';
-export type { ApplicationUser } from './domain/application-user.js';
-export type { UserId } from './domain/identifiers.js';
+export { hasPermission, type AuthorizationContext } from './domain/authorization-context.js';
+export type {
+  AuthorizationDenial,
+  ResolveAuthorizationContextResult,
+} from './application/authorization.js';
+export type { DepartmentId, UserId } from './domain/identifiers.js';

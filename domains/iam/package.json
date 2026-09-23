@@ -19,6 +19,12 @@
       "import": "./dist/persistence.js",
       "default": "./dist/persistence.js"
     },
+    "./composition": {
+      "@vertex-os/source": "./src/composition.ts",
+      "types": "./dist/composition.d.ts",
+      "import": "./dist/composition.js",
+      "default": "./dist/composition.js"
+    },
     "./identity-provider": {
       "@vertex-os/source": "./src/identity-provider.ts",
       "types": "./dist/identity-provider.d.ts",

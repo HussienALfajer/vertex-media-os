@@ -71,12 +71,17 @@ const named = (attribute, name) =>
 const PRIVATE_SUBPATH_MESSAGE =
   'Import @vertex-os packages statically and only through their approved entry points; dynamic imports and type queries of subpaths bypass the entry-point restriction.';
 
+const STRING_LITERAL_IMPORT_MESSAGE =
+  'Write a dynamic import specifier as a string literal; template literals bypass the dependency rules.';
+
+const COMMONJS_MESSAGE = 'CommonJS require bypasses the import boundaries; use an ES import.';
+
 /**
  * `no-restricted-imports` sees only static import/export declarations. These selectors close the
  * remaining ways to name a module: dynamic `import()` and `import('…')` type queries of
  * `@vertex-os/<package>/<subpath>`, template-literal specifiers, computed (unanalyzable)
- * specifiers, and every route to `createRequire`. Applied to every linted file; no project negates
- * them.
+ * specifiers, CommonJS `require` in both forms, and every route to `createRequire`. Applied to
+ * every linted file; no project negates them.
  */
 export const restrictedImportSyntax = [
   {
@@ -101,6 +106,17 @@ export const restrictedImportSyntax = [
     selector: 'TSImportType[source.value=/^@vertex-os\\u002F[^\\u002F]+\\u002F./]',
     message: PRIVATE_SUBPATH_MESSAGE,
   },
+  {
+    // Only a string-literal specifier is seen by the Nx tag rule and the package bans (CP1-04).
+    selector: 'ImportExpression > TemplateLiteral.source',
+    message: STRING_LITERAL_IMPORT_MESSAGE,
+  },
+  // The repository is ESM; `import x = require()` and `require()` bypass every import rule.
+  ...[
+    'TSExternalModuleReference',
+    "CallExpression[callee.type='Identifier'][callee.name='require']",
+    "MemberExpression[object.type='Identifier'][object.name='require']",
+  ].map((selector) => ({ selector, message: COMMONJS_MESSAGE })),
   ...[
     'ImportExpression[source.value=/^(node:)?module$/]',
     'ImportExpression > TemplateLiteral.source[quasis.0.value.raw=/^(node:)?module$/]',
@@ -122,8 +138,10 @@ const RAW_ENVIRONMENT_MESSAGE =
  */
 export const restrictedEnvSyntax = [
   `MemberExpression${named('property', 'env')}:matches([object.name='process'], [object.property.name='process'], [object.property.value='process'], [object.property.quasis.0.value.raw='process'])`,
-  `VariableDeclarator:matches([init.name='process'], [init.property.name='process'], [init.property.value='process']) > ObjectPattern > Property${named('key', 'env')}`,
+  `VariableDeclarator:matches([init.name='process'], [init.property.name='process'], [init.property.value='process'], [init.property.quasis.0.value.raw='process']) > ObjectPattern > Property${named('key', 'env')}`,
   `Property${named('key', 'process')} > ObjectPattern > Property${named('key', 'env')}`,
+  // Destructuring by assignment and through a parameter default (CP1-04).
+  `:matches(AssignmentExpression, AssignmentPattern):matches([right.name='process'], [right.property.name='process'], [right.property.value='process'], [right.property.quasis.0.value.raw='process']) > ObjectPattern > Property${named('key', 'env')}`,
   ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression)[source.value=/^(node:)?process$/]',
   'ImportExpression > TemplateLiteral.source[quasis.0.value.raw=/^(node:)?process$/]',
   'TSExternalModuleReference[expression.value=/^(node:)?process$/]',

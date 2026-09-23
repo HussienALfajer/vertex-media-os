@@ -6,7 +6,8 @@ import {
   type DatabaseClient,
   type DatabaseTransaction,
 } from '@vertex-os/database';
-import { iamPermissionManifest, synchronizeIamReferenceData } from '@vertex-os/iam';
+import { iamPermissionManifest } from '@vertex-os/iam';
+import { synchronizeIamReferenceData } from '@vertex-os/iam/composition';
 import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 import { pino, type DestinationStream, type Logger } from 'pino';
 import { type AppConfig } from '../config/app-config.js';

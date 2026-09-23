@@ -23,7 +23,7 @@ import {
   SESSION_COOKIE,
   sessionCookie,
 } from './cookies.js';
-import { AUTH_RUNTIME, CsrfExempt } from './csrf.guard.js';
+import { AUTH_RUNTIME, Public } from './access.guard.js';
 import {
   requireSession,
   systemAttribution,
@@ -48,6 +48,7 @@ export class AuthController {
 
   /** Starts an OIDC sign-in: stores a login attempt and redirects to Keycloak. */
   @Get('login')
+  @Public()
   @ApiResponse({ status: 302, description: 'Redirect to the identity provider.' })
   @ApiResponse({ status: 303, description: 'Sign-in cannot start: back to the app (`authError`).' })
   async login(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
@@ -90,6 +91,7 @@ export class AuthController {
 
   /** Completes the sign-in (spec Section 13 steps 6–13) and issues the session cookie. */
   @Get('callback')
+  @Public()
   @ApiResponse({
     status: 303,
     description:
@@ -233,7 +235,7 @@ export class AuthController {
   }
 
   /**
-   * Ends the session (the CSRF guard has checked the session and its token) and the Keycloak
+   * Ends the session (the access guard has checked the session and its CSRF token) and the Keycloak
    * session (spec Section 32; IAM-R03 D-17), and returns where the browser goes next: the
    * post-logout URI, or the token-free end-session URL when the API could not end it itself.
    */
@@ -272,7 +274,7 @@ export class AuthController {
 
   /** Keycloak back-channel logout (spec Section 33), validated by the logout token alone. */
   @Post('backchannel-logout')
-  @CsrfExempt()
+  @Public()
   @ApiConsumes('application/x-www-form-urlencoded')
   @ApiOkResponse({ description: 'The matching sessions are revoked (idempotent).' })
   @ApiBadRequestResponse({ description: 'The logout token is missing or invalid.' })
