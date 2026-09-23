@@ -1,6 +1,6 @@
 # IAM-R03F — Session Re-validation Against the Identity Provider (IAM-CP1 fix run)
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** fix run for the `IAM-CP1` blocking finding (IAM-MP-05, IAM-MP-06 scope)  
 **Risk tier:** A (reviewers: security; data and concurrency; tests and verification)  
 **Branch:** `iam/r03f-session-revalidation`  
@@ -55,7 +55,7 @@ Carried-forward items and their resolution:
   - *Refreshed:* slide the idle deadline from the claim time, store the rotated refresh token and the refreshed ID token. A refreshed ID token must pass the R03 D-08 claim checks and carry the session's stored `sid`, otherwise the refresh counts as refused.
   - *Refused* (any answer other than unavailability, such as `invalid_grant` for an ended or expired session, a disabled identity, or a reused token): revoke the session with the new reason `PROVIDER_SESSION_ENDED`, system actor `iam.session-check`, Audit evidence in the revocation's transaction, and answer `401 AUTH_SESSION_INVALID` with the cookie cleared. No new error code (spec Section 27 already covers it).
   - *Unavailable* (network, timeout, 5xx, 429): the session stays valid until its current idle deadline, which does not move; a structured log line records the category; the next interval retries. A Keycloak outage therefore ends sessions within one idle period instead of ending them all at once, and during the outage Keycloak cannot end sessions either.
-  - A refresh that succeeded at Keycloak but whose apply failed (database error, process stop) leaves the old token, so the next refresh is refused and the session ends: fail-closed, recorded as a residual.
+  - A refresh that succeeded at Keycloak but whose apply failed (database error, process stop), or whose answer was lost after Keycloak rotated the token (a timeout, classed as unavailable), leaves the old token, so the next refresh is refused as token reuse and the session ends: fail-closed, recorded as a residual.
 - **D-06 Storage.** New nullable columns `refresh_token_ciphertext` and `refresh_token_key_version`, set together (check constraint), encrypted like the ID token (R03 D-17: AES-256-GCM, random IV, row ID as additional data) with a key derived under its own HKDF `info` (`vertex-os/auth/refresh-token/v1`), so one token's ciphertext never decrypts as the other. Discarded wherever the ID token is: revocation, an expired session when seen, and the bounded sweep. The migration is additive: two columns, one check, one enum value.
 - **D-07 No Keycloak I/O inside a transaction (invariant 10).** Claim and apply are single statements; revocation runs its own transaction after the refresh call returned.
 - **D-08 Logout.** Logout still ends the Keycloak session through the end-session endpoint with the (now refreshed) ID token (R03 D-17); the refresh token is discarded with the revocation. SECURITY Section 11's "associated tokens SHOULD be revoked at the identity provider" is met by ending the Keycloak session, which invalidates its refresh tokens.
@@ -70,8 +70,8 @@ No owner decision is needed: D-01 takes the route the canonical documents alread
 ## 5. Design notes
 
 - **Session row additions:** `refresh_token_ciphertext text NULL`, `refresh_token_key_version int NULL`, check `auth_session_refresh_token_ck` (both null or both set); enum value `PROVIDER_SESSION_ENDED`.
-- **Store operations:** `claimRevalidation({ id, now, seenBefore })` → boolean (sets `last_seen_at` only); `applyRevalidation({ id, now, idleExpiresAt, refreshToken, idToken })` → boolean, conditional on the row being live at `now`. They replace `touch`: no session slides without a refresh.
-- **OIDC client:** `refreshSession(refreshToken)` → `OidcResult<{ refreshToken, idToken, idpSessionId }>` using `openid-client`'s refresh-token grant with the discovery configuration of R03 D-07 (signature checks on the returned ID token); failures map through the existing `unavailable`/`rejected` categories. `completeAuthorization` also returns the refresh token.
+- **Store operations:** `claimRevalidation({ id, now, seenBefore })` → boolean (sets `last_seen_at` only); `applyRevalidation({ id, now, claimedAt, replaces, idleExpiresAt, tokens })` → boolean, conditional on the row being live at `now`, still holding its claim (`last_seen_at = claimedAt`) and still holding the refresh token that was refreshed (`replaces`, its ciphertext). They replace `touch`: no session slides without a refresh.
+- **OIDC client:** `refreshSession({ refreshToken, idpSessionId, idToken })` → `OidcResult<{ refreshToken, idToken }>` using `openid-client`'s refresh-token grant with the discovery configuration of R03 D-07 (signature checks on the returned ID token). A refreshed ID token must also name the `sid` of the session and the `sub` of its current ID token (OpenID Connect Core Section 12.2). Failures map through the existing `unavailable`/`rejected` categories; oauth4webapi's `OAUTH_*` processing errors are always `rejected`. `completeAuthorization` also returns the refresh token.
 - **Failure semantics:** see D-05. Structured log fields carry categories only, never a token, session identifier or subject: a refusal logs `auth: 'session-revoked'` with `reason: 'provider-session-ended'` (the same category as the other revocations of `requireSession`), an outage logs `auth: 'session-revalidation-unavailable'`; a successful refresh logs nothing.
 
 ### Discoveries during the run
@@ -79,6 +79,28 @@ No owner decision is needed: D-01 takes the route the canonical documents alread
 - **Keycloak records failed logins asynchronously.** In Keycloak 26, `DefaultBruteForceProtector.processLogin` hands `failure(...)` to its `bruteforce` executor and returns, so the login form is answered before the failure count and the lockout deadline are stored. A status read right after the answer can see the previous state. This is the root cause of the realm-contract flake (D-12); the source was read at the pinned tag 26.7.4.
 - **Disabling a Keycloak identity sends no back-channel logout.** The Admin API update with `enabled: false` leaves the Vertex session untouched until its next re-validation, when Keycloak refuses the refresh. Without re-validation the session stayed valid (mutation check in the real-Keycloak spec).
 - **An idle-expired Keycloak session ends silently.** In the real-Keycloak spec, a session left unused past the lowered SSO idle timeout and the grace window disappears from the Admin API without any back-channel call, which reproduces CP1-01; the session that Vertex kept refreshing stays listed and still receives the Keycloak logout.
+
+### In-run review
+
+Three `vertex-reviewer` subagents (security; data and concurrency; tests and verification) reviewed `main...648bcb5`. None found a blocking issue. Every finding's evidence was checked against the code before it was accepted.
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| DC-01 | Minor | `applyRevalidation` checked liveness with an application clock read before its update, so an apply could re-arm a row whose tokens another request had just discarded as expired (reproduced by the reviewer against PostgreSQL). | Fixed: the apply also requires the row's claim and the refresh token it replaces; new store test, which fails without the guard (mutation run). |
+| DC-02 | Info | A refusal or missed apply after the idle deadline passed revokes nothing (the row is already expired); its tokens stay until the row is next seen or swept. | Accepted: the same path as any unseen expired row (R03 D-17). |
+| DC-03 | Info | A lost refresh answer after Keycloak rotated the token ends the session at the next interval. | Recorded in the D-05 residual. |
+| DC-04 | Info | One refresher per interval relies on one clock and a refresh shorter than the interval; several API processes with skewed clocks could revoke a session by refreshing twice. | Carried forward to the production deployment design (Master Plan ledger). |
+| S-01 | Minor | A malformed refreshed ID token was classed `unavailable` (oauth4webapi wraps the decode `TypeError`). | Fixed: `OAUTH_*` processing errors are `rejected`; unit test, which fails without the fix (mutation run). |
+| S-02 | Minor | The refreshed ID token was bound by `sid` only, not by `sub` (OpenID Connect Core Section 12.2). | Fixed: `sub` must equal the current ID token's; unit test, which fails without the check (mutation run). |
+| S-03 | Minor | No test pinned the signature check on the refreshed ID token. | Fixed: unit test with a token signed by another key. |
+| S-04 | Info | A refusal found at the sign-in callback (previous session) revoked without the `session-revoked` log line. | Fixed: the callback logs it too. |
+| S-05 | Info | Sessions that cannot re-validate (rows from before the migration, a rotated encryption secret) never slide and end at their current idle deadline; until then a Keycloak-side disablement does not reach them. | Accepted and documented: bounded by one idle period (D-02; `.env.example`). |
+| T-01 | Minor | No test proved that a 429 is `unavailable`. | Fixed: unit test. |
+| T-02 | Minor | No test checked a response after a refresh for token material. | Fixed: the fake-provider refresh test checks the body and headers against every issued token. |
+| T-03 | Minor | R03 D-04, D-14 and D-18 no longer described the code. | Fixed: revision notes in the R03 plan. |
+| T-04 | Info | The real-Keycloak re-validation scan lacked the query-string pattern and the non-empty guard of the login journey's scan. | Fixed: both added. |
+| T-05 | Info | A missing `state` or `nonce` would have pushed an empty secret, failing the scan for the wrong reason. | Fixed: asserted present first. |
+| T-06 | Info | The real-Keycloak spec does not assert the Audit record; the fake-provider suite does (TESTING Section 68). | Accepted: covered one layer down. |
 
 ## 6. Done means
 
@@ -111,10 +133,16 @@ No owner decision is needed: D-01 takes the route the canonical documents alread
 - [x] M3 OIDC refresh operation, session-service re-validation, `requireSession` outcome; unit and fake-provider tests
 - [x] M4 Real-Keycloak re-validation spec (D-10)
 - [x] M5 Evidence scans (CP1-02, CP1-12), realm SSO limits (CP1-10), brute-force flake (D-12)
-- [ ] M6 Documentation (CP1-16, R03 revision notes, README, `.env.example`); `pnpm verify` and integration suites green
-- [ ] M7 In-run review (three reviewers); findings resolved
+- [x] M6 Documentation (CP1-16, R03 revision notes, README, `.env.example`); `pnpm verify` and integration suites green
+- [x] M7 In-run review (three reviewers); findings resolved
 - [ ] M8 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
 
-(written at the end of the run)
+- **Result:** CP1-01 is resolved by re-validation through the refresh-token grant (D-01 to D-09). The real-Keycloak spec proves Done means 1 and 2. CP1-02, CP1-10, CP1-12 and CP1-16 and the brute-force flake (D-12) are closed. The in-run review found no blocking issue. Its Minor findings were fixed in this run (Section 5, In-run review).
+- **Next:** after the owner merges this run, `/audit IAM-CP1` re-checks CP1-01. `IAM-R04` (IAM-MP-07) waits for `IAM-CP1 ACCEPTED`. The other non-blocking `IAM-CP1` findings are attached to their owner stages when the re-check accepts the checkpoint.
+- **Residuals:**
+  - A refresh whose apply fails, or whose answer is lost after Keycloak rotated the token, ends the session at the next interval (fail-closed, D-05).
+  - Sessions without a usable refresh token end at their current idle deadline (S-05).
+  - One refresher per interval assumes a single API process (DC-04, in the Master Plan's production deployment item).
+- **Carried forward:** DC-04 goes to the production deployment design. No other item goes to a stage.
