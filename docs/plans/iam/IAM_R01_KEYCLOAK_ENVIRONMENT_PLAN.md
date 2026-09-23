@@ -125,7 +125,7 @@ Carried-forward items and their resolution in this run:
 - [x] M5 README; local compose verification
 - [x] M6 `pnpm verify` and integration suites green
 - [x] M7 In-run review (three reviewers); findings resolved
-- [ ] M8 Master Plan ledger, hand-off, pull request, CI green
+- [x] M8 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
 
