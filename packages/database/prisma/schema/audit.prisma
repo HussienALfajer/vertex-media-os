@@ -1,0 +1,42 @@
+// MOD-AUDIT persistence (IAM-02 D-05). Owned by domains/audit-persistence.
+
+enum AuditActorType {
+  USER
+  SYSTEM
+
+  @@map("audit_actor_type")
+}
+
+enum AuditResult {
+  SUCCEEDED
+  REFUSED
+  FAILED
+
+  @@map("audit_result")
+}
+
+/// Append-only accountability evidence (IAM-02 D-05, D-09): no foreign keys, no secondary
+/// indexes, no update or delete capability. occurred_at is assigned by the database default
+/// transaction_timestamp() (= CURRENT_TIMESTAMP, the transaction start), never by callers:
+/// Prisma fills @default(now()) on the client, while it leaves dbgenerated() to the database.
+/// Database-only checks: audit_record_source_module_ck, audit_record_action_ck,
+/// audit_record_action_module_ck, audit_record_actor_ck, audit_record_actor_process_ck,
+/// audit_record_target_type_ck, audit_record_target_id_ck, audit_record_trace_id_ck,
+/// audit_record_reason_ck, audit_record_change_ck.
+model AuditRecord {
+  id           String         @id(map: "audit_record_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurredAt   DateTime       @default(dbgenerated("transaction_timestamp()")) @map("occurred_at") @db.Timestamptz(3)
+  sourceModule String         @map("source_module") @db.Text
+  action       String         @db.Text
+  actorType    AuditActorType @map("actor_type")
+  actorUserId  String?        @map("actor_user_id") @db.Uuid
+  actorProcess String?        @map("actor_process") @db.Text
+  targetType   String         @map("target_type") @db.Text
+  targetId     String         @map("target_id") @db.Text
+  result       AuditResult
+  traceId      String         @map("trace_id") @db.Text
+  reason       String?        @db.Text
+  change       Json?          @db.JsonB
+
+  @@map("audit_record")
+}

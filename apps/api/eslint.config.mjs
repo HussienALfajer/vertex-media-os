@@ -1,4 +1,7 @@
-import baseConfig from '../../eslint.config.mjs';
+import baseConfig, {
+  restrictedImportSyntax,
+  restrictedRawSqlSyntax,
+} from '../../eslint.config.mjs';
 
 export default [
   ...baseConfig,
@@ -18,6 +21,7 @@ export default [
             '{projectRoot}/vitest.config.{js,ts,mjs,mts}',
             '{projectRoot}/vitest.integration.config.{js,ts,mjs,mts}',
             '{projectRoot}/src/**/*.spec.ts',
+            '{projectRoot}/test-support/**/*.ts',
           ],
         },
       ],
@@ -27,9 +31,13 @@ export default [
     ignores: ['**/out-tsc', 'generated'],
   },
   {
-    // The API bootstrap is the sole production bridge from raw environment
-    // variables into the validated AppConfig object.
-    files: ['src/main.ts'],
-    rules: { 'no-restricted-syntax': 'off' },
+    // The two bootstrap entries (the HTTP server and the IAM reference-synchronization command)
+    // are the only production bridges from raw environment variables into the validated
+    // AppConfig object. Only the environment selectors are dropped here; the import and
+    // raw-SQL selectors still apply.
+    files: ['src/main.ts', 'src/commands/iam-sync-reference.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...restrictedImportSyntax, ...restrictedRawSqlSyntax],
+    },
   },
 ];

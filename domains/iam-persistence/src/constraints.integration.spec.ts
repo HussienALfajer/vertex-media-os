@@ -561,6 +561,15 @@ describe('named IAM database constraints', () => {
     );
   });
 
+  it('enforces the owning-module lower length bound when code prefix matches', async () => {
+    await expectViolation(
+      PERMISSION,
+      ['i.users.read', 'i', 'Read', 'Description', 'ACTIVE', 'STANDARD'],
+      '23514',
+      'iam_permission_owning_module_ck',
+    );
+  });
+
   it.each(validPermissionCodes)('accepts permission code fixture %s', async (code) => {
     await insertPermission(code);
   });
@@ -696,10 +705,28 @@ describe('named IAM database constraints', () => {
   it('rejects an inactive system role', async () => {
     await expectViolation(
       ROLE,
-      ['system', 'System', null, 'INACTIVE', true, 1],
+      ['system-administrator', 'System', null, 'INACTIVE', true, 1],
       '23514',
       'iam_role_system_active_ck',
     );
+  });
+
+  it('allows only the reserved code to be a system role, and only as a system role', async () => {
+    await insertRole('system-administrator', { name: 'System Administrator', isSystem: true });
+    await postgres.client.$executeRawUnsafe('DELETE FROM iam_role');
+    await expectViolation(
+      ROLE,
+      ['system-administrator', 'Impostor', null, 'ACTIVE', false, 1],
+      '23514',
+      'iam_role_system_code_ck',
+    );
+    await expectViolation(
+      ROLE,
+      ['admins', 'Admins', null, 'ACTIVE', true, 1],
+      '23514',
+      'iam_role_system_code_ck',
+    );
+    await insertRole('content-editors', { isSystem: false });
   });
 
   it('enforces membership primary uniqueness and composite keys', async () => {
@@ -932,6 +959,7 @@ describe('named IAM database constraints', () => {
       'iam_role_name_ck',
       'iam_role_description_ck',
       'iam_role_system_active_ck',
+      'iam_role_system_code_ck',
       'iam_role_version_ck',
       'iam_permission_pkey',
       'iam_permission_code_ck',
@@ -955,6 +983,24 @@ describe('named IAM database constraints', () => {
     ];
     expect([...names].sort()).toEqual([...expected].sort());
     for (const name of names) expect(Buffer.byteLength(name)).toBeLessThanOrEqual(63);
+    // Every foreign key is ON DELETE RESTRICT ON UPDATE RESTRICT ('r') and not deferrable (A1-07).
+    const foreignKeys = await postgres.client.$queryRaw<
+      Array<{ name: string; onDelete: string; onUpdate: string; deferrable: boolean }>
+    >`SELECT conname AS name, confdeltype::text AS "onDelete", confupdtype::text AS "onUpdate",
+        condeferrable AS deferrable
+      FROM pg_constraint WHERE contype = 'f' AND conrelid IN
+        (SELECT oid FROM pg_class WHERE relname LIKE 'iam_%' AND relkind = 'r')
+      ORDER BY conname COLLATE "C"`;
+    expect(foreignKeys).toEqual(
+      [
+        'iam_department_membership_department_id_fkey',
+        'iam_department_membership_user_id_fkey',
+        'iam_role_permission_permission_code_fkey',
+        'iam_role_permission_role_id_fkey',
+        'iam_user_role_assignment_role_id_fkey',
+        'iam_user_role_assignment_user_id_fkey',
+      ].map((name) => ({ name, onDelete: 'r', onUpdate: 'r', deferrable: false })),
+    );
     const enums = await postgres.client.$queryRaw<Array<{ typname: string }>>`
       SELECT typname FROM pg_type WHERE typname LIKE 'iam_%' AND typtype = 'e'`;
     expect(enums.map((row) => row.typname).sort()).toEqual(

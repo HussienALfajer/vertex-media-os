@@ -97,7 +97,8 @@ model IamDepartment {
 }
 
 /// Database-only checks: iam_role_code_ck, iam_role_name_ck,
-/// iam_role_description_ck, iam_role_system_active_ck, iam_role_version_ck.
+/// iam_role_description_ck, iam_role_system_active_ck, iam_role_version_ck,
+/// iam_role_system_code_ck (IAM-MP-02).
 model IamRole {
   id              String                  @id(map: "iam_role_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code            String                  @unique(map: "iam_role_code_key") @db.Text

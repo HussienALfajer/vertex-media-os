@@ -14,11 +14,17 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./persistence": {
-      "@vertex-os/source": "./src/persistence.ts",
-      "types": "./dist/persistence.d.ts",
-      "import": "./dist/persistence.js",
-      "default": "./dist/persistence.js"
+    "./iam": {
+      "@vertex-os/source": "./src/iam.ts",
+      "types": "./dist/iam.d.ts",
+      "import": "./dist/iam.js",
+      "default": "./dist/iam.js"
+    },
+    "./audit": {
+      "@vertex-os/source": "./src/audit.ts",
+      "types": "./dist/audit.d.ts",
+      "import": "./dist/audit.js",
+      "default": "./dist/audit.js"
     }
   },
   "dependencies": {

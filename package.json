@@ -27,6 +27,7 @@
     "db:validate": "nx run @vertex-os/database:prisma-validate",
     "db:generate": "nx run @vertex-os/database:prisma-generate",
     "db:migrate": "nx run @vertex-os/database:prisma-migrate-deploy",
+    "iam:sync-reference": "nx run @vertex-os/api:iam-sync-reference",
     "openapi:generate": "nx run @vertex-os/api:openapi",
     "deps:audit": "pnpm audit --audit-level=moderate",
     "verify": "pnpm format:check && pnpm lint && pnpm lint:boundaries && pnpm typecheck && pnpm test && pnpm build",

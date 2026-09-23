@@ -1,11 +1,17 @@
 import {
   IamIdentitySyncState,
   IamInvitationDeliveryState,
+  IamPermissionSensitivity,
+  IamPermissionState,
+  type IamRoleState,
   IamUserAccessState,
-} from '@vertex-os/database/persistence';
+} from '@vertex-os/database/iam';
 import type {
   IdentitySyncState,
   InvitationDeliveryState,
+  PermissionSensitivity,
+  PermissionState,
+  RoleState,
   UserAccessState,
 } from '@vertex-os/iam/persistence';
 
@@ -48,3 +54,32 @@ export const invitationFromDatabase = {
   SENT: 'SENT',
   FAILED: 'FAILED',
 } satisfies Record<IamInvitationDeliveryState, InvitationDeliveryState>;
+
+export const permissionStateToDatabase = {
+  ACTIVE: IamPermissionState.ACTIVE,
+  DEPRECATED: IamPermissionState.DEPRECATED,
+  RETIRED: IamPermissionState.RETIRED,
+} satisfies Record<PermissionState, IamPermissionState>;
+
+export const permissionStateFromDatabase = {
+  ACTIVE: 'ACTIVE',
+  DEPRECATED: 'DEPRECATED',
+  RETIRED: 'RETIRED',
+} satisfies Record<IamPermissionState, PermissionState>;
+
+export const sensitivityToDatabase = {
+  STANDARD: IamPermissionSensitivity.STANDARD,
+  SENSITIVE: IamPermissionSensitivity.SENSITIVE,
+  PRIVILEGED: IamPermissionSensitivity.PRIVILEGED,
+} satisfies Record<PermissionSensitivity, IamPermissionSensitivity>;
+
+export const sensitivityFromDatabase = {
+  STANDARD: 'STANDARD',
+  SENSITIVE: 'SENSITIVE',
+  PRIVILEGED: 'PRIVILEGED',
+} satisfies Record<IamPermissionSensitivity, PermissionSensitivity>;
+
+export const roleStateFromDatabase = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} satisfies Record<IamRoleState, RoleState>;

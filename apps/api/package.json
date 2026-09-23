@@ -11,8 +11,13 @@
     "@nestjs/core": "^12.0.3",
     "@nestjs/platform-fastify": "^12.0.3",
     "@nestjs/swagger": "^12.0.1",
+    "@vertex-os/audit": "workspace:*",
+    "@vertex-os/audit-persistence": "workspace:*",
     "@vertex-os/database": "workspace:*",
+    "@vertex-os/iam": "workspace:*",
+    "@vertex-os/iam-persistence": "workspace:*",
     "fastify": "^5.12.5",
+    "pino": "10.3.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^4.6.5"
@@ -82,8 +87,23 @@
           "{projectRoot}/generated"
         ]
       },
+      "iam-sync-reference": {
+        "command": "node --enable-source-maps --env-file-if-exists=../../.env dist/commands/iam-sync-reference.js",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": false,
+        "dependsOn": [
+          "build"
+        ]
+      },
       "test": {},
-      "test:integration": {}
+      "test:integration": {
+        "dependsOn": [
+          "^build",
+          "build"
+        ]
+      }
     }
   }
 }

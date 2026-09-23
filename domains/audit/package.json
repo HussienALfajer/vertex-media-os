@@ -1,0 +1,28 @@
+{
+  "name": "@vertex-os/audit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MOD-AUDIT domain core: the accountability-evidence contract and its append capability",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@vertex-os/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "nx": {
+    "tags": [
+      "type:lib",
+      "scope:backend",
+      "layer:domain",
+      "domain:audit"
+    ],
+    "targets": {
+      "test": {}
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "out-tsc/vitest",
+    "tsBuildInfoFile": "out-tsc/vitest/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.spec.ts", "test-support/**/*.ts", "vitest.integration.config.mts"],
+  "references": [{ "path": "./tsconfig.lib.json" }]
+}

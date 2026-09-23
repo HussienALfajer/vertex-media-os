@@ -7,9 +7,16 @@ await createProjectGraphAsync();
 
 const nxRule = '@nx/enforce-module-boundaries';
 const importsRule = 'no-restricted-imports';
-const envRule = 'no-restricted-syntax';
-const boundaryRules = new Set([nxRule, importsRule, envRule]);
+const syntaxRule = 'no-restricted-syntax';
+const boundaryRules = new Set([nxRule, importsRule, syntaxRule]);
 
+// Fragments of the `no-restricted-syntax` messages, so each case proves which selector fired.
+const privateSubpath = 'dynamic imports and type queries of subpaths';
+const computedImport = 'computed dynamic imports';
+const rawEnvironment = 'Read raw environment variables';
+const unsafeRawSql = '$executeRawUnsafe is reserved for tests';
+
+// [id, project, code, rule, message fragment?, virtual file relative to the project?]
 const violations = [
   ['V1', 'apps/web', "import '@vertex-os/iam';", nxRule, 'scope:web'],
   ['V2', 'apps/web', "import '@vertex-os/iam-persistence';", nxRule, 'scope:web'],
@@ -31,60 +38,137 @@ const violations = [
   ['V11', 'domains/iam-persistence', "import 'pg';", nxRule, 'pg'],
   ['V12', 'domains/iam-persistence', "import '@nestjs/common';", nxRule, '@nestjs'],
   ['V13', 'apps/api', "import '@vertex-os/iam/persistence';", importsRule],
-  ['V14', 'apps/api', "import '@vertex-os/database/persistence';", importsRule],
+  ['V14', 'apps/api', "import '@vertex-os/database/iam';", importsRule],
   ['V15', 'apps/api', "import '@vertex-os/iam-persistence/src/index.js';", importsRule],
   ['V16', 'apps/api', "import '../../../domains/iam-persistence/src/index.js';", importsRule],
   ['V17', 'packages/database', "import '@vertex-os/iam/persistence';", importsRule],
-  ['V18', 'domains/iam', "process.env['X'];", envRule],
-  ['V19', 'domains/iam-persistence', "process.env['X'];", envRule],
+  ['V18', 'domains/iam', "process.env['X'];", syntaxRule, rawEnvironment],
+  ['V19', 'domains/iam-persistence', "process.env['X'];", syntaxRule, rawEnvironment],
+  // IAM depends on Audit, so Nx reports this reverse edge as a cycle before its tag (as V5/V7);
+  // V23 exercises the domain:audit tag constraint directly.
+  ['V20', 'domains/audit', "import '@vertex-os/iam';", nxRule, 'Circular dependency'],
+  ['V21', 'domains/audit', "import '@vertex-os/database';", nxRule, 'layer:domain'],
+  ['V22', 'domains/audit', "import '@prisma/client';", nxRule, '@prisma'],
+  ['V23', 'domains/audit-persistence', "import '@vertex-os/iam';", nxRule, 'domain:audit'],
+  // Observed as the layer:adapter tag rule (no cycle: audit-persistence has no path to it).
+  [
+    'V24',
+    'domains/audit-persistence',
+    "import '@vertex-os/iam-persistence';",
+    nxRule,
+    'layer:adapter',
+  ],
+  [
+    'V25',
+    'domains/iam-persistence',
+    "import '@vertex-os/audit-persistence';",
+    nxRule,
+    'layer:adapter',
+  ],
+  ['V26', 'domains/iam', "import '@vertex-os/audit-persistence';", nxRule, 'layer:domain'],
+  ['V27', 'domains/iam-persistence', "import '@vertex-os/database/audit';", importsRule],
+  ['V28', 'domains/audit-persistence', "import '@vertex-os/database/iam';", importsRule],
+  ['V29', 'apps/api', "import '@vertex-os/database/audit';", importsRule],
+  ['V30', 'apps/api', "import '@vertex-os/audit/src/index.js';", importsRule],
+  ['V31', 'apps/api', "await import('@vertex-os/database/iam');", syntaxRule, privateSubpath],
+  [
+    'V32',
+    'apps/api',
+    "type T = import('@vertex-os/iam/persistence').UserId;",
+    syntaxRule,
+    privateSubpath,
+  ],
+  ['V33', 'apps/api', 'await import(`@vertex-os/iam/persistence`);', syntaxRule, privateSubpath],
+  ['V34', 'apps/api', "const s = 'x'; await import(s);", syntaxRule, computedImport],
+  [
+    'V35',
+    'apps/api',
+    "await import('@vertex-os/iam/persistence');",
+    syntaxRule,
+    privateSubpath,
+    'src/main.ts',
+  ],
+  [
+    'V36',
+    'domains/iam-persistence',
+    "declare const c: any; c.$executeRawUnsafe('x');",
+    syntaxRule,
+    unsafeRawSql,
+  ],
+  ['V37', 'packages/database', "import '@vertex-os/audit';", nxRule, 'layer:infrastructure'],
+  ['V38', 'domains/audit', "process.env['X'];", syntaxRule, rawEnvironment],
+  ['V39', 'domains/audit-persistence', "import '@prisma/client';", nxRule, '@prisma'],
+  ['V40', 'apps/web', "import '@vertex-os/audit';", nxRule, 'scope:web'],
 ];
 
+const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
+
+// [id, project, code lines, virtual file relative to the project?]
 const controls = [
   [
     'C1',
     'domains/iam-persistence',
-    [
+    imports(
       '@vertex-os/iam',
       '@vertex-os/iam/persistence',
       '@vertex-os/database',
-      '@vertex-os/database/persistence',
+      '@vertex-os/database/iam',
+      '@vertex-os/audit',
+    ),
+  ],
+  [
+    'C2',
+    'apps/api',
+    [
+      ...imports(
+        '@vertex-os/iam',
+        '@vertex-os/iam-persistence',
+        '@vertex-os/audit',
+        '@vertex-os/audit-persistence',
+        '@vertex-os/database',
+      ),
+      "await import('@vertex-os/iam');",
     ],
   ],
-  ['C2', 'apps/api', ['@vertex-os/iam', '@vertex-os/iam-persistence', '@vertex-os/database']],
+  [
+    'C3',
+    'domains/audit-persistence',
+    imports('@vertex-os/audit', '@vertex-os/database', '@vertex-os/database/audit'),
+  ],
+  ['C4', 'domains/iam', imports('@vertex-os/audit')],
+  ['C5', 'apps/api', ["process.env['DATABASE_URL'];"], 'src/commands/iam-sync-reference.ts'],
 ];
 
 const linters = new Map();
-async function lint(project, code) {
+async function lint(project, code, file = 'src/__boundary_probe__.ts') {
   const projectRoot = resolve(project);
   let linter = linters.get(projectRoot);
   if (!linter) {
     linter = new ESLint({ cwd: projectRoot });
     linters.set(projectRoot, linter);
   }
-  const [result] = await linter.lintText(code, {
-    filePath: resolve(projectRoot, 'src', '__boundary_probe__.ts'),
-  });
+  const [result] = await linter.lintText(code, { filePath: resolve(projectRoot, file) });
   if (!result) throw new Error(`ESLint returned no result for ${project}`);
   return result.messages;
 }
 
 let failures = 0;
-for (const [id, project, code, rule, fragment] of violations) {
-  const messages = await lint(project, code);
+for (const [id, project, code, rule, fragment, file] of violations) {
+  const messages = await lint(project, code, file);
   const passed = messages.some(
     (message) => message.ruleId === rule && (!fragment || message.message.includes(fragment)),
   );
   if (!passed) failures += 1;
-  console.log(`${id} ${passed ? 'PASS' : 'FAIL'} ${rule}${fragment ? ` (${fragment})` : ''}`);
+  const observed = messages.find((message) => message.ruleId === rule)?.message ?? '';
+  console.log(
+    `${id} ${passed ? 'PASS' : 'FAIL'} ${rule}${fragment ? ` (${fragment})` : ` — ${observed}`}`,
+  );
   if (!passed)
     console.error(messages.map((message) => `${message.ruleId}: ${message.message}`).join('\n'));
 }
 
-for (const [id, project, imports] of controls) {
-  const messages = await lint(
-    project,
-    imports.map((specifier) => `import '${specifier}';`).join('\n'),
-  );
+for (const [id, project, lines, file] of controls) {
+  const messages = await lint(project, lines.join('\n'), file);
   const boundaryMessages = messages.filter((message) => boundaryRules.has(message.ruleId));
   const passed = boundaryMessages.length === 0;
   if (!passed) failures += 1;

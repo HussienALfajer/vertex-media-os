@@ -194,7 +194,7 @@ Each business module is authoritative for authorization rules that depend on its
 
 Examples:
 
-- Projects decides whether an actor with projects.edit may edit a particular project.
+- Projects decides whether an actor with projects.projects.edit may edit a particular project.
 - Finance decides whether an actor with finance.payments.record may record a payment in the relevant context.
 - Approvals decides whether an actor is an eligible reviewer for a particular approval request.
 
@@ -715,7 +715,7 @@ IAM answers whether the actor currently holds a permission code.
 
 Example:
 
-    projects.edit
+    projects.projects.edit
 
 This does not mean the actor may edit every project.
 
@@ -729,7 +729,7 @@ The owning business module combines coarse permission with its own resource stat
 
 Example:
 
-    hasPermission(projects.edit)
+    hasPermission(projects.projects.edit)
     AND ProjectsPolicy.mayEdit(actor, project)
 
 The business module MUST NOT authorize by role name.

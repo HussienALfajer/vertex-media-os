@@ -15,6 +15,7 @@
     }
   },
   "dependencies": {
+    "@vertex-os/audit": "workspace:*",
     "@vertex-os/database": "workspace:*",
     "@vertex-os/iam": "workspace:*"
   },

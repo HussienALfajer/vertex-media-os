@@ -1,5 +1,9 @@
 import type { DatabaseClient } from '@vertex-os/database';
-import { persistenceClientOf, type IamApplicationUser } from '@vertex-os/database/persistence';
+import {
+  iamPersistenceOf,
+  runInTransaction,
+  type IamApplicationUser,
+} from '@vertex-os/database/iam';
 import type {
   ApplicationUser,
   ApplicationUserRepository,
@@ -79,13 +83,14 @@ function driverViolation(
 export function createApplicationUserRepository(
   database: DatabaseClient,
 ): ApplicationUserRepository {
-  const client = persistenceClientOf(database);
+  const client = iamPersistenceOf(database);
 
   return {
     async create(draft: NewApplicationUser) {
       const now = new Date();
       try {
-        const row = await client.$transaction(async (transaction) => {
+        const row = await runInTransaction(database, async (handle) => {
+          const transaction = iamPersistenceOf(handle);
           const user = await transaction.iamApplicationUser.create({
             data: {
               email: draft.email,

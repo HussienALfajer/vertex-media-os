@@ -23,6 +23,12 @@
     },
     {
       "path": "./domains/iam-persistence"
+    },
+    {
+      "path": "./domains/audit-persistence"
+    },
+    {
+      "path": "./domains/audit"
     }
   ]
 }

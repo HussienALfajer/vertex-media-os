@@ -20,6 +20,9 @@
       "default": "./dist/persistence.js"
     }
   },
+  "dependencies": {
+    "@vertex-os/audit": "workspace:*"
+  },
   "nx": {
     "tags": [
       "type:lib",

@@ -431,7 +431,7 @@ Examples of scope/context include:
 A permission such as:
 
 ```text
-projects.edit
+projects.projects.edit
 ```
 
 MUST NOT automatically mean access to every project in the system.

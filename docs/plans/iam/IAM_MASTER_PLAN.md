@@ -669,10 +669,10 @@ The resolutions become effective when that plan is implemented and audited.
 
 ## IAM-MP-02 — Permission/System-Role Reference Data & Minimal Audit Foundation
 
-**Status:** READY  
+**Status:** AUDIT_REQUIRED (implemented 2026-09-23 on `9e9e464`, uncommitted; independent audit pending)  
 **Parent specification area:** IAM-1, Sections 18–21, 34–35, 48–49  
 **Depends on:** IAM-MP-01 COMPLETE (satisfied 2026-09-23)  
-**Executable plan:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` (written from `21f536c`; not yet implemented)
+**Executable plan:** `docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` (written from `21f536c`; implemented 2026-09-23, evidence in its Sections 43–44)
 
 ### Objective
 
@@ -1497,13 +1497,13 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 is `COMPLETE`: its independent audit returned `IAM-01 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No subsequent IAM stage has started.
 
-The next stage is `IAM-MP-02`, which is `READY`: its executable plan `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` has been written from `21f536c` and carries the items listed under "Carried forward from the IAM-MP-01 audit", but it has not been implemented.
+The next stage is `IAM-MP-02`, which is `AUDIT_REQUIRED`: its executable plan `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` was written from `21f536c` and implemented on 2026-09-23 on top of `9e9e464` (left uncommitted for the independent audit). It becomes `COMPLETE` only after that audit returns `IAM-02 ACCEPTED` and the owner accepts the baseline; IAM-MP-03 stays `PLANNED` until then.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
 | IAM-MP-00 Architecture & Domain Boundary Foundation | COMPLETE | IAM spec execution gate (closed) |
 | IAM-MP-01 IAM Persistence & First Migration | COMPLETE | MP-00 COMPLETE (satisfied) |
-| IAM-MP-02 Reference Data & Minimal Audit Foundation | READY | MP-01 COMPLETE (satisfied) |
+| IAM-MP-02 Reference Data & Minimal Audit Foundation | AUDIT_REQUIRED | MP-01 COMPLETE (satisfied) |
 | IAM-MP-03 Keycloak Environment & Realm Contract | PLANNED | MP-02 COMPLETE |
 | IAM-MP-04 Identity Reconciliation & Invitations | PLANNED | MP-03 COMPLETE |
 | IAM-MP-05 Application Session Foundation | PLANNED | MP-04 COMPLETE |
@@ -1565,6 +1565,14 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **Stages affected:** none reordered. The stage was checked for a split into "Audit foundation" and "reference synchronization" and kept whole: an Audit capability without a consumer would be speculative, and a synchronization without Audit would break spec Section 9.6 (plan Section 2.1).
 - **Owner acceptance:** the owner accepted the plan on 2026-09-23 and delegated its flagged decisions. The rulings (D-03 and D-04 confirmed, D-04 recorded in `docs/ENGINEERING.md` rather than an ADR, I-1, I-3 and I-5 confirmed, A1-03 wording fixed, no `docs/modules/audit.md` yet) are in plan Section 12.1.
 - **Accepted baselines:** remain valid.
+
+### Amendment record — IAM-MP-02 implementation ready for independent audit (2026-09-23)
+
+- **What changed:** IAM-MP-02 `READY` → `IN_PROGRESS` → `AUDIT_REQUIRED`. The stage delivered the minimal MOD-AUDIT foundation (`domains/audit`, `domains/audit-persistence`, append-only `audit_record` with database-assigned `occurred_at`), per-domain database entries `@vertex-os/database/iam|audit` replacing `/persistence`, the first cross-module atomic write (opaque `DatabaseTransaction`, `runInTransaction`, `IamTransactionRunner`, composition-root `auditRecorderFor`), the code-defined IAM permission catalog and protected `system-administrator` role with an audited, serialized, idempotent synchronization (`pnpm iam:sync-reference`), `iam_role_system_code_ck`, and the carried-forward items A1-01, A1-02, A1-03, A1-05 and A1-07. IAM-MP-03 remains `PLANNED` and cannot start until audit and owner acceptance.
+- **Evidence:** `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Sections 41–44: unit tests (IAM 86, Audit 111, API 29); `lint:boundaries` V1–V40/C1–C5 with three observed sanity breaks; database integration 27; Audit adapter 99, IAM adapter 84 and command 10, each three consecutive times (first run 12 permissions, 1 role, 12 mappings, 14 Audit records; converged run writes nothing; refusals, custom-role isolation, cross-adapter atomicity with the real Audit adapter, four-way concurrency and lock ordering proven); upgrade-path test for the new constraint; A1-02 proven with real P2039/P2010/P2007/P2002/P1001 errors and end to end through both loggers; local `db:migrate` + two synchronization runs; OpenAPI output unchanged; `pnpm verify`, uncached `pnpm verify`, `pnpm verify:full` (Playwright 130/130) and `pnpm deps:audit` pass. The root gates used a temporary local `.prettierignore` exclusion for two sibling worktrees, restored after each run. The HTTP runtime changed only by the log serializer.
+- **Stages affected:** IAM-MP-02 only; no stage order or ownership change. Open items passed on are unchanged from the plan's Section 40 (API statement-timeout sizing, `DEPRECATED` effectiveness, custom-role version semantics, unwritable system-role mappings for IAM-MP-09, bootstrap requiring synchronized reference data, security-event recording, database-level Audit immutability and role separation, `docs/modules/audit.md`).
+- **Remaining audit focus:** the `transaction_timestamp()` spelling of the `occurred_at` default (Prisma fills `now()` on the client), Nx's cycle diagnostic for V20, the `P3018`-less CLI output of a failed wrapped migration, the exit-code normalization through `pnpm`/Nx, and the interpretations I-1…I-8. Independent audit determines acceptance.
+- **Accepted baselines:** unchanged; IAM-MP-02 is not yet accepted.
 
 ---
 

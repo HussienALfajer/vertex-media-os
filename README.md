@@ -4,9 +4,11 @@ Internal operating platform of Vertex Media: a TypeScript modular monolith (pnpm
 NestJS-on-Fastify API, a React/Vite web application and PostgreSQL through Prisma ORM 7.
 
 This repository contains the **Phase 0 technical foundation**, the **Vertex Design System
-Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)), and the
-IAM persistence foundation (`domains/iam` and `domains/iam-persistence`). IAM tables exist, but no
-IAM behavior is reachable from the running application yet.
+Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)), the IAM
+persistence foundation (`domains/iam` and `domains/iam-persistence`), and the IAM reference data
+with the minimal MOD-AUDIT foundation (`domains/audit` and `domains/audit-persistence`). IAM
+tables, the permission catalog and the protected System Administrator role exist, but no IAM
+behavior is reachable from the running application yet.
 The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
@@ -27,6 +29,7 @@ pnpm install                           # installs exactly what pnpm-lock.yaml re
 pnpm env:setup                         # creates the ignored .env with a generated local DB password
 pnpm infra:up                          # starts PostgreSQL 18 on 127.0.0.1 and waits until healthy
 pnpm db:migrate                        # applies forward-only database migrations
+pnpm iam:sync-reference                # synchronizes the IAM permission catalog and system role
 pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-end tests
 ```
 
@@ -64,22 +67,43 @@ request's `traceId`; every response carries an `x-request-id` header.
 pnpm db:validate   # validate the Prisma schema
 pnpm db:generate   # generate the Prisma client into packages/database/src/generated (ignored)
 pnpm db:migrate    # apply pending migrations; safe to run again (no reset)
+pnpm iam:sync-reference  # synchronize IAM reference data (after db:migrate); safe to run again
 pnpm infra:down    # stop local PostgreSQL; the data volume is kept
 pnpm infra:reset   # stop it AND delete the local data volume (destructive)
 ```
 
-The first migration, `20260923013708_iam_persistence_foundation`, creates seven IAM tables and
-their structural constraints. The schema lives in `packages/database/prisma/schema/`; migrations
+There are three migrations: `20260923013708_iam_persistence_foundation` creates seven IAM tables
+and their structural constraints; `20260923035742_audit_foundation` creates MOD-AUDIT's
+append-only `audit_record` table; `20260923041312_iam_system_role_code` adds
+`iam_role_system_code_ck`, which reserves the code `system-administrator` for the one system role.
+The schema lives in `packages/database/prisma/schema/` (one file per owning module); migrations
 live in `packages/database/prisma/migrations/`. The API does not apply migrations on startup.
 
-If `pnpm db:migrate` fails with P3018, its explicit transaction wrapper leaves no partial IAM
-schema, but Prisma records a failed `_prisma_migrations` row. A transaction-aborted message may
-hide the original SQL error: reproduce the migration against a **disposable database only** with
+If `pnpm db:migrate` fails, its explicit transaction wrapper leaves no partial schema, but Prisma
+records a failed `_prisma_migrations` row (P3018, or the message `current transaction is aborted`
+naming the migration); the next deploy then refuses with P3009. The transaction-aborted message
+hides the original SQL error: reproduce the migration against a **disposable database only** with
 `psql -v ON_ERROR_STOP=1 -f <migration.sql>`. Correct the environment, privileges or data rather
 than editing an already committed migration. Then run
 `pnpm --filter @vertex-os/database exec prisma migrate resolve --rolled-back <migration_name>`
 and retry `pnpm db:migrate`. Prisma refuses a nonempty schema without migration history (P3005);
-do not bypass that check.
+do not bypass that check. `iam_role_system_code_ck` fails on a database where a custom role already
+uses the reserved code; such data is never changed by tooling and must be resolved deliberately.
+
+`pnpm iam:sync-reference` is an explicit operator command; it never runs on API start or in a
+migration. In one transaction serialized by an advisory lock, it registers or updates the
+code-defined IAM permissions (spec Section 19), creates the protected `system-administrator` role
+if missing, repairs its name and description, and maps it to exactly the ACTIVE permissions. Every
+change gets an Audit record in the same transaction: the first run on an empty database writes 12
+permissions, 1 role, 12 mappings and 14 Audit records; a second run writes nothing. It refuses,
+changing nothing, if the database holds a permission code that no manifest declares, if a RETIRED
+permission would become active again, or if the system role is inconsistent. It logs one JSON
+result line (`iam reference data synchronized`, `… refused` or `… failed`, with a `traceId` that
+also appears on the Audit records) and never logs the connection string. The command process
+exits 0 (synchronized, with or without changes), 2 (refused) or 1 (configuration or unexpected
+failure); through `pnpm`/Nx any non-zero exit is reported as 1, so read the result line. Run it
+after every `pnpm db:migrate`; the later bootstrap command will require synchronized reference
+data.
 
 ## Verification
 
@@ -87,7 +111,7 @@ do not bypass that check.
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V19, C1–C2)                     |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V40, C1–C5)                     |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
 | `pnpm build`            | Production builds of the API, the web application and the database package        |
@@ -124,7 +148,9 @@ apps/api          NestJS on Fastify: configuration, health endpoints, errors, lo
 apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and the /dev/ui lab
 apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab and visual baselines
 domains/iam       @vertex-os/iam: backend IAM domain core and private persistence contract
-domains/iam-persistence @vertex-os/iam-persistence: IAM-owned Prisma repository adapter
+domains/iam-persistence @vertex-os/iam-persistence: IAM-owned Prisma adapters and transaction runner
+domains/audit     @vertex-os/audit: MOD-AUDIT core (Audit entry contract and append capability)
+domains/audit-persistence @vertex-os/audit-persistence: MOD-AUDIT-owned append-only recorder
 packages/database Backend-only PostgreSQL/Prisma 7 client boundary
 packages/ui       @vertex-os/ui: business-neutral design system (tokens, fonts, components)
 infra/compose.yaml Local PostgreSQL for development
@@ -137,6 +163,8 @@ docs/             Canonical documentation and execution plans
 - **No authentication or authorization yet.** The approved design (Keycloak over OIDC with the API as
   a backend-for-frontend holding the session) is specified in `docs/modules/iam.md`. The only
   endpoints are the public technical health endpoints.
-- IAM tables and the private repository adapter exist, but the API does not use them. There is no
-  IAM reference data, seed user, authentication or reachable IAM business operation. The `/dev/ui`
-  proof scenarios (IAM, CRM, Projects, Finance) are static design fixtures.
+- IAM tables, the IAM permission catalog and the protected System Administrator role exist
+  (`pnpm iam:sync-reference`), and MOD-AUDIT can append immutable records, but the HTTP API uses
+  none of them. There is no seed user, no user holding any role, no authentication or authorization,
+  no Audit read path and no IAM endpoint. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
+  Finance) are static design fixtures.

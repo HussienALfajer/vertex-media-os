@@ -1,0 +1,98 @@
+{
+  "validModuleCodes": ["iam", "project-2", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+  "invalidModuleCodes": [
+    "i",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "IAm",
+    "équipe",
+    "ıam",
+    "-iam",
+    "i--am",
+    "2iam"
+  ],
+  "validActions": [
+    "iam.permission.registered",
+    "iam.role.permissions-granted",
+    "iam.a.b",
+    "iam.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b"
+  ],
+  "invalidActions": [
+    "iam.role",
+    "iam.role.created.extra",
+    "iam.Role.created",
+    "iam.role.créé",
+    "iam.role.ıd",
+    "iam.role.-created",
+    "iam.role.created-",
+    "iam..created",
+    "iam.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b"
+  ],
+  "validTargetTypes": [
+    "iam.permission",
+    "iam.role",
+    "iam.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "invalidTargetTypes": [
+    "iam",
+    "iam.role.extra",
+    "IAM.role",
+    "iam.rôle",
+    "iam.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "validProcesses": [
+    "iam.reference-sync",
+    "iam.bootstrap",
+    "iam.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "invalidProcesses": [
+    "iam",
+    "iam.reference-sync.run",
+    "IAM.sync",
+    "iam.sync ",
+    "iam.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "validTargetIds": [
+    "iam.users.read",
+    "iam.users.manage-access",
+    "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "a",
+    "x_1",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "invalidTargetIds": [
+    "",
+    "user@example.com",
+    "ABC",
+    "0F8FAD5B-D9CB-469F-A165-70867728950E",
+    "a b",
+    "-a",
+    "a-",
+    ".a",
+    "é",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "validTraceIds": [
+    "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "edge-proxy.4f1c:9a",
+    "X",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "invalidTraceIds": [
+    "",
+    "has spaces",
+    "quote\"inside",
+    "{\"level\":60}",
+    "é",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "validReasons": ["Rotated after a suspected compromise.", "سبب إداري", "😀 emoji reason"],
+  "invalidReasons": [
+    "",
+    "   ",
+    "line\nbreak",
+    "tab\there",
+    "bell\u0007",
+    "c1\u0085control",
+    "del\u007f"
+  ]
+}

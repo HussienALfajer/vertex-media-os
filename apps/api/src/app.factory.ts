@@ -7,6 +7,7 @@ import { type AppConfig } from './config/app-config.js';
 import { ProblemDetailsFilter } from './http/problem-details.js';
 import { REQUEST_ID_HEADER, resolveRequestId } from './http/request-id.js';
 import { PinoLoggerService } from './logging/pino-logger.service.js';
+import { safeErrorSerializer } from './logging/safe-error-serializer.js';
 import { serveApiDocs } from './openapi/openapi.js';
 
 /** Stable prefix of every HTTP route; the web application reaches the API through it. */
@@ -32,6 +33,9 @@ export async function createApp(
   const adapter = new FastifyAdapter({
     logger: {
       level: config.logging.level,
+      // Fastify keeps its own request/response serializers; only `err` is replaced, so database
+      // errors are logged as allowlisted descriptions (IAM-02 D-15).
+      serializers: { err: safeErrorSerializer },
       ...(options.logStream ? { stream: options.logStream } : {}),
     },
     // Request ids come only from `resolveRequestId`, which validates inbound values.

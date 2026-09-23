@@ -195,6 +195,9 @@ describe('ApplicationUserRepository against real PostgreSQL', () => {
     const repository = createApplicationUserRepository(postgres.database);
     const created = await repository.create(draft('update@example.invalid'));
     if (created.outcome !== 'created') throw new Error('Expected created');
+    // Backdate the row so the advance of updated_at never depends on elapsed time (A1-05).
+    await postgres.client.$executeRaw`UPDATE iam_application_user
+      SET updated_at = updated_at - interval '1 day' WHERE id = ${created.user.id}::uuid`;
     const before = await postgres.client.iamApplicationUser.findUniqueOrThrow({
       where: { id: created.user.id },
     });
@@ -207,7 +210,7 @@ describe('ApplicationUserRepository against real PostgreSQL', () => {
     if (updated.outcome !== 'updated') throw new Error('Expected updated');
     expect(updated.user.displayName).toBe('Changed Name');
     expect(updated.user.version).toBe(2);
-    expect(updated.user.updatedAt.getTime()).toBeGreaterThan(created.user.updatedAt.getTime());
+    expect(updated.user.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
     const after = await postgres.client.iamApplicationUser.findUniqueOrThrow({
       where: { id: created.user.id },
     });

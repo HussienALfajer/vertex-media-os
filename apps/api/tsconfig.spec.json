@@ -10,6 +10,7 @@
   "include": [
     "src/**/*.spec.ts",
     "src/**/*.test.ts",
+    "test-support/**/*.ts",
     "vitest.config.mts",
     "vitest.integration.config.mts"
   ],

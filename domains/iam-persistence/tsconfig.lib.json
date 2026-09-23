@@ -15,6 +15,9 @@
     },
     {
       "path": "../../packages/database/tsconfig.lib.json"
+    },
+    {
+      "path": "../audit/tsconfig.lib.json"
     }
   ]
 }

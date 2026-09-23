@@ -18,6 +18,8 @@ import nx from '@nx/eslint-plugin';
  *   - `layer:adapter` domain-owned persistence infrastructure implementing private ports
  *   - `layer:shared` reserved for a future domain-neutral shared kernel (unused today)
  *   - `domain:iam`   the IAM ownership boundary
+ *   - `domain:audit` the MOD-AUDIT ownership boundary; other domains may depend on its public
+ *                    root only, and it never depends on another domain
  */
 export const restrictedImportPatterns = [
   {
@@ -33,10 +35,69 @@ export const restrictedImportPatterns = [
       '@vertex-os/iam/*',
       '@vertex-os/database/*',
       '@vertex-os/iam-persistence/*',
+      '@vertex-os/audit/*',
+      '@vertex-os/audit-persistence/*',
       '**/domains/iam/src/**',
       '**/domains/iam-persistence/src/**',
+      '**/domains/audit/src/**',
+      '**/domains/audit-persistence/src/**',
     ],
     message: 'Import persistence internals only through approved root entry points.',
+  },
+];
+
+const PRIVATE_SUBPATH_MESSAGE =
+  'Import @vertex-os packages statically and only through their approved entry points; dynamic imports and type queries of subpaths bypass the entry-point restriction.';
+
+/**
+ * `no-restricted-imports` sees only static import/export declarations. These selectors close the
+ * remaining ways to name a module: dynamic `import()` and `import('…')` type queries of
+ * `@vertex-os/<package>/<subpath>`, template-literal specifiers, and computed (unanalyzable)
+ * specifiers. Applied to every linted file; no project negates them.
+ */
+export const restrictedImportSyntax = [
+  {
+    selector:
+      "ImportExpression[source.type='Literal'][source.value=/^@vertex-os\\u002F[^\\u002F]+\\u002F./]",
+    message: PRIVATE_SUBPATH_MESSAGE,
+  },
+  {
+    selector: 'ImportExpression > TemplateLiteral.source[quasis.0.value.raw=/^@vertex-os\\u002F/]',
+    message: PRIVATE_SUBPATH_MESSAGE,
+  },
+  {
+    selector: "ImportExpression[source.type!='Literal'][source.type!='TemplateLiteral']",
+    message: 'Use a static module specifier; computed dynamic imports cannot be checked.',
+  },
+  {
+    selector: 'TSImportType[source.value=/^@vertex-os\\u002F[^\\u002F]+\\u002F./]',
+    message: PRIVATE_SUBPATH_MESSAGE,
+  },
+];
+
+/** Production source receives typed configuration from a bootstrap entry, never `process.env`. */
+export const restrictedEnvSyntax = [
+  {
+    selector: "MemberExpression[object.name='process'][property.name='env']",
+    message:
+      'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
+  },
+  {
+    selector: "MemberExpression[object.name='process'][property.value='env']",
+    message:
+      'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
+  },
+];
+
+/** Unsafe raw SQL (string-built queries) is for tests only; production uses tagged `$queryRaw`. */
+export const restrictedRawSqlSyntax = [
+  {
+    selector: "MemberExpression[property.name='$queryRawUnsafe']",
+    message: 'Use the tagged $queryRaw template; $queryRawUnsafe is reserved for tests.',
+  },
+  {
+    selector: "MemberExpression[property.name='$executeRawUnsafe']",
+    message: 'Use the tagged $executeRaw template; $executeRawUnsafe is reserved for tests.',
   },
 ];
 
@@ -158,7 +219,16 @@ export default [
             },
             {
               sourceTag: 'domain:iam',
-              onlyDependOnLibsWithTags: ['domain:iam', 'layer:infrastructure', 'layer:shared'],
+              onlyDependOnLibsWithTags: [
+                'domain:iam',
+                'domain:audit',
+                'layer:infrastructure',
+                'layer:shared',
+              ],
+            },
+            {
+              sourceTag: 'domain:audit',
+              onlyDependOnLibsWithTags: ['domain:audit', 'layer:infrastructure', 'layer:shared'],
             },
           ],
         },
@@ -166,23 +236,31 @@ export default [
     },
   },
   {
-    // Production source receives typed configuration from the API bootstrap.
-    // Test setup, CLI tooling and the one bootstrap read are outside this selector.
+    // A later configuration object replaces an earlier one's options for the same rule, so every
+    // `no-restricted-syntax` value below is composed explicitly from the exported selector lists.
+    files: [
+      '**/*.ts',
+      '**/*.tsx',
+      '**/*.js',
+      '**/*.jsx',
+      '**/*.mjs',
+      '**/*.mts',
+      '**/*.cjs',
+      '**/*.cts',
+    ],
+    rules: { 'no-restricted-syntax': ['error', ...restrictedImportSyntax] },
+  },
+  {
+    // Production source receives typed configuration from the API bootstrap and never builds SQL
+    // strings. Test setup, CLI tooling and the bootstrap entries are outside this selector.
     files: ['**/src/**/*.{ts,tsx,js,jsx}'],
     ignores: ['**/*.{spec,test}.{ts,tsx,js,jsx}', '**/src/test-setup.{ts,tsx,js,jsx}'],
     rules: {
       'no-restricted-syntax': [
         'error',
-        {
-          selector: "MemberExpression[object.name='process'][property.name='env']",
-          message:
-            'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
-        },
-        {
-          selector: "MemberExpression[object.name='process'][property.value='env']",
-          message:
-            'Read raw environment variables only in the API bootstrap and pass typed AppConfig to production code.',
-        },
+        ...restrictedImportSyntax,
+        ...restrictedEnvSyntax,
+        ...restrictedRawSqlSyntax,
       ],
     },
   },

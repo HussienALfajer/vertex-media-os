@@ -13,7 +13,19 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
+      "path": "../../domains/iam-persistence/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domains/iam/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/database/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domains/audit-persistence/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domains/audit/tsconfig.lib.json"
     }
   ]
 }

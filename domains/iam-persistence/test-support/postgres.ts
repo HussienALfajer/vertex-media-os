@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
-import { persistenceClientOf, type PersistenceClient } from '@vertex-os/database/persistence';
+import { iamPersistenceOf, type IamPersistenceClient } from '@vertex-os/database/iam';
 
 const runFile = promisify(execFile);
 const databaseRoot = fileURLToPath(new URL('../../../packages/database/', import.meta.url));
@@ -15,7 +15,7 @@ export interface MigratedPostgres {
   readonly container: StartedPostgreSqlContainer;
   readonly url: string;
   readonly database: DatabaseClient;
-  readonly client: PersistenceClient;
+  readonly client: IamPersistenceClient;
   stop(): Promise<void>;
 }
 
@@ -46,7 +46,7 @@ export async function startMigratedPostgres(): Promise<MigratedPostgres> {
     container,
     url,
     database,
-    client: persistenceClientOf(database),
+    client: iamPersistenceOf(database),
     async stop(): Promise<void> {
       await database.disconnect();
       await container.stop();

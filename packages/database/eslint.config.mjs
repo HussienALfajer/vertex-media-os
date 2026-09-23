@@ -20,6 +20,7 @@ export default [
             '{projectRoot}/vitest.integration.config.{js,ts,mjs,mts}',
             '{projectRoot}/prisma.config.ts',
             '{projectRoot}/src/**/*.spec.ts',
+            '{projectRoot}/test-support/**/*.ts',
           ],
         },
       ],

@@ -1,0 +1,32 @@
+{
+  "name": "@vertex-os/audit-persistence",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MOD-AUDIT-owned PostgreSQL persistence adapter",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@vertex-os/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@vertex-os/audit": "workspace:*",
+    "@vertex-os/database": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "type:lib",
+      "scope:backend",
+      "layer:adapter",
+      "domain:audit"
+    ],
+    "targets": {
+      "test:integration": {}
+    }
+  }
+}
