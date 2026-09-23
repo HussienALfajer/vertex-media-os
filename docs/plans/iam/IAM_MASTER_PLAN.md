@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next executable stage:** `IAM-MP-01` — `AUDIT_REQUIRED` (implemented in `5056c9f`; independent audit `IAM-01 ACCEPTED` on 2026-09-23; owner baseline acceptance pending, after which IAM-MP-02 planning may start)  
+**Next executable stage:** `IAM-MP-02` — `READY` (IAM-MP-01 `COMPLETE`: implemented in `5056c9f`, audited `IAM-01 ACCEPTED` and baseline accepted by the owner on 2026-09-23; the IAM-MP-02 executable plan is not yet written)  
 **Execution model:** rolling-wave planning; one executable plan, one implementation conversation, one independent audit, one accepted baseline
 
 ---
@@ -597,10 +597,11 @@ Establish the first real business-domain package boundary and the platform integ
 
 ## IAM-MP-01 — IAM Persistence Model & First Business Migration
 
-**Status:** AUDIT_REQUIRED  
+**Status:** COMPLETE  
 **Parent specification area:** IAM-1  
 **Depends on:** IAM-MP-00 COMPLETE (satisfied 2026-09-23)  
-**Executable plan:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` (implemented 2026-09-23 in `5056c9f`; independent audit `IAM-01 ACCEPTED`, plan Section 40A; owner baseline acceptance pending)
+**Executable plan:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` (implemented in `5056c9f`; audit record `3cc9cd4`)  
+**Accepted:** 2026-09-23 — independent audit verdict `IAM-01 ACCEPTED` with no blocking findings (executable plan Section 40A; CI run 35811045334 green); baseline accepted by the owner
 
 ### Objective
 
@@ -668,9 +669,9 @@ The resolutions become effective when that plan is implemented and audited.
 
 ## IAM-MP-02 — Permission/System-Role Reference Data & Minimal Audit Foundation
 
-**Status:** PLANNED  
+**Status:** READY  
 **Parent specification area:** IAM-1, Sections 18–21, 34–35, 48–49  
-**Depends on:** IAM-MP-01 COMPLETE
+**Depends on:** IAM-MP-01 COMPLETE (satisfied 2026-09-23)
 
 ### Objective
 
@@ -1483,15 +1484,15 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 ## 15. Stage Status Ledger
 
-The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01's independent audit returned `IAM-01 ACCEPTED`; the owner's baseline acceptance is pending. No subsequent IAM stage has started.
+The Section 3 execution gate is closed and this Master Plan is `ACTIVE`. IAM-MP-00 is `COMPLETE`: its independent audit returned `IAM-00 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. IAM-MP-01 is `COMPLETE`: its independent audit returned `IAM-01 ACCEPTED` with no blocking findings, and the owner accepted the baseline on 2026-09-23. No subsequent IAM stage has started.
 
-The next executable stage is `IAM-MP-01`, which is `AUDIT_REQUIRED`. Its executable plan, `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`, was written on 2026-09-23 from `main` at `a1e087f`; implementation began from `30c02d6`, was committed as `5056c9f` and was audited independently on 2026-09-23 (plan Section 40A). It becomes `COMPLETE` when the owner accepts that baseline.
+The next stage eligible for detailed planning is `IAM-MP-02`, which is `READY`: its executable plan may be written from the current `main`, but it has not yet been created or implemented. It must carry the items listed under "Carried forward from the IAM-MP-01 audit" in its section.
 
 | Stage | Status | Accepted baseline required before planning |
 |---|---|---|
 | IAM-MP-00 Architecture & Domain Boundary Foundation | COMPLETE | IAM spec execution gate (closed) |
-| IAM-MP-01 IAM Persistence & First Migration | AUDIT_REQUIRED | MP-00 COMPLETE (satisfied) |
-| IAM-MP-02 Reference Data & Minimal Audit Foundation | PLANNED | MP-01 COMPLETE |
+| IAM-MP-01 IAM Persistence & First Migration | COMPLETE | MP-00 COMPLETE (satisfied) |
+| IAM-MP-02 Reference Data & Minimal Audit Foundation | READY | MP-01 COMPLETE (satisfied) |
 | IAM-MP-03 Keycloak Environment & Realm Contract | PLANNED | MP-02 COMPLETE |
 | IAM-MP-04 Identity Reconciliation & Invitations | PLANNED | MP-03 COMPLETE |
 | IAM-MP-05 Application Session Foundation | PLANNED | MP-04 COMPLETE |
@@ -1538,6 +1539,13 @@ The ledger MUST be updated only from real implementation/audit evidence.
 - **Evidence:** `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Section 40A: line-by-line migration review against a fresh `migrate diff`, a constraint catalog derived from a freshly migrated database, a reproduction of migration atomicity and recovery, the auditor's own boundary probes, D-12 rulings (I-4 upheld), uncached lint/typecheck/test/build, all integration suites, Playwright 130/130, three consecutive adapter runs and `pnpm deps:audit`.
 - **Stages affected:** IAM-MP-02 (carried-forward items). Stage order and ownership are unchanged.
 - **Accepted baselines:** unchanged until the owner's acceptance.
+
+### Amendment record — IAM-MP-01 acceptance (2026-09-23)
+
+- **What changed:** IAM-MP-01 `AUDIT_REQUIRED` → `COMPLETE`, and IAM-MP-02 `PLANNED` → `READY`. The owner accepted the audited IAM-01 state on `main` (`5056c9f`, audit record `3cc9cd4`) as the baseline for IAM-MP-02 planning.
+- **Evidence:** `IAM_01_PERSISTENCE_FOUNDATION_PLAN.md` Section 40A (verdict `IAM-01 ACCEPTED`, no blocking findings, no implementation fix), and CI run 35811045334 on `3cc9cd4`: frozen install, `pnpm verify:full` including `lint:boundaries`, fresh-container migration and drift tests and the adapter suite on `ubuntu-24.04`, Playwright 130/130 with no flaky test, and `pnpm deps:audit`.
+- **Stages affected:** IAM-MP-02 becomes eligible for detailed planning and carries A1-01, A1-02, A1-03, A1-05 and A1-07 plus the IAM-01 plan's Section 34 open items. Stage order and ownership are unchanged.
+- **Accepted baselines:** IAM-MP-00 and IAM-MP-01.
 
 ---
 
@@ -1713,14 +1721,17 @@ docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md
 
 It was written from `main` at `a1e087f` using the structure required by `docs/PLANNING.md`, and it resolves the carried-forward items A-03, A-06 and A-08 (its decisions D-01…D-04).
 
-That plan has been implemented (`5056c9f`) and independently audited with the verdict `IAM-01 ACCEPTED` and no blocking finding (plan Section 40A).
+IAM-MP-01 has been completed through the same cycle: implemented (`5056c9f`), independently audited (`IAM-01 ACCEPTED`, executable plan Section 40A, recorded in `3cc9cd4`) and accepted by the owner on 2026-09-23.
 
-The next steps are:
+The next step is to create the executable plan for IAM-MP-02, and only that plan:
 
-1. the owner accepts the audited IAM-01 baseline, which marks IAM-MP-01 `COMPLETE` and IAM-MP-02 `READY`;
-2. then create the executable plan for IAM-MP-02 from that accepted `main`, carrying the IAM-MP-01 audit items listed in the IAM-MP-02 section.
+```text
+docs/plans/iam/IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md   (recommended name)
+```
 
-Do **not** create detailed implementation plans for IAM-MP-02 through IAM-MP-15 now.
+Write it from the accepted `main`, using the structure required by `docs/PLANNING.md`, and carry the items listed under "Carried forward from the IAM-MP-01 audit" in the IAM-MP-02 section. Then implement it in one conversation, audit it independently, and accept its baseline before planning IAM-MP-03.
+
+Do **not** create detailed implementation plans for IAM-MP-03 through IAM-MP-15 now.
 
 That would defeat the rolling-wave planning method that `docs/PLANNING.md` was added to enforce.
 

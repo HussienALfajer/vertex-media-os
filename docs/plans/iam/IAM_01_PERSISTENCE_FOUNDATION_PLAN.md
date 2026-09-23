@@ -2,7 +2,7 @@
 
 **Repository path:** `docs/plans/iam/IAM_01_PERSISTENCE_FOUNDATION_PLAN.md`  
 **Master Plan item:** `IAM-MP-01` — IAM Persistence Model & First Business Migration  
-**Status:** AUDIT_REQUIRED — implemented 2026-09-23 from `30c02d6` and committed as `5056c9f`; independent audit returned `IAM-01 ACCEPTED` (Section 40A); owner baseline acceptance pending  
+**Status:** COMPLETE — implemented 2026-09-23 from `30c02d6` and committed as `5056c9f`; independent audit `IAM-01 ACCEPTED` (Section 40A, `3cc9cd4`); baseline accepted by the owner on 2026-09-23  
 **Plan type:** Living execution plan  
 **Prepared:** 2026-09-23  
 **Planning baseline:** `main` at `a1e087f9c467028cedc34d8066efcaa14bc09d37`, clean working tree  
@@ -11,7 +11,7 @@
 **Planning authority:** `docs/PLANNING.md`  
 **Decision authority:** On 2026-09-23 the owner delegated the resolution of the carried-forward audit items A-03, A-06 and A-08, and every design decision in this plan, to the planning agent. The decisions are locked in Section 11. An executing agent does not reopen them except through a stop condition (Section 32).  
 **Execution target:** One Claude Code conversation operating from the repository root  
-**Required follow-up:** Owner baseline acceptance of the audited state (Section 40A), then the IAM-MP-02 executable plan
+**Required follow-up:** The IAM-MP-02 executable plan, written from the accepted `main` (Section 40A, "Owner acceptance")
 
 > IAM-01 gives IAM its authoritative PostgreSQL model and the repository its first business migration. It proves the structural invariants against real PostgreSQL and establishes, with tooling rather than convention, how a domain owns persistence without Prisma entering its core. It is deliberately **not** reference-data synchronization, Audit, Keycloak, sessions, lifecycle behavior, administration, API or UI work. The IAM tables exist at the end of this stage, but no IAM behavior is reachable from the running application.
 
@@ -1532,9 +1532,9 @@ The auditor linted virtual files with each project's own ESLint configuration (E
 | After the fast-forward: `pnpm nx run-many -t test:integration`, `pnpm test:e2e`, then two more adapter runs | PASS | Integration 3/10/73; Playwright 130/130; adapter 73/73 three consecutive times (13.60 s, 10.71 s, 9.41 s), retry 0 |
 | `pnpm deps:audit` | PASS | 4 previously reviewed exceptions (1 moderate, 3 high); none new |
 
-### Owner acceptance
+### Owner acceptance — 2026-09-23
 
-Pending. On acceptance, IAM-MP-01 becomes `COMPLETE` in `IAM_MASTER_PLAN.md`, and the IAM-MP-02 executable plan is written from the accepted `main`, carrying A1-01, A1-02, A1-03, A1-05 and A1-07 together with the Section 34 open items.
+The owner accepted this audited repository state (`5056c9f`, audit record `3cc9cd4`, CI run 35811045334 green on `ubuntu-24.04`) as the IAM-01 baseline. IAM-MP-01 is `COMPLETE` and IAM-MP-02 is `READY` in `IAM_MASTER_PLAN.md`. The IAM-MP-02 executable plan is written from that `main` and carries A1-01, A1-02, A1-03, A1-05 and A1-07 together with the Section 34 open items. The acceptance was recorded in a documentation-only commit on `main`; no IAM code changed after the audit.
 
 ---
 
