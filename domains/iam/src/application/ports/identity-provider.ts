@@ -9,10 +9,14 @@ export interface ExternalIdentity {
   /** The identity provider's subject identifier (the Keycloak user ID). */
   readonly subject: string;
   readonly username: string;
+  /** The address Keycloak sends required-action email to. */
+  readonly email: string | undefined;
   readonly enabled: boolean;
   readonly emailVerified: boolean;
   /** Every value of the `vertexUserId` attribute, as the provider returned them. */
   readonly vertexUserIds: readonly string[];
+  /** The identity's own pending required actions, which Keycloak runs at its next authentication. */
+  readonly requiredActions: readonly string[];
 }
 
 /**
@@ -27,9 +31,16 @@ export type ProviderResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly failure: IdentityProviderFailure };
 
-/** Keycloak required actions an invitation may ask for (spec Section 11.3). */
+/**
+ * What an invitation establishes (spec Section 11.3): email verification, a password and the TOTP
+ * the realm requires. Only `VERIFY_EMAIL` ever travels inside an emailed link; the two factor
+ * actions are the identity's own required actions (IAM-R02 D-10).
+ */
 export const invitationActions = ['VERIFY_EMAIL', 'UPDATE_PASSWORD', 'CONFIGURE_TOTP'] as const;
 export type InvitationAction = (typeof invitationActions)[number];
+
+/** The factor actions every created identity carries as its own required actions. */
+export const factorActions = ['UPDATE_PASSWORD', 'CONFIGURE_TOTP'] as const;
 
 /**
  * The Keycloak operations IAM uses, and only those (spec Section 7.2): find, create, read,
@@ -43,9 +54,9 @@ export interface IdentityProvider {
   /** Exact, case-sensitive username match. */
   findByUsername(username: NormalizedEmail): Promise<ProviderResult<ExternalIdentity | undefined>>;
   /**
-   * Creates an enabled identity whose username and email are `username` and whose `vertexUserId`
-   * attribute is set in the same request. `duplicate`: the provider already holds that username
-   * or email.
+   * Creates an enabled identity whose username and email are `username`, with the `vertexUserId`
+   * attribute and the `factorActions` as required actions set in the same request. `duplicate`:
+   * the provider already holds that username or email.
    */
   create(identity: {
     readonly username: NormalizedEmail;
@@ -64,11 +75,13 @@ export interface IdentityProvider {
     subject: string,
   ): Promise<ProviderResult<{ readonly password: boolean; readonly otp: boolean } | 'not-found'>>;
   /**
-   * Asks the provider to email the identity a link that runs `actions`. `refused`: the provider
-   * declined to send, for example for a disabled identity or one without an email address.
+   * Emails the identity a link that verifies its address; Keycloak then runs the identity's own
+   * required actions. The link carries no factor action, so a link left unused after enrolment can
+   * replace nothing (R01 S-01, R02 S-01). `refused`: the provider declined to send, for example
+   * for a disabled identity or one without an email address.
    */
   sendInvitation(
     subject: string,
-    request: { readonly actions: readonly InvitationAction[]; readonly lifespanSeconds: number },
+    request: { readonly lifespanSeconds: number },
   ): Promise<ProviderResult<'sent' | 'not-found' | 'refused'>>;
 }

@@ -1,9 +1,9 @@
 import type { AuditEntry, AuditRecorder } from '@vertex-os/audit';
-import type {
-  ExternalIdentity,
-  IdentityProvider,
-  InvitationAction,
-  ProviderResult,
+import {
+  factorActions,
+  type ExternalIdentity,
+  type IdentityProvider,
+  type ProviderResult,
 } from '../src/identity-provider.js';
 import type {
   ApplicationUser,
@@ -163,6 +163,8 @@ type Operation =
 interface StoredIdentity {
   subject: string;
   username: string;
+  email: string;
+  requiredActions: string[];
   enabled: boolean;
   emailVerified: boolean;
   vertexUserIds: string[];
@@ -179,7 +181,7 @@ export class FakeIdentityProvider implements IdentityProvider {
   readonly issuer = ISSUER;
   readonly identities = new Map<string, StoredIdentity>();
   readonly calls: string[] = [];
-  readonly sent: { subject: string; actions: readonly InvitationAction[]; lifespan: number }[] = [];
+  readonly sent: { subject: string; lifespan: number }[] = [];
   private readonly failures = new Map<Operation, ('unavailable' | 'rejected')[]>();
   private readonly hooks = new Map<Operation, (() => void)[]>();
   private next = 0;
@@ -192,6 +194,8 @@ export class FakeIdentityProvider implements IdentityProvider {
     this.next += 1;
     const stored: StoredIdentity = {
       subject: `subject-${this.next}`,
+      email: identity.username,
+      requiredActions: [...factorActions],
       enabled: true,
       emailVerified: false,
       vertexUserIds: [],
@@ -231,9 +235,11 @@ export class FakeIdentityProvider implements IdentityProvider {
     return {
       subject: identity.subject,
       username: identity.username,
+      email: identity.email,
       enabled: identity.enabled,
       emailVerified: identity.emailVerified,
       vertexUserIds: [...identity.vertexUserIds],
+      requiredActions: [...identity.requiredActions],
     };
   }
 
@@ -293,15 +299,12 @@ export class FakeIdentityProvider implements IdentityProvider {
     return { ok: true as const, value: { password: identity.password, otp: identity.otp } };
   }
 
-  async sendInvitation(
-    subject: string,
-    request: { actions: readonly InvitationAction[]; lifespanSeconds: number },
-  ) {
+  async sendInvitation(subject: string, request: { lifespanSeconds: number }) {
     const failed = this.enter('sendInvitation');
     if (failed) return failed;
     if (this.sendOutcome !== 'sent') return { ok: true as const, value: this.sendOutcome };
     if (!this.identities.has(subject)) return { ok: true as const, value: 'not-found' as const };
-    this.sent.push({ subject, actions: request.actions, lifespan: request.lifespanSeconds });
+    this.sent.push({ subject, lifespan: request.lifespanSeconds });
     return { ok: true as const, value: 'sent' as const };
   }
 }

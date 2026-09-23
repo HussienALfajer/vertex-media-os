@@ -1,11 +1,11 @@
-import type {
-  ExternalIdentity,
-  IdentityProvider,
-  IdentityProviderFailure,
-  InvitationAction,
-  NormalizedEmail,
-  ProviderResult,
-  UserId,
+import {
+  factorActions,
+  type ExternalIdentity,
+  type IdentityProvider,
+  type IdentityProviderFailure,
+  type NormalizedEmail,
+  type ProviderResult,
+  type UserId,
 } from '@vertex-os/iam/identity-provider';
 
 export interface KeycloakIdentityProviderOptions {
@@ -50,6 +50,8 @@ function toIdentity(representation: unknown): ExternalIdentity | undefined {
   const enabled = field(representation, 'enabled');
   const emailVerified = field(representation, 'emailVerified') ?? false;
   const owners = field(field(representation, 'attributes'), 'vertexUserId') ?? [];
+  const email = field(representation, 'email');
+  const requiredActions = field(representation, 'requiredActions') ?? [];
   if (
     typeof subject !== 'string' ||
     subject === '' ||
@@ -57,11 +59,22 @@ function toIdentity(representation: unknown): ExternalIdentity | undefined {
     typeof enabled !== 'boolean' ||
     typeof emailVerified !== 'boolean' ||
     !Array.isArray(owners) ||
-    !owners.every((owner) => typeof owner === 'string')
+    !owners.every((owner) => typeof owner === 'string') ||
+    (email !== undefined && typeof email !== 'string') ||
+    !Array.isArray(requiredActions) ||
+    !requiredActions.every((action) => typeof action === 'string')
   ) {
     return undefined;
   }
-  return { subject, username, enabled, emailVerified, vertexUserIds: [...owners] };
+  return {
+    subject,
+    username,
+    email,
+    enabled,
+    emailVerified,
+    vertexUserIds: [...owners],
+    requiredActions: [...requiredActions],
+  };
 }
 
 /** `…/admin/realms/<realm>/users/<id>` → `<id>`; anything else is undefined. */
@@ -70,9 +83,12 @@ function createdSubject(location: string | null, realm: string): string | undefi
   const segments = new URL(location).pathname.split('/');
   const id = segments.at(-1);
   const expected = ['admin', 'realms', encodeURIComponent(realm), 'users'];
-  return id && segments.slice(-5, -1).join('/') === expected.join('/')
-    ? decodeURIComponent(id)
-    : undefined;
+  if (!id || segments.slice(-5, -1).join('/') !== expected.join('/')) return undefined;
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return undefined;
+  }
 }
 
 async function discard(response: Response): Promise<void> {
@@ -262,6 +278,7 @@ export function createKeycloakIdentityProvider(
         enabled: true,
         emailVerified: false,
         attributes: { vertexUserId: [identity.vertexUserId] },
+        requiredActions: [...factorActions],
       });
       if (!answer.ok) return answer;
       await discard(answer.response);
@@ -276,11 +293,9 @@ export function createKeycloakIdentityProvider(
     },
 
     async setEnabled(subject: string, enabled: boolean) {
-      // A full-representation update, so attributes such as vertexUserId are kept.
-      const user = await readUser(subject);
-      if (!user.ok) return user;
-      if (user.value === undefined) return { ok: true as const, value: 'not-found' as const };
-      const result = await command('PUT', userPath(subject), { ...user.value, enabled });
+      // Only the flag is sent: a read-modify-write of the whole representation could restore
+      // fields (emailVerified, requiredActions) the user changed in between (R02 review DC-4).
+      const result = await command('PUT', userPath(subject), { enabled });
       if (!result.ok) return result;
       if (result.value === 'bad-request') return rejected;
       return {
@@ -320,15 +335,14 @@ export function createKeycloakIdentityProvider(
       };
     },
 
-    async sendInvitation(
-      subject: string,
-      request: { readonly actions: readonly InvitationAction[]; readonly lifespanSeconds: number },
-    ) {
+    async sendInvitation(subject: string, request: { readonly lifespanSeconds: number }) {
       const query = new URLSearchParams({ lifespan: String(request.lifespanSeconds) });
+      // The link carries VERIFY_EMAIL only; the identity's own required actions establish its
+      // factors, so an unused link can replace nothing once the user has enrolled.
       const result = await command(
         'PUT',
         `${userPath(subject)}/execute-actions-email?${query.toString()}`,
-        request.actions,
+        ['VERIFY_EMAIL'],
       );
       if (!result.ok) return result;
       const value =

@@ -9,7 +9,7 @@ import {
   type IdentityProvisioningRequest,
 } from './identity-provisioning-dependencies.js';
 import { provesOwnership, requiredIdentityState } from './identity-rules.js';
-import type { ExternalIdentity } from './ports/identity-provider.js';
+import { factorActions, type ExternalIdentity } from './ports/identity-provider.js';
 
 /** What reconciliation did in Keycloak, in order; recorded as Audit evidence. */
 export type ReconciliationStep =
@@ -23,11 +23,14 @@ export type ReconcileIdentityResult =
       readonly user: ApplicationUser;
     }
   | { readonly outcome: 'not-found' }
-  /** Competing changes kept winning; the committed state was left to the operations that made them. */
+  /**
+   * Competing changes kept winning before this reconciliation changed Keycloak; the committed state
+   * was left to the operations that made them.
+   */
   | { readonly outcome: 'superseded' };
 
 type Attempt = ReconcileIdentityResult | typeof RETRY;
-type SyncFailure = Exclude<IdentityFailure, 'identity-out-of-sync'>;
+type SyncFailure = IdentityFailure;
 type SyncOutcome =
   { readonly state: 'SYNCED' } | { readonly state: 'FAILED'; readonly failure: SyncFailure };
 
@@ -44,8 +47,27 @@ export async function reconcileIdentity(
   dependencies: IdentityProvisioningDependencies,
   request: IdentityProvisioningRequest,
 ): Promise<ReconcileIdentityResult> {
+  // Keycloak changes made by attempts whose outcome lost a race.
+  const applied: ReconciliationStep[] = [];
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-    const result = await reconcileOnce(dependencies, request);
+    const result = await reconcileOnce(dependencies, request, applied);
+    if (result !== RETRY) return result;
+  }
+  if (applied.length === 0) return { outcome: 'superseded' };
+  // A stale attempt may have changed Keycloak after a competing reconciliation recorded SYNCED
+  // (for example created or enabled an identity for a user who was terminated meanwhile). Keycloak
+  // may therefore no longer match: record FAILED on the latest version so sync-identity repairs it,
+  // as spec Section 31.2 step 6 does for reactivation.
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const user = await dependencies.users.findById(request.userId);
+    if (!user) return { outcome: 'not-found' };
+    const result = await recordOutcome(
+      dependencies,
+      request,
+      user,
+      { state: 'FAILED', failure: 'identity-out-of-sync' },
+      applied,
+    );
     if (result !== RETRY) return result;
   }
   return { outcome: 'superseded' };
@@ -54,6 +76,7 @@ export async function reconcileIdentity(
 async function reconcileOnce(
   dependencies: IdentityProvisioningDependencies,
   request: IdentityProvisioningRequest,
+  applied: ReconciliationStep[],
 ): Promise<Attempt> {
   const committed = await dependencies.users.findById(request.userId);
   if (!committed) return { outcome: 'not-found' };
@@ -95,12 +118,15 @@ async function reconcileOnce(
       if (!created.ok) return fail(providerFailure(created.failure));
       if (created.value.outcome === 'created') {
         steps.push('created');
+        applied.push('created');
         identity = {
           subject: created.value.subject,
           username: user.email,
+          email: user.email,
           enabled: true,
           emailVerified: false,
           vertexUserIds: [user.id],
+          requiredActions: [...factorActions],
         };
       } else {
         // A concurrent or previously lost create: find it and link it instead of duplicating it
@@ -146,6 +172,7 @@ async function reconcileOnce(
       if (!enabled.ok) return fail(providerFailure(enabled.failure));
       if (enabled.value === 'not-found') return fail('identity-conflict');
       steps.push('enabled');
+      applied.push('enabled');
     }
   } else {
     if (identity.enabled) {
@@ -153,6 +180,7 @@ async function reconcileOnce(
       if (!disabled.ok) return fail(providerFailure(disabled.failure));
       if (disabled.value === 'not-found') return fail('identity-conflict');
       steps.push('disabled');
+      applied.push('disabled');
     }
     // Always: a session may have started before the identity was disabled (spec Section 31.1).
     const terminated = await provider.terminateSessions(subject);

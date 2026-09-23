@@ -10,8 +10,9 @@ with the minimal MOD-AUDIT foundation (`domains/audit` and `domains/audit-persis
 tables, the permission catalog and the protected System Administrator role exist, but no IAM
 behavior is reachable from the running application yet. A local Keycloak with the Vertex realm
 (`infra/keycloak`) and a local mail sink run next to PostgreSQL. IAM identity provisioning
-(`domains/iam-keycloak`: reconciling users with Keycloak and sending invitations) exists as
-application capabilities; the running API does not call it yet.
+(reconciling users with Keycloak and sending invitations, in `domains/iam`, through the Keycloak
+Admin adapter `domains/iam-keycloak`) exists as application capabilities; the running API does
+not call it yet.
 The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and

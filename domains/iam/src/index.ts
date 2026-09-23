@@ -22,9 +22,7 @@ export {
   type ReconciliationStep,
 } from './application/reconcile-identity.js';
 export {
-  dispatchInvitation,
   resendInvitation,
-  type InvitationDispatchKind,
   type InvitationDispatchResult,
 } from './application/invitation-dispatch.js';
 export {
@@ -36,6 +34,5 @@ export type {
   IdentityProvisioningDependencies,
   IdentityProvisioningRequest,
 } from './application/identity-provisioning-dependencies.js';
-export type { IdentityProvider } from './application/ports/identity-provider.js';
 export type { ApplicationUser } from './domain/application-user.js';
 export type { UserId } from './domain/identifiers.js';

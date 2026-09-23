@@ -3,6 +3,7 @@
  * adapter may import it (lint-enforced). It carries the port the adapter implements and the IAM
  * types in its signatures, nothing else.
  */
+export { factorActions } from './application/ports/identity-provider.js';
 export type {
   ExternalIdentity,
   IdentityProvider,

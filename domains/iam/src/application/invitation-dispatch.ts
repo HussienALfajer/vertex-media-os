@@ -8,8 +8,8 @@ import {
   type IdentityProvisioningDependencies,
   type IdentityProvisioningRequest,
 } from './identity-provisioning-dependencies.js';
-import { outstandingInvitationActions } from './identity-rules.js';
-import type { InvitationAction } from './ports/identity-provider.js';
+import { outstandingInvitationActions, provesOwnership } from './identity-rules.js';
+import { factorActions, type InvitationAction } from './ports/identity-provider.js';
 import type { IamTransactionScope } from './ports/iam-transaction.js';
 
 /** `first`: the dispatch provisioning performs once; `resend`: an explicit repeat (spec Section 11.3). */
@@ -81,6 +81,10 @@ async function dispatchOnce(
   const identity = await provider.findBySubject(subject);
   if (!identity.ok) return { outcome: 'failed', failure: providerFailure(identity.failure), user };
   if (!identity.value) return recordMismatch(dependencies, request, user, 'identity-conflict');
+  // Defence in depth: the link goes to the identity's email, so it must still be this user's.
+  if (!provesOwnership(identity.value, user) || identity.value.email !== user.email) {
+    return recordMismatch(dependencies, request, user, 'identity-conflict');
+  }
   // Keycloak refuses email actions for a disabled identity; INVITED requires an enabled one.
   if (!identity.value.enabled)
     return recordMismatch(dependencies, request, user, 'identity-out-of-sync');
@@ -92,6 +96,12 @@ async function dispatchOnce(
 
   const actions = outstandingInvitationActions(identity.value, factors.value);
   if (actions.length === 0) return { outcome: 'no-action-required', user };
+  // A missing factor is established only through the identity's own required action; without it
+  // the link could not lead the user to it.
+  const pending = new Set(identity.value.requiredActions);
+  if (factorActions.some((action) => actions.includes(action) && !pending.has(action))) {
+    return recordMismatch(dependencies, request, user, 'identity-out-of-sync');
+  }
 
   // The claim: from here on the outcome is unknown until Keycloak confirms it.
   const claim = await dependencies.runner.run(async ({ users, audit }) => {
@@ -118,7 +128,6 @@ async function dispatchOnce(
   if (claim.outcome !== 'updated') return RETRY;
 
   const sent = await provider.sendInvitation(subject, {
-    actions,
     lifespanSeconds: dependencies.invitationLifespanSeconds,
   });
   let failure: IdentityFailure | undefined;
@@ -133,7 +142,8 @@ async function dispatchOnce(
 /**
  * Records the dispatch outcome on the claimed attempt. A competing change after the claim moves
  * the version on; the outcome is then recorded on the newer version, unless another dispatch has
- * recorded its own outcome in the meantime.
+ * recorded its own outcome in the meantime. An identity mismatch is recorded only on the claimed
+ * version.
  */
 async function recordDispatch(
   dependencies: IdentityProvisioningDependencies,
@@ -169,7 +179,10 @@ async function recordDispatch(
           },
         },
       );
-      if (identityFailure === undefined) return delivery;
+      // A mismatch Keycloak showed describes the state at the claim. After a competing change
+      // (for example a suspension already reconciled), it may no longer hold: record only the
+      // dispatch outcome and leave identitySyncState to that change's own reconciliation.
+      if (identityFailure === undefined || current !== claimed) return delivery;
       const mismatch = await writeMismatch(scope, request, delivery.user, identityFailure);
       // The row is locked by the delivery write above; anything else is a programming error, and
       // throwing rolls both writes back.

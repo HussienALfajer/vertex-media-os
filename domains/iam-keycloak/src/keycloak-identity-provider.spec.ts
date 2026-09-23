@@ -62,6 +62,7 @@ const representation = {
   emailVerified: false,
   firstName: 'kept',
   attributes: { vertexUserId: [USER_ID] },
+  requiredActions: ['CONFIGURE_TOTP'],
 };
 
 describe('createKeycloakIdentityProvider', () => {
@@ -120,9 +121,11 @@ describe('createKeycloakIdentityProvider', () => {
       value: {
         subject: 'subject-1',
         username: EMAIL,
+        email: EMAIL,
         enabled: true,
         emailVerified: false,
         vertexUserIds: [USER_ID],
+        requiredActions: ['CONFIGURE_TOTP'],
       },
     });
     expect(await provider.findBySubject('missing')).toEqual({ ok: true, value: undefined });
@@ -159,6 +162,7 @@ describe('createKeycloakIdentityProvider', () => {
       enabled: true,
       emailVerified: false,
       attributes: { vertexUserId: [USER_ID] },
+      requiredActions: ['UPDATE_PASSWORD', 'CONFIGURE_TOTP'],
     });
   });
 
@@ -177,15 +181,17 @@ describe('createKeycloakIdentityProvider', () => {
     ).toEqual({ ok: false, failure: 'unavailable' });
   });
 
-  it('changes only the enabled flag of the full representation', async () => {
+  it('sends only the enabled flag, so no other field can be overwritten', async () => {
     const { provider, adminCalls } = transport((call) =>
-      call.method === 'GET' ? json(200, representation) : empty(204),
+      call.url.endsWith('/users/missing') ? empty(404) : empty(204),
     );
 
     expect(await provider.setEnabled('subject-1', false)).toEqual({ ok: true, value: 'updated' });
+    expect(await provider.setEnabled('missing', true)).toEqual({ ok: true, value: 'not-found' });
 
-    const put = adminCalls().find((call) => call.method === 'PUT');
-    expect(JSON.parse(put?.body ?? '')).toEqual({ ...representation, enabled: false });
+    const [put] = adminCalls();
+    expect(put?.method).toBe('PUT');
+    expect(JSON.parse(put?.body ?? '')).toEqual({ enabled: false });
   });
 
   it('reads enrolled factor kinds only', async () => {
@@ -202,20 +208,18 @@ describe('createKeycloakIdentityProvider', () => {
     });
   });
 
-  it('sends required-action email with the lifespan and no client or redirect', async () => {
+  it('sends a VERIFY_EMAIL-only link with the lifespan and no client or redirect', async () => {
     const { provider, adminCalls } = transport(() => empty(204));
 
-    const result = await provider.sendInvitation('subject-1', {
-      actions: ['VERIFY_EMAIL', 'CONFIGURE_TOTP'],
-      lifespanSeconds: 3600,
-    });
+    const result = await provider.sendInvitation('subject-1', { lifespanSeconds: 3600 });
 
     expect(result).toEqual({ ok: true, value: 'sent' });
     const call = adminCalls()[0];
     const url = new URL(call?.url ?? '');
     expect(url.pathname).toBe('/admin/realms/vertex/users/subject-1/execute-actions-email');
     expect(Object.fromEntries(url.searchParams)).toEqual({ lifespan: '3600' });
-    expect(JSON.parse(call?.body ?? '')).toEqual(['VERIFY_EMAIL', 'CONFIGURE_TOTP']);
+    // No factor action ever travels in a link (IAM-R02 S-01).
+    expect(JSON.parse(call?.body ?? '')).toEqual(['VERIFY_EMAIL']);
   });
 
   it.each([
@@ -229,12 +233,7 @@ describe('createKeycloakIdentityProvider', () => {
       const { provider } = transport(() =>
         json(status, { errorMessage: `User ${EMAIL} is disabled` }),
       );
-      expect(
-        await provider.sendInvitation('subject-1', {
-          actions: ['VERIFY_EMAIL'],
-          lifespanSeconds: 60,
-        }),
-      ).toEqual(expected);
+      expect(await provider.sendInvitation('subject-1', { lifespanSeconds: 60 })).toEqual(expected);
     },
   );
 
@@ -255,7 +254,7 @@ describe('createKeycloakIdentityProvider', () => {
     await provider.setEnabled('s', true);
     await provider.terminateSessions('s');
     await provider.enrolledFactors('s');
-    await provider.sendInvitation('s', { actions: ['VERIFY_EMAIL'], lifespanSeconds: 60 });
+    await provider.sendInvitation('s', { lifespanSeconds: 60 });
 
     const operations = new Set(
       adminCalls().map(
@@ -284,7 +283,7 @@ describe('createKeycloakIdentityProvider', () => {
       provider.setEnabled('subject-1', false),
       provider.terminateSessions('subject-1'),
       provider.enrolledFactors('subject-1'),
-      provider.sendInvitation('subject-1', { actions: ['VERIFY_EMAIL'], lifespanSeconds: 60 }),
+      provider.sendInvitation('subject-1', { lifespanSeconds: 60 }),
     ];
 
     it('turns network errors that name the URL into `unavailable`, never an exception', async () => {

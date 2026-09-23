@@ -61,9 +61,11 @@ describe('identity rules', () => {
   const identity = {
     subject: 's-1',
     username: EMAIL,
+    email: EMAIL,
     enabled: true,
     emailVerified: false,
     vertexUserIds: [USER_ID],
+    requiredActions: [],
   };
 
   it('proves ownership only by username, a single matching vertexUserId and a bound subject', () => {
@@ -114,9 +116,9 @@ describe('provisionIdentity', () => {
       invitationDeliveryState: 'SENT',
     });
     expect(user.invitationSentAt).toBeInstanceOf(Date);
-    expect(provider.sent).toEqual([
-      { subject: identity?.subject, actions: expect.any(Array), lifespan: LIFESPAN },
-    ]);
+    expect(provider.sent).toEqual([{ subject: identity?.subject, lifespan: LIFESPAN }]);
+    // The factors are the identity's own required actions, never part of the emailed link.
+    expect(identity?.requiredActions).toEqual(['UPDATE_PASSWORD', 'CONFIGURE_TOTP']);
     expect(actions(iam)).toEqual([
       'iam.user.identity-bound:SUCCEEDED',
       'iam.user.identity-reconciled:SUCCEEDED',
@@ -238,6 +240,22 @@ describe('reconcileIdentity', () => {
     expect(iam.get()).toMatchObject({ identity: undefined, identitySyncState: 'FAILED' });
     expect(actions(iam)).toEqual(['iam.user.identity-reconciled:FAILED']);
   });
+
+  it.each(['SUSPENDED', 'DISABLED', 'TERMINATED'] as const)(
+    'never binds or disables an unproven identity for an unbound %s user',
+    async (accessState) => {
+      const { iam, provider, dependencies, request } = setup(invitedUser({ accessState }));
+      const foreign = provider.add({ username: EMAIL, vertexUserIds: [OTHER_USER_ID] });
+      const before = structuredClone(foreign);
+
+      const result = await reconcileIdentity(dependencies, request);
+
+      expect(result).toMatchObject({ outcome: 'failed', failure: 'identity-conflict' });
+      expect(provider.mutatingCalls()).toEqual([]);
+      expect(provider.identities.get(foreign.subject)).toEqual(before);
+      expect(iam.get().identity).toBeUndefined();
+    },
+  );
 
   it('reports a conflict when the bound identity no longer exists, and never re-creates it', async () => {
     const { iam, provider, dependencies, request, identity } = provisioned();
@@ -396,6 +414,32 @@ describe('reconcileIdentity', () => {
     expect(iam.get().identitySyncState).toBe('PENDING');
   });
 
+  it('records FAILED when a stale attempt changed Keycloak and every retry lost a race', async () => {
+    const { iam, provider, dependencies, request } = setup();
+    // The user is terminated, and that termination reconciled (nothing to disable), while this
+    // reconciliation's create is in flight; then unrelated changes keep winning.
+    provider.onNext('create', () =>
+      iam.commit({ accessState: 'TERMINATED', identitySyncState: 'SYNCED' }),
+    );
+    let races = 3;
+    iam.beforeRun = () => {
+      if (races > 0) {
+        races -= 1;
+        iam.commit({});
+      }
+    };
+
+    const result = await reconcileIdentity(dependencies, request);
+
+    expect(result).toMatchObject({ outcome: 'failed', failure: 'identity-out-of-sync' });
+    expect(iam.get()).toMatchObject({ accessState: 'TERMINATED', identitySyncState: 'FAILED' });
+    expect(iam.audit.at(-1)?.change?.after).toMatchObject({ steps: ['created'] });
+    // A later reconciliation repairs Keycloak.
+    iam.beforeRun = undefined;
+    expect((await reconcileIdentity(dependencies, request)).outcome).toBe('synced');
+    expect([...provider.identities.values()][0]?.enabled).toBe(false);
+  });
+
   it('rolls the state write back when the Audit append fails', async () => {
     const { iam, dependencies, request } = setup();
     iam.failAuditOnAction = 'iam.user.identity-bound';
@@ -448,7 +492,7 @@ describe('invitation dispatch and resend', () => {
     const result = await resendInvitation(dependencies, request);
 
     expect(result).toMatchObject({ outcome: 'sent', actions: ['CONFIGURE_TOTP'] });
-    expect(provider.sent.map((sent) => sent.actions)).toEqual([['CONFIGURE_TOTP']]);
+    expect(provider.sent).toHaveLength(1);
   });
 
   it('sends nothing when no factor is outstanding', async () => {
@@ -486,6 +530,31 @@ describe('invitation dispatch and resend', () => {
       'iam.user.invitation-dispatch-started:SUCCEEDED',
       'iam.user.invitation-dispatched:FAILED',
     ]);
+  });
+
+  it('refuses to send when a missing factor is not a required action of the identity', async () => {
+    const { iam, provider, dependencies, request, identity } = provisioned();
+    identity.requiredActions = ['UPDATE_PASSWORD'];
+
+    const result = await resendInvitation(dependencies, request);
+
+    expect(result).toMatchObject({ outcome: 'failed', failure: 'identity-out-of-sync' });
+    expect(provider.sent).toEqual([]);
+    expect(iam.get().identitySyncState).toBe('FAILED');
+  });
+
+  it.each([
+    ['another email', { email: 'mallory@example.test' }],
+    ['another owner', { vertexUserIds: [OTHER_USER_ID] }],
+  ])('sends nothing to an identity that now has %s', async (_label, change) => {
+    const { iam, provider, dependencies, request, identity } = provisioned();
+    Object.assign(identity, change);
+
+    const result = await resendInvitation(dependencies, request);
+
+    expect(result).toMatchObject({ outcome: 'failed', failure: 'identity-conflict' });
+    expect(provider.sent).toEqual([]);
+    expect(iam.get().identitySyncState).toBe('FAILED');
   });
 
   it('records the identity as out of sync when it is disabled, and sends nothing', async () => {
@@ -533,6 +602,25 @@ describe('invitation dispatch and resend', () => {
     expect(result).toMatchObject({ outcome: 'failed', failure: 'provider-rejected' });
     expect(iam.get().invitationDeliveryState).toBe('NOT_SENT');
     expect(iam.transactions).toEqual([]);
+  });
+
+  it('does not record a refusal as a mismatch after a competing change has reconciled', async () => {
+    const { iam, provider, dependencies, request, identity } = provisioned();
+    provider.sendOutcome = 'refused';
+    provider.onNext('sendInvitation', () => {
+      identity.enabled = false;
+      iam.commit({ accessState: 'SUSPENDED', identitySyncState: 'SYNCED' });
+    });
+
+    const result = await dispatchInvitation(dependencies, { ...request, kind: 'first' });
+
+    expect(result).toMatchObject({ outcome: 'failed', failure: 'identity-out-of-sync' });
+    expect(iam.get()).toMatchObject({
+      accessState: 'SUSPENDED',
+      identitySyncState: 'SYNCED',
+      invitationDeliveryState: 'FAILED',
+    });
+    expect(actions(iam)).not.toContain('iam.user.identity-mismatch-detected:FAILED');
   });
 
   it('records the outcome on the newer version when a competing change lands after the claim', async () => {

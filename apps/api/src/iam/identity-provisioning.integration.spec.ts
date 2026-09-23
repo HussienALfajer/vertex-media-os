@@ -123,6 +123,7 @@ interface KeycloakUser {
   readonly enabled: boolean;
   readonly emailVerified: boolean;
   readonly attributes?: Record<string, string[]>;
+  readonly requiredActions?: string[];
 }
 
 async function identitiesNamed(email: string): Promise<KeycloakUser[]> {
@@ -261,6 +262,7 @@ describe('provisioning an invited user', () => {
       enabled: true,
       emailVerified: false,
       attributes: { vertexUserId: [user.id] },
+      requiredActions: expect.arrayContaining(['UPDATE_PASSWORD', 'CONFIGURE_TOTP']),
     });
     const stored = await row(user.id);
     expect(stored).toMatchObject({
@@ -288,6 +290,29 @@ describe('provisioning an invited user', () => {
     // Completing the link signs nobody in: no Keycloak session bypasses the MFA sign-in.
     expect(await sessionsOf(identity?.id ?? '')).toEqual([]);
     expect(completed.last.location).toBeNull();
+    expect(after.requiredActions ?? []).toEqual([]);
+  });
+
+  it('leaves an earlier, unused invitation link unable to replace enrolled factors', async () => {
+    const user = await invitedUser('stale-link');
+    await provisioning.provision(request(user.id));
+    const first = await keycloak.mail.waitFor(user.email);
+    expect((await provisioning.resendInvitation(request(user.id))).outcome).toBe('sent');
+    const second = await keycloak.mail.waitFor(user.email, (message) => message.id !== first.id);
+    const enrolled = await completeActions(actionLink(second.text));
+    expect(enrolled.seen).toEqual(expect.arrayContaining(['set-password', 'enrol-totp']));
+    const subject = (await row(user.id)).identity?.subject ?? '';
+    const before = await adminJson<{ id: string; type: string }[]>(`/users/${subject}/credentials`);
+
+    // Whoever later holds the mailbox opens the first link.
+    const stale = await completeActions(actionLink(first.text));
+
+    expect(stale.seen).not.toContain('set-password');
+    expect(stale.seen).not.toContain('enrol-totp');
+    expect(
+      await adminJson<{ id: string; type: string }[]>(`/users/${subject}/credentials`),
+    ).toEqual(before);
+    expect(await sessionsOf(subject)).toEqual([]);
   });
 
   it('links the identity a lost create response left behind instead of creating another', async () => {
@@ -463,10 +488,17 @@ describe('access-reducing reconciliation', () => {
       accessState: 'DISABLED',
       identitySyncState: 'FAILED',
     });
-    // A later reconciliation completes it.
+    // A later reconciliation completes it, changing nothing but the enabled flag.
     expect((await provisioning.reconcile(request(user.id))).outcome).toBe('synced');
     const subject = (await row(user.id)).identity?.subject ?? '';
-    expect((await adminJson<KeycloakUser>(`/users/${subject}`)).enabled).toBe(false);
+    expect(await adminJson<KeycloakUser>(`/users/${subject}`)).toMatchObject({
+      username: user.email,
+      email: user.email,
+      enabled: false,
+      emailVerified: false,
+      attributes: { vertexUserId: [user.id] },
+      requiredActions: expect.arrayContaining(['UPDATE_PASSWORD', 'CONFIGURE_TOTP']),
+    });
   });
 
   it('creates nothing for a terminated user without an identity', async () => {
