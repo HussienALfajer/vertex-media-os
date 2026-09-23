@@ -1544,6 +1544,8 @@ Expected additions include concepts equivalent to:
 
 The workspace configuration MUST add domains/* only when the first domain project is introduced.
 
+IAM-MP-00 to IAM-MP-02 realized the domain part as the core project `domains/iam` (`domain/`, `application/`, public entry `src/index.ts`) and the adapter project `domains/iam-persistence`; `docs/ENGINEERING.md` Section 6 describes that layout.
+
 The IAM package SHOULD use tags that preserve backend and domain boundaries, and ESLint/Nx constraints SHOULD be extended so future domains cannot import IAM internals.
 
 Only IAM public.ts or an equivalent explicit public entry point may be imported cross-module.

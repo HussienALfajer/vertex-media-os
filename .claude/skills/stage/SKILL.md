@@ -21,7 +21,7 @@ Current effort: `${CLAUDE_EFFORT}`. If the run is Tier A and the effort is `low`
 ## 3. Preflight
 
 - `git status --short` is empty; `git switch main`; `git pull --ff-only`; the latest CI run on `main` is green (`gh run list --branch main --limit 1`).
-- Read, and only read: `docs/PLANNING.md` Sections 4 to 8; the Master Plan header, locked invariants, Section "Runs, tiers and checkpoints", each stage section of this run, and the ledger; the specification sections those stage sections cite; the previous run's Hand-off section or, for the first run under this method, the carried-forward items listed in the stage sections. Open other canonical documents only when the work touches their concerns.
+- Read, and only read: `docs/PLANNING.md` Sections 4 to 8; the Master Plan header, locked invariants, Section "Runs, tiers and checkpoints", each stage section of this run, and the ledger; the specification sections those stage sections cite; the previous run's Hand-off section or, for the first run under this method, the carried-forward items listed in the stage sections; and the record of the latest deep audit (`docs/plans/<module>/audits/`), when one was merged since that run. Open other canonical documents only when the work touches their concerns.
 - Create the branch `<module>/r<NN>-<short-name>` (for example `iam/r01-keycloak-environment`).
 
 ## 4. Plan
@@ -49,10 +49,11 @@ Current effort: `${CLAUDE_EFFORT}`. If the run is Tier A and the effort is `low`
 - Check the evidence of every finding before accepting it. Reject findings whose evidence does not hold, and say why.
 - Fix every blocking finding, re-verify, and re-run the reviewer of that concern when a fix is more than local.
 - Record non-blocking findings as carried-forward items on the stages that will resolve them.
+- Check scope and documentation truthfulness yourself against the plan (`docs/PLANNING.md` Section 8.2). For a Tier C run, this self-review against the plan replaces the reviewers.
 
 ## 8. Deliver
 
-- In the Master Plan ledger: set this run's stages to `COMPLETE` and the next run's stages to `READY` (unless a checkpoint audit comes first), and attach carried-forward items to their stages. Set the plan status to `COMPLETE — pending merge` and write its Hand-off section.
+- In the Master Plan ledger: set this run's stages to `COMPLETE` and the next run's stages to `READY` (unless a checkpoint audit comes first), and attach carried-forward items to their stages. Update every other place the Master Plan mirrors run status (its header's next-run line, each affected stage's Status line and its next-step section). Set the plan status to `COMPLETE` (it becomes true when the owner merges) and write its Hand-off section.
 - Commit, push the branch (`git push -u origin <branch>`), and open a pull request to `main` with `gh pr create`. The description is the run report below, with a link to the plan.
 - Watch CI (`gh pr checks --watch`). Fix failures on the branch.
 - Never merge, push to `main`, or force-push.

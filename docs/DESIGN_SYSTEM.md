@@ -7,13 +7,13 @@
 
 ## 1. Document Role
 
-This document owns Vertex OS's visual, spatial, interaction, content, and accessibility language. Future screens MUST use this system. It specifies the target design; it does not claim that tokens, components, fonts, or test infrastructure already exist.
+This document owns Vertex OS's visual, spatial, interaction, content, and accessibility language. Future screens MUST use this system. It specifies the target design; what is implemented so far is the Foundation v1 package described below.
 
 MUST and MUST NOT are mandatory. SHOULD and SHOULD NOT establish strong defaults; deviations require a documented reason and review. MAY permits an option within the stated constraints.
 
 Product scope remains in [PRODUCT.md](PRODUCT.md); domain ownership in [MODULES.md](MODULES.md); technical boundaries in [ARCHITECTURE.md](ARCHITECTURE.md); implementation rules in [ENGINEERING.md](ENGINEERING.md); security in [SECURITY.md](SECURITY.md); verification policy in [TESTING.md](TESTING.md). [IAM](modules/iam.md) owns access states and sensitive administrative operations. This document MUST NOT redefine those contracts.
 
-The shared foundation is implemented by the business-neutral `@vertex-os/ui` package (`packages/ui`): one machine-readable token source, themes, typography, components, and patterns, verified in the development-only `/dev/ui` lab. The web application's technical status shell consumes it; this specification itself introduces no source, dependency, or asset. Where the executable foundation and this document disagree, the mismatch is a defect to reconcile deliberately (Section 40.2). The existing IAM specification anticipates this shared foundation; its provisional RTL wording is resolved here to require Arabic-first delivery.
+The shared foundation is implemented by the business-neutral `@vertex-os/ui` package (`packages/ui`): one machine-readable token source, themes, typography, components, and patterns, verified in the development-only `/dev/ui` lab. The web application's technical status shell consumes it; this specification itself introduces no source, dependency, or asset. Where the executable foundation and this document disagree, the mismatch is a defect to reconcile deliberately (Section 40.2). The IAM specification defers its Arabic/RTL-first delivery to this document.
 
 ### Reading map
 
@@ -94,7 +94,7 @@ Gold MUST NOT mean selected, successful, premium access, pending, or warning. On
 | Product patterns | Shell, page header, form sections, table toolbar, record layout, feedback placement | Module-specific mutations or enum definitions |
 | Feature compositions | Authorized capabilities, domain copy, data and workflows | New foundational styling or duplicated primitives |
 
-React, Tailwind, and the repository's existing TanStack boundaries remain the implementation baseline. The future approved shared UI package is the home for business-neutral UI. Feature composition remains in its owning feature. No package is to be created solely to match this diagram.
+React, Tailwind, and the repository's existing TanStack boundaries remain the implementation baseline. The shared UI package `@vertex-os/ui` (`packages/ui`) is the home for business-neutral UI. Feature composition remains in its owning feature. No package is to be created solely to match this diagram.
 
 An “InvoiceStatus” mapping belongs to Finance; the shared StatusIndicator owns its rendering. A role-permission editor belongs to IAM; Checkbox, Table, and confirmation behavior are shared. The backend remains authoritative for all permissions, transitions, totals, and writes.
 
@@ -110,7 +110,7 @@ An “InvoiceStatus” mapping belongs to Finance; the shared StatusIndicator ow
 | Semantic | `color.background.canvas`, `color.action.primary.background`, `space.field.gap`, `size.control.block` | Public roles; components and approved layout utilities consume these |
 | Component | `component.table.row.min-block`, `component.dialog.max-inline` | Only a stable component-specific decision not expressible as an existing role |
 
-Names MUST describe purpose and use lowercase dot-separated segments; hyphens are allowed inside a segment. The future CSS mapping is deterministic: prepend `--vx-` and replace dots with hyphens. For example, `color.text.primary` maps to `--vx-color-text-primary`. Tailwind semantic utilities MUST resolve to these variables; feature code MUST NOT access raw palette stops or redefine variables.
+Names MUST describe purpose and use lowercase dot-separated segments; hyphens are allowed inside a segment. The CSS mapping is deterministic: prepend `--vx-` and replace dots with hyphens. For example, `color.text.primary` maps to `--vx-color-text-primary`. Tailwind semantic utilities MUST resolve to these variables; feature code MUST NOT access raw palette stops or redefine variables.
 
 Reference values do not vary by theme. Semantic aliases vary by theme or density only where specified. Component aliases MUST point to semantic roles, or to a documented geometry decision in this file; they MUST NOT contain private palettes. A token MUST have a type, description, owner, allowed contexts, and defined values for every applicable mode. Cycles, undefined aliases, spelling variants, and fallback hex values in consumers are prohibited.
 
@@ -287,7 +287,7 @@ The chosen pairing is **IBM Plex Sans Arabic** for Arabic and **IBM Plex Sans** 
 | `font.family.mono` | `"IBM Plex Mono", Consolas, "Liberation Mono", monospace` |
 | `font.family.ui` | Arabic family then Latin family in Arabic UI; Latin family then Arabic family in English UI, followed by their system fallbacks |
 
-The future font configuration MUST route Arabic glyphs to the Arabic face and Latin glyphs to the Latin face, including within mixed text. Numeric tabular shaping MUST be verified on the delivered files; monospace is not a fallback for all Arabic text. Use real weights 400, 500, and 600. No synthetic bold, synthetic Arabic italics, condensed UI face, or decorative serif. Load only required weights/scripts, use font-display swap, preserve shaping tables when subsetting, and test fallback clipping before fonts resolve. No remote font-CDN dependency.
+The font configuration MUST route Arabic glyphs to the Arabic face and Latin glyphs to the Latin face, including within mixed text. Numeric tabular shaping MUST be verified on the delivered files; monospace is not a fallback for all Arabic text. Use real weights 400, 500, and 600. No synthetic bold, synthetic Arabic italics, condensed UI face, or decorative serif. Load only required weights/scripts, use font-display swap, preserve shaping tables when subsetting, and test fallback clipping before fonts resolve. No remote font-CDN dependency.
 
 ### 12.2 Type roles
 
@@ -359,7 +359,7 @@ There are two user-facing density modes: **Default** and **Compact**. Default is
 
 Dimensions are rem equivalents except hairlines; all are minimums. Small controls MUST NOT become the default for forms. IconButtons are square at their control size. Every independent target MUST have at least a 24 × 24 CSS-pixel hit region with no overlap; Vertex's normal fine-pointer controls exceed this. For touch/coarse pointers, all actions and choice label rows MUST provide at least 44 × 44px; table rows become at least 52px when needed for padding around controls. Do not enlarge invisible hit boxes over neighboring actions.
 
-Textarea minimum is 120px, resizable in the block direction. SearchInput is 240px preferred, 160px minimum, and full width on narrow screens. Badges are at least 24px tall, with 4px block and 8px inline padding as needed by their 20px line box; they are not interactive targets unless rendered as an explicit removable filter control.
+Textarea minimum is 120px, resizable in the block direction. SearchInput is 240px preferred, 160px minimum, and full width on narrow screens. Badges are at least 24px tall, with 2px block padding around their 20px line box and 8px inline padding; they are not interactive targets unless rendered as an explicit removable filter control.
 
 ## 15. Radius
 
@@ -485,7 +485,7 @@ Mirror navigation back/forward, logical previous/next, breadcrumb separators, su
 
 ### 22.1 App shell
 
-- Desktop sidebar occupies **240px** at inline-start; optional user-collapsed rail is **64px**. In Arabic this is the right side. The rail requires named icons, tooltips, and a visible expand action; it MUST NOT be the first-run default.
+- Desktop sidebar occupies **240px** at inline-start; optional user-collapsed rail is **64px**. In Arabic this is the right side. The rail requires named icons, tooltips, and a visible expand action; it MUST NOT be the first-run default at wide widths (1200px and above); in the medium range the rail is the default (Section 23).
 - A **56px minimum** top header spans the content area. It holds navigation context and global utilities. A page's title and primary action belong below, not duplicated in the header.
 - The sidebar contains the product identity, grouped navigation, and a bottom account/settings area. It uses text and neutral icons; active items use selected fill and a 2px inline-start marker, never gold.
 - DOM landmarks are header, named main navigation, main, and optional complementary inspector. A first-focus skip link moves to main. There is one main landmark and one page h1.
@@ -791,7 +791,7 @@ Tooltips show after 500ms pointer dwell or immediately on keyboard focus, remain
 | Alert | At affected form/section start | Persists until resolved/dismissed when safe; blocking failures announced once |
 | Page banner | Below shell/header, above page content | Shared service/session issue; does not cover navigation |
 | Toast | Viewport block-end, inline-end, 24px inset or 16px narrow | Optional confirmation only; polite announcement; no focus theft |
-| Progress | Within the affected operation | Named value/range or indeterminate status; completion acknowledged |
+| Progress | Within the affected operation | Named value/range or indeterminate status; completion acknowledged; determinate track 8px thick |
 
 Toast width is 360px maximum and viewport minus 32px on narrow screens. At most three are visible; repeated events coalesce rather than stack indefinitely. A nonessential success toast MAY dismiss after 6 seconds, pausing while hovered, focused, or the document is hidden. Toasts containing an action, error, uncertain outcome, or information unavailable elsewhere MUST persist until dismissed or resolved. Critical outcomes belong in the task context, not exclusively in a toast. Interactive toasts are suspended while an unrelated modal makes their context inert.
 
@@ -947,7 +947,7 @@ Adopt a primitive only when it solves a demonstrated behavioral need and passes 
 
 Do not use Base UI merely to replace a native button, provide CSS identity, implement business logic, or expand the catalog speculatively. Do not combine different primitive libraries for the same interaction family without an approved replacement plan. No shadcn components, CLI, generated templates, or theme conventions are permitted, even if they internally use Base UI.
 
-This document approves selective evaluation, not installation or a specific version. During the implementation task, verify the chosen pinned release's APIs and complete an adoption record covering need, native alternative, behavior tests, bundle impact, styling ownership, and replacement cost. A dependency with architectural impact still follows repository approval rules.
+Foundation v1 adopted `@base-ui/react`, pinned at 1.8.0, through adoption record DS-D016 (`docs/plans/DESIGN_SYSTEM_PLAN.md`); a version change repeats this verification. For any further primitive, verify the chosen pinned release's APIs and complete an adoption record covering need, native alternative, behavior tests, bundle impact, styling ownership, and replacement cost. A dependency with architectural impact still follows repository approval rules.
 
 ## 40. Theme Implementation Architecture
 
@@ -1000,9 +1000,9 @@ Color checks MUST include all actual surfaces/states, not only palette swatches.
 
 ### 41.3 Repository gates and present document validation
 
-Implementation uses repository-defined commands: `pnpm verify` for the fast gate; `pnpm verify:full` for Prisma, PostgreSQL integration, and Playwright smoke coverage in addition; `pnpm deps:audit` where required. Use `NX_DAEMON=false` when capturing Nx on Windows. Add needed checks to the existing root command flow, not duplicate CI steps or invent a separate certification gate.
+Implementation uses repository-defined commands: `pnpm verify` for the fast gate; `pnpm verify:full` for Prisma, PostgreSQL integration, and the Playwright end-to-end tests (production smoke, lab behavior in three engines, visual baselines) in addition; `pnpm deps:audit` where required. Use `NX_DAEMON=false` when capturing Nx on Windows. Add needed checks to the existing root command flow, not duplicate CI steps or invent a separate certification gate.
 
-For this specification, validation consists of checking source alignment, complete decisions, local links, token references, numerical contrast, and whitespace. Repository `.prettierignore` excludes `docs/`; a passing format command alone does not validate this Markdown. Browser/component tests cannot certify a system that has not yet been implemented. Section 45 separates document completion from implementation release acceptance.
+For this specification, validation consists of checking source alignment, complete decisions, local links, token references, numerical contrast, and whitespace. Repository `.prettierignore` excludes `docs/`; a passing format command alone does not validate this Markdown. Browser and component tests certify the implementation (`packages/ui`, the `/dev/ui` lab and `apps/web-e2e`), not this document. Section 45 separates document completion from implementation release acceptance.
 
 ## 42. Governance and Evolution
 
@@ -1053,7 +1053,7 @@ Deprecation requires a replacement, migration instructions, affected-consumer in
 
 The foundational design decisions are fixed by this version: palette and semantic mappings, first-class themes, paired typography, 4px spacing rhythm, Default/Compact density, control sizes, logical layout, focus geometry, state precedence, form/table contracts, chart semantics, and governance. Implementation agents MUST use these decisions rather than reopening them by default.
 
-### 44.1 Delivery sequence for a future implementation task
+### 44.1 Delivery sequence of the Foundation implementation (completed by Foundation v1)
 
 1. Establish the single token source, theme/direction/density root, licensed font delivery, and semantic Tailwind bridge. Verify aliases and contrast before feature styling.
 2. Deliver actions, field structure, text/choice inputs, status, focus, and feedback with accessible behavior.
@@ -1061,7 +1061,7 @@ The foundational design decisions are fixed by this version: palette and semanti
 4. Prove the implemented foundation with the synthetic cross-module scenarios in Section 44.3, including the Arabic IAM directory and role-permission form. These are design-system fixtures only; they MUST NOT implement IAM business behavior.
 5. Migrate the technical shell to the shared foundations, preserving its system-status behavior, and complete Design System Foundation verification and release acceptance. Close the Design System Foundation before beginning the first real IAM workflow from `docs/modules/iam.md`. Extend the system only when a real IAM or later module workflow demonstrates a justified need.
 
-This sequence is not authorization to create every catalog component now. No application package, dependency, component, font asset, or token file is delivered with this document.
+This sequence is not authorization to create every catalog component now. This document itself delivers no package, dependency, component, font asset, or token file; Foundation v1 delivered them (`docs/plans/DESIGN_SYSTEM_PLAN.md`).
 
 ### 44.2 Required implementation inputs and boundaries
 
@@ -1070,7 +1070,7 @@ This sequence is not authorization to create every catalog component now. No app
 | Brand assets | Preserve supplied artwork; Section 5 sizing rules | Approved production vector/transparent export or use the specified text identity fallback |
 | Fonts | IBM Plex Arabic/Sans/Mono and explicit type roles | Exact licensed files, shaping, numeral features, fallback metrics, loading behavior |
 | Icons | One 24-unit outlined family with per-icon mirroring metadata | Licensed source, coverage, optical rendering at 16/20px |
-| Complex primitives | Selective Base UI behind Vertex APIs | Pinned version and actual accessibility/RTL behavior; no dependency added here |
+| Complex primitives | Selective Base UI behind Vertex APIs | Adopted: `@base-ui/react` 1.8.0 (DS-D016); re-verify accessibility/RTL behavior on every version change |
 | Domain state maps | Shared five-tone system; IAM mapping specified | New module enums and labels reviewed by their owners |
 | Time/currency | Explicit shared presentation; domain authority retained | Organization timezone/workweek and domain precision from supported configuration/contracts |
 | Runtime/testing | Existing repository scripts and tools | High-value visual fixtures, actual browser and screen-reader results |

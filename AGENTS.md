@@ -46,7 +46,7 @@ If a conflict could affect architecture, data integrity, security, public contra
 
 ## Technical Baseline
 
-The authoritative constraint list, including version baselines, is `docs/ARCHITECTURE.md` (Section 4). In brief:
+The authoritative constraint list, including the ORM major-version baseline, is `docs/ARCHITECTURE.md` (Section 4). Runtime versions (Node.js, pnpm, PostgreSQL) are pinned in `.node-version`, `package.json` and `infra/compose.yaml`. In brief:
 
 * TypeScript; pnpm workspace managed with Nx; modular monolith.
 * Backend: NestJS on Fastify; REST with OpenAPI; Zod for contracts/validation where appropriate.
@@ -96,7 +96,7 @@ Detailed rules: `docs/ENGINEERING.md` and `docs/SECURITY.md`. Non-negotiable for
 * Database changes preserve data integrity, prefer backward-compatible migration strategies, and are safe for the intended environment.
 * Security-sensitive and financially significant state transitions remain attributable and auditable.
 * Preserve existing user changes and unrelated working-tree changes.
-* Do not commit, push, force-push, rebase shared history, or rewrite Git history unless the task explicitly requires it. A stage run under `docs/PLANNING.md` is authorized to create its own branch, commit to it, push it and open a pull request to `main`. Merging, pushing to `main` directly, force-pushing and rewriting published history remain the owner's actions.
+* Do not commit, push, force-push, rebase shared history, or rewrite Git history unless the task explicitly requires it. A stage run or deep audit under `docs/PLANNING.md` is authorized to create its own branch, commit to it, push it and open a pull request to `main`. Merging, pushing to `main` directly, force-pushing and rewriting published history remain the owner's actions.
 
 ---
 
@@ -144,7 +144,7 @@ Policy: `docs/TESTING.md`.
 
 * Never claim a check passed unless it was actually executed successfully.
 * Use repository-defined scripts and tooling; do not invent verification commands. The root commands are defined in `package.json` and described in `README.md`:
-  * `pnpm verify` — fast gate: format check, lint (including Nx module boundaries), typecheck, unit/API/frontend tests, builds.
+  * `pnpm verify` — fast gate: format check, lint (including Nx module boundaries), boundary probes (`pnpm lint:boundaries`), typecheck, unit/API/frontend tests, builds.
   * `pnpm verify:full` — `pnpm verify` plus Prisma validate/generate, Testcontainers PostgreSQL integration tests and the Playwright end-to-end tests: production smoke, design-system lab behaviour in Chromium/Firefox/WebKit and visual baselines (Docker required).
   * `pnpm deps:audit` — dependency vulnerability audit; reviewed exceptions live in `pnpm-workspace.yaml`.
   * Narrower checks: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:integration`, `pnpm test:e2e`, or `pnpm nx run <project>:<target>`.

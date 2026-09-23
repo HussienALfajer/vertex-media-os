@@ -114,7 +114,7 @@ data.
 | `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V40, C1–C5)                     |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
-| `pnpm build`            | Production builds of the API, the web application and the database package        |
+| `pnpm build`            | Production builds of every project with a build target                            |
 | `pnpm test:integration` | Tests against real, ephemeral PostgreSQL through Testcontainers (Docker required) |
 | `pnpm test:e2e`         | Playwright: production smoke, design-system lab in 3 engines, visual baselines    |
 | `pnpm verify`           | Fast gate: format check → lint → lint:boundaries → typecheck → test → build       |
@@ -154,7 +154,7 @@ domains/audit-persistence @vertex-os/audit-persistence: MOD-AUDIT-owned append-o
 packages/database Backend-only PostgreSQL/Prisma 7 client boundary
 packages/ui       @vertex-os/ui: business-neutral design system (tokens, fonts, components)
 infra/compose.yaml Local PostgreSQL for development
-scripts/          Local environment setup
+scripts/          Local environment setup and the lint:boundaries probes
 docs/             Canonical documentation and execution plans
 ```
 

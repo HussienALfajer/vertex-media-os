@@ -43,7 +43,7 @@ While the reviewers work, probe the covered stages' "Audit focus" yourself: nega
 ## 7. Record and deliver
 
 - Write `docs/plans/<module>/audits/$ARGUMENTS.md`, short: scope (range, pull requests, audited commit), verdict, findings table (ID, severity, file:line, finding, evidence, owner stage), probes run and their results, and what was not verified.
-- Ledger: when `ACCEPTED`, set the checkpoint `COMPLETE` and the next run `READY`, and attach non-blocking findings to the stages that will resolve them. When `FIXES REQUIRED`, leave statuses unchanged and name the fix run the owner should start.
+- Ledger: when `ACCEPTED`, set the checkpoint `COMPLETE` and the next run `READY` (also in the Master Plan's header next-run line, stage Status lines and next-step section), and attach non-blocking findings to the stages that will resolve them. When `FIXES REQUIRED`, leave statuses unchanged and name the fix run the owner should start.
 - On branch `<module>/audit-<checkpoint-lowercase>`: commit, push, and open a pull request to `main` whose description is the report below. Never change production code, merge, or push to `main`.
 
 ## 8. Report

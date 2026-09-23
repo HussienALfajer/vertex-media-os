@@ -11,7 +11,7 @@
 > Module ownership belongs in `docs/MODULES.md`.
 > Engineering rules belong in `docs/ENGINEERING.md`.
 > Test strategy belongs in `docs/TESTING.md`.
-> IAM implementation details belong in `docs/modules/iam.md` once that specification exists.
+> IAM implementation details belong in `docs/modules/iam.md`.
 
 ---
 

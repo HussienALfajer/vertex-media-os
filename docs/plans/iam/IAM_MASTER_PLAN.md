@@ -111,7 +111,7 @@ The gate is closed:
 Status: Accepted V1 Implementation Specification
 ```
 
-- the reconciliation changed only that status line; the accepted specification text is otherwise unchanged since its last substantive revision (`101551a`), and no functional, security, architectural, API-contract, domain-model, or implementation decision was altered;
+- the reconciliation changed only that status line; the accepted specification text was otherwise unchanged since its last substantive revision (`101551a`; later, owner-approved A1-03 corrected the permission-code examples in Sections 6.4, 16.1 and 16.3), and no functional, security, architectural, API-contract, domain-model, or implementation decision was altered;
 - this Master Plan became `ACTIVE` and `IAM-MP-00` became `READY` in the same governance change.
 
 IAM execution may therefore formally begin with `IAM-MP-00`, under the delivery model in Section 8. Closing this gate authorizes the detailed executable plan for `IAM-MP-00` only; it does not authorize work beyond the current executable plan.
@@ -119,6 +119,8 @@ IAM execution may therefore formally begin with `IAM-MP-00`, under the delivery 
 ---
 
 ## 4. Repository-Wide Baseline Assessment
+
+This section is a snapshot of the repository at the baseline commit `4076a08` (2026-09-22), before IAM-MP-00. Only Section 4.9 was later updated for the run-based delivery method; the ledger (Section 15) and `README.md` describe the current state.
 
 ### 4.1 Overall project posture
 
@@ -473,7 +475,7 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP2` deep audit** — authorization and administration core (MP-07 to MP-10) |
 | `IAM-R07` | IAM-MP-11 | A | security; architecture and boundaries; tests and verification | — |
 | `IAM-R08` | IAM-MP-12, IAM-MP-13, IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
-| `IAM-R09` | IAM-MP-15 | A | security; data and concurrency; tests and verification | **Final IAM Module Audit** (Section 17) |
+| `IAM-R09` | IAM-MP-15 | A | security; data and concurrency; tests and verification | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
 
 Grouping rules behind the table:
 
@@ -770,7 +772,7 @@ Details and evidence: `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Secti
 - **A2-02 (boundary configuration):** a dynamic import whose template literal starts with an interpolation, such as ``import(`${'@vertex-os'}/database/iam`)``, and `createRequire(…)('@vertex-os/…/<subpath>')` pass lint. Add `ImportExpression > TemplateLiteral.source[expressions.length>0]` to `restrictedImportSyntax` (validated by the auditor). Optionally forbid `createRequire` in backend production source; `apps/web-e2e` uses it legitimately. Add `lint:boundaries` cases. Do this when this stage changes boundary configuration (A-04).
 - **A2-03 (boundary configuration):** bracket-notation and destructured `$queryRawUnsafe`/`$executeRawUnsafe` pass the D-14 ban. Add `property.value` and destructuring selectors (validated by the auditor), or remove the unsafe methods from the production scoped types in favor of a test-only entry. Add `lint:boundaries` cases.
 - **A2-01 (forward; must be closed before IAM or Audit persistence enters the HTTP runtime):** `PinoLoggerService` writes an `Error`'s raw `message` as the log `msg`, and a string stack argument as `stack`, outside the sanitized `err`. The auditor proved it with real P2007, validation and P1001 errors through Nest's `Logger`. It is not reachable while the HTTP runtime's only query is the readiness ping. Whichever stage first composes IAM or Audit persistence, or any query beyond `ping`, into the HTTP runtime must fix it and prove it with a test, together with the API statement-timeout item. Until then, each next run plan carries this item forward.
-- Open items passed on by the IAM-02 plan (Section 40) are unchanged. They include API statement-timeout sizing, the effectiveness of `DEPRECATED` permissions and custom-role version semantics (IAM-MP-07/09), system-role mappings that stay unwritable (IAM-MP-09), bootstrap requiring synchronized reference data (IAM-MP-10), security-event recording, database-level Audit immutability and role separation, `docs/modules/audit.md`, and a shared test-support package.
+- The other open items passed on by the IAM-02 plan (Section 40) are attached to the stages that resolve them (IAM-MP-04 to IAM-MP-10, under "Carried forward"). The items that no IAM stage owns are listed in Section 15.
 
 ### Exit criteria
 
@@ -821,6 +823,10 @@ Implement the single safe IAM path that reconciles committed Vertex user state w
 - IAM persistence and reference data are accepted;
 - no remote call occurs inside a database transaction.
 
+### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
+
+- **Keycloak Admin errors** can contain emails in their messages. Translate them to safe categories before logging (spec Section 36); the generic serializer path logs the messages of non-database errors.
+
 ### Exit criteria
 
 - an INVITED Vertex user can be provisioned safely without Vertex handling credentials;
@@ -868,6 +874,10 @@ Create backend-owned, PostgreSQL-backed application-session infrastructure witho
 
 - authentication infrastructure ownership remains outside IAM domain entities;
 - configuration for session timeouts and cryptographic material is typed and validated.
+
+### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
+
+- **A2-01 and API statement-timeout sizing** (see the IAM-MP-03 section): owned by whichever of IAM-MP-05, IAM-MP-06 or IAM-MP-07 first composes IAM or Audit persistence, or any query beyond `ping`, into the HTTP runtime.
 
 ### Exit criteria
 
@@ -917,6 +927,12 @@ Deliver the complete first-party browser authentication lifecycle against the re
 - session foundation is accepted;
 - Keycloak OIDC realm/client contract is accepted;
 - IAM identity resolution semantics are available.
+
+### Carried forward
+
+- **Security events** (sign-in denials and similar; IAM-02 plan Section 40): Audit records with `REFUSED`/`FAILED`, structured security logs, or both (IAM-MP-05/06, spec Section 34).
+- **A-04 (OIDC runtime; IAM-MP-00 audit):** add the chosen OIDC runtime library to the domain-core ban list and prove an IAM import of it is rejected.
+- **Request-URL logging** (found by the 2026-09-23 repository documentation audit): the API logger replaces only the `err` serializer, so Fastify's default `req` serializer logs the full URL including the query string. The OIDC callback (`?code=…&state=…`) must not log authorization codes or state (spec Section 36); prove it with a test.
 
 ### Exit criteria
 
@@ -969,6 +985,10 @@ Make authenticated protection the default API posture and expose the narrow, cur
 - IAM role/permission persistence exists;
 - the public/private route set is explicitly known.
 
+### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
+
+- **Whether `DEPRECATED` permissions are effective** for custom roles (decided together with IAM-MP-09's mapping rules).
+
 ### Exit criteria
 
 - forgetting a protection annotation does not silently make a new controller public;
@@ -1015,6 +1035,10 @@ Implement authoritative application-layer behavior for departments and organizat
 - authorization context is accepted;
 - Audit append capability is available.
 
+### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
+
+- **Primary-membership switch ordering** (IAM-01 plan Section 34).
+
 ### Exit criteria
 
 - department state immediately affects authorization context correctly;
@@ -1059,6 +1083,12 @@ Implement application-layer role and permission administration with concurrency-
 - permission/system-role synchronization is accepted;
 - authorization context consumes the current persisted role/permission state;
 - Audit capability is available.
+
+### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
+
+- **`DEPRECATED`/`RETIRED` mappings:** whether custom roles may keep or receive mappings to `DEPRECATED` or `RETIRED` codes.
+- **Custom-role version semantics** for mapping replacement, aligned with interpretation I-6 or explicitly different.
+- **System-role mappings stay unwritable** by administrative operations.
 
 ### Exit criteria
 
@@ -1113,6 +1143,10 @@ Implement the highest-risk IAM administrative workflows as application services 
 - Keycloak reconciliation is accepted;
 - sessions can be revoked;
 - Audit capability is available.
+
+### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
+
+- **Bootstrap refuses** when reference data is not synchronized.
 
 ### Exit criteria
 
@@ -1473,25 +1507,27 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 ## 14. Master Risk Register
 
+Risk IDs were `IAM-R01`…`IAM-R17` until run IDs took the `IAM-Rnn` form (Section 8.3); the historical IAM-01 and IAM-02 plans cite risks by those earlier IDs (for example `IAM-R02` is `IAM-RISK-02`).
+
 | ID | Risk | Why it matters | Master-level mitigation |
 |---|---|---|---|
-| IAM-R01 | IAM specification status remains `Proposed` | execution could begin without canonical acceptance | closed — Section 3 gate closed; specification status is `Accepted` |
-| IAM-R02 | First business migration establishes poor precedent | later domains may copy weak constraints/patterns | isolate MP-01 and audit migration/invariants deeply |
-| IAM-R03 | IAM creates its own generic audit table | violates MOD-AUDIT ownership and causes later migration debt | build only minimal MOD-AUDIT append boundary in MP-02 |
-| IAM-R04 | Keycloak manual configuration drifts | security behavior becomes non-reproducible | configuration-as-code + real integration verification |
-| IAM-R05 | Ambiguous Keycloak failures duplicate/re-link identities | identity takeover or duplicate account risk | one idempotent reconciliation path with ownership proof |
-| IAM-R06 | Remote I/O inside DB transactions | long locks and inconsistent distributed outcomes | explicit fail-closed ordering; no remote call in transaction |
-| IAM-R07 | Session/token leakage | critical credential compromise | opaque sessions, server-side tokens, log/response negative tests |
-| IAM-R08 | Default-public API transition misses a route | silent authorization bypass | protected-by-default stage with explicit public route mechanism |
-| IAM-R09 | Last-admin race across two users | total administrative lockout | serialized invariant + competing-operation integration tests |
-| IAM-R10 | Privilege changes remain stale | removed permissions continue to work | no cross-request auth cache; current context per protected request |
-| IAM-R11 | Frontend becomes authorization authority | bypass through alternate clients/routes | backend enforcement tests for every meaningful operation |
-| IAM-R12 | Bootstrap becomes a backdoor/default account | persistent privileged access risk | operator-run command only; no defaults; serialized, audited |
-| IAM-R13 | IAM frontend invents a second component system | UI fragmentation and accessibility regression | consume `@vertex-os/ui`; add only justified reusable primitives |
-| IAM-R14 | E2E absorbs all verification | slow/flaky suite hides lower-level defects | risk-based test layering; focused E2E only |
-| IAM-R15 | Scope expands into HR/multi-tenancy/client identities | delays first business module and weakens architecture | enforce explicit non-goals and PLANNING scope discipline |
-| IAM-R16 | Main-branch governance relies only on convention | security-sensitive changes may bypass intended review discipline | every run lands through a reviewed pull request with green CI; deep audits at IAM-CP1, IAM-CP2 and the Final IAM Module Audit; repository protection policy may be hardened separately from IAM scope |
-| IAM-R17 | Lighter per-run review misses a defect a full audit would catch | a security defect reaches `main` between checkpoints | three fresh-context reviewers on every Tier A run; checkpoints placed directly after the authentication and privilege clusters; later runs cannot start before the checkpoint is accepted |
+| IAM-RISK-01 | IAM specification status remains `Proposed` | execution could begin without canonical acceptance | closed — Section 3 gate closed; specification status is `Accepted` |
+| IAM-RISK-02 | First business migration establishes poor precedent | later domains may copy weak constraints/patterns | isolate MP-01 and audit migration/invariants deeply |
+| IAM-RISK-03 | IAM creates its own generic audit table | violates MOD-AUDIT ownership and causes later migration debt | build only minimal MOD-AUDIT append boundary in MP-02 |
+| IAM-RISK-04 | Keycloak manual configuration drifts | security behavior becomes non-reproducible | configuration-as-code + real integration verification |
+| IAM-RISK-05 | Ambiguous Keycloak failures duplicate/re-link identities | identity takeover or duplicate account risk | one idempotent reconciliation path with ownership proof |
+| IAM-RISK-06 | Remote I/O inside DB transactions | long locks and inconsistent distributed outcomes | explicit fail-closed ordering; no remote call in transaction |
+| IAM-RISK-07 | Session/token leakage | critical credential compromise | opaque sessions, server-side tokens, log/response negative tests |
+| IAM-RISK-08 | Default-public API transition misses a route | silent authorization bypass | protected-by-default stage with explicit public route mechanism |
+| IAM-RISK-09 | Last-admin race across two users | total administrative lockout | serialized invariant + competing-operation integration tests |
+| IAM-RISK-10 | Privilege changes remain stale | removed permissions continue to work | no cross-request auth cache; current context per protected request |
+| IAM-RISK-11 | Frontend becomes authorization authority | bypass through alternate clients/routes | backend enforcement tests for every meaningful operation |
+| IAM-RISK-12 | Bootstrap becomes a backdoor/default account | persistent privileged access risk | operator-run command only; no defaults; serialized, audited |
+| IAM-RISK-13 | IAM frontend invents a second component system | UI fragmentation and accessibility regression | consume `@vertex-os/ui`; add only justified reusable primitives |
+| IAM-RISK-14 | E2E absorbs all verification | slow/flaky suite hides lower-level defects | risk-based test layering; focused E2E only |
+| IAM-RISK-15 | Scope expands into HR/multi-tenancy/client identities | delays first business module and weakens architecture | enforce explicit non-goals and PLANNING scope discipline |
+| IAM-RISK-16 | Main-branch governance relies only on convention | security-sensitive changes may bypass intended review discipline | every run lands through a reviewed pull request with green CI; deep audits at IAM-CP1, IAM-CP2 and the Final IAM Module Audit; repository protection policy may be hardened separately from IAM scope |
+| IAM-RISK-17 | Lighter per-run review misses a defect a full audit would catch | a security defect reaches `main` between checkpoints | three fresh-context reviewers on every Tier A run; checkpoints placed directly after the authentication and privilege clusters; later runs cannot start before the checkpoint is accepted |
 
 ---
 
@@ -1499,7 +1535,13 @@ The broad IAM-0 specification also mentions typed auth/IAM configuration and a l
 
 This Master Plan is `ACTIVE`. IAM-MP-00 to IAM-MP-02 are `COMPLETE` under the previous method: each was independently audited (`IAM-00`, `IAM-01`, `IAM-02 ACCEPTED`, no blocking findings) and accepted by the owner on 2026-09-23.
 
-The next run is `IAM-R01` (IAM-MP-03), which is `READY`. Its plan is written from the current `main` by `/stage IAM-MP-03`. It must resolve the items under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in the IAM-MP-03 section.
+The next run is `IAM-R01` (IAM-MP-03), which is `READY`. Its plan is written from the current `main` by `/stage IAM-MP-03`. It must resolve the items under "Carried forward from the IAM-MP-00 audit" and "Carried forward from the IAM-MP-02 audit" in the IAM-MP-03 section that belong to this stage (A-04 for Keycloak packages, A-02 optionally, A2-02 and A2-03); A2-01 passes on under the condition stated there.
+
+Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
+
+- database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
+- `docs/modules/audit.md`: when MOD-AUDIT is fully specified; it adopts or deliberately migrates the foundation contract (IAM-02 D-05). Until then `docs/modules/iam.md` Sections 34–35 specify the implemented foundation;
+- a shared test-support package: decided when a fourth copy of the PostgreSQL test harness would be needed.
 
 | Stage | Run | Status | Required before the run starts |
 |---|---|---|---|
@@ -1521,7 +1563,7 @@ The next run is `IAM-R01` (IAM-MP-03), which is `READY`. Its plan is written fro
 | IAM-MP-13 Frontend User & Access Admin | R08 | PLANNED | R07 merged |
 | IAM-MP-14 Frontend Department/Role/Permission Admin | R08 | PLANNED | R07 merged |
 | IAM-MP-15 E2E & Hardening | R09 | PLANNED | R08 merged |
-| Final IAM Module Audit | — | PLANNED | R09 merged |
+| `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09 merged |
 
 The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
 
@@ -1725,16 +1767,16 @@ The Final Audit evaluates IAM as one integrated system and must verify, at minim
 - no temporary bypass, focused test, debug code, or undocumented workaround remains;
 - documentation and README/current limitations are reconciled with the new reality.
 
-The Final IAM Module Audit result must be one of:
+The Final IAM Module Audit result must be one of (`docs/PLANNING.md` Section 9):
 
 ```text
-IAM ACCEPTED
+IAM-FINAL ACCEPTED
 ```
 
 or:
 
 ```text
-IAM NOT ACCEPTED
+IAM-FINAL FIXES REQUIRED
 ```
 
 IAM is not complete until the audit is accepted and every blocking finding is resolved/re-audited.
@@ -1748,7 +1790,7 @@ IAM may be marked complete only when:
 - every stage IAM-MP-00 through IAM-MP-15 is `COMPLETE`;
 - every stage completion is backed by a reviewed, merged pull request with green CI (IAM-MP-00 to IAM-MP-02: by their independent audits), and checkpoints `IAM-CP1` and `IAM-CP2` are accepted;
 - the parent IAM specification Definition of Done is satisfied;
-- the dedicated Final IAM Module Audit returns `IAM ACCEPTED`;
+- the dedicated Final IAM Module Audit returns `IAM-FINAL ACCEPTED`;
 - canonical documentation matches the final repository;
 - the next module can depend on IAM's public authorization contract without reading IAM persistence internals.
 
