@@ -121,7 +121,7 @@ Carried-forward items and their resolution:
 - [x] M1 Plan committed; owner decision OD-1 answered
 - [x] M2 Core: ports, capabilities, unit tests with fakes
 - [x] M3 Persistence store operations and integration tests
-- [ ] M4 `domains/iam-keycloak` adapter, unit tests, boundary lint and probes
+- [x] M4 `domains/iam-keycloak` adapter, unit tests, boundary lint and probes
 - [ ] M5 Realm SMTP and reset flow; mail sink in Compose and harness; env setup; realm contract tests
 - [ ] M6 Typed configuration, composition, real-Keycloak and composed integration tests
 - [ ] M7 README, ENGINEERING Section 6; `pnpm verify` and integration suites green

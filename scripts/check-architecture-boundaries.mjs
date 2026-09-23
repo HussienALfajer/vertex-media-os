@@ -195,6 +195,25 @@ const violations = [
     syntaxRule,
     unsafeRawQuery,
   ],
+  // IAM-R02: the identity-provider adapter and IAM's private entry for it.
+  ['V63', 'domains/iam', "import '@vertex-os/iam-keycloak';", nxRule, 'Circular dependency'],
+  ['V64', 'apps/api', "import '@vertex-os/iam/identity-provider';", importsRule],
+  ['V65', 'domains/iam-persistence', "import '@vertex-os/iam/identity-provider';", importsRule],
+  ['V66', 'domains/iam-keycloak', "import '@vertex-os/iam/persistence';", importsRule],
+  ['V67', 'domains/iam-keycloak', "import '@vertex-os/database';", importsRule, 'Keycloak only'],
+  ['V68', 'domains/iam-keycloak', "import '@nestjs/common';", nxRule, '@nestjs'],
+  ['V69', 'domains/iam-keycloak', "import '@prisma/client';", nxRule, '@prisma'],
+  ['V70', 'apps/api', "import '@vertex-os/iam-keycloak/src/index.js';", importsRule],
+  ['V71', 'domains/iam-keycloak', "process.env['X'];", syntaxRule, rawEnvironment],
+  [
+    'V72',
+    'domains/iam-keycloak',
+    "import { createRequire } from 'node:module';",
+    importsRule,
+    createRequireBan,
+  ],
+  ['V73', 'domains/iam-persistence', "import '@vertex-os/iam-keycloak';", nxRule, 'layer:adapter'],
+  ['V74', 'apps/web', "import '@vertex-os/iam-keycloak';", nxRule, 'scope:web'],
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
@@ -219,6 +238,7 @@ const controls = [
       ...imports(
         '@vertex-os/iam',
         '@vertex-os/iam-persistence',
+        '@vertex-os/iam-keycloak',
         '@vertex-os/audit',
         '@vertex-os/audit-persistence',
         '@vertex-os/database',
@@ -232,6 +252,7 @@ const controls = [
     imports('@vertex-os/audit', '@vertex-os/database', '@vertex-os/database/audit'),
   ],
   ['C4', 'domains/iam', imports('@vertex-os/audit')],
+  ['C9', 'domains/iam-keycloak', imports('@vertex-os/iam', '@vertex-os/iam/identity-provider')],
   ['C5', 'apps/api', ["process.env['DATABASE_URL'];"], 'src/commands/iam-sync-reference.ts'],
   // Tagged raw SQL and a literal, non-interpolated template import stay permitted.
   [

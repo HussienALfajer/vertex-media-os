@@ -15,6 +15,7 @@
     "@vertex-os/audit-persistence": "workspace:*",
     "@vertex-os/database": "workspace:*",
     "@vertex-os/iam": "workspace:*",
+    "@vertex-os/iam-keycloak": "workspace:*",
     "@vertex-os/iam-persistence": "workspace:*",
     "fastify": "^5.12.5",
     "pino": "10.3.1",

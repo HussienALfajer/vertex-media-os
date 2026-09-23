@@ -15,7 +15,8 @@ import nx from '@nx/eslint-plugin';
  *   - `layer:ui`      the business-neutral design system `packages/ui` (no router, query,
  *                     application or domain dependencies)
  *   - `layer:domain` backend business core (no infrastructure/framework imports)
- *   - `layer:adapter` domain-owned persistence infrastructure implementing private ports
+ *   - `layer:adapter` domain-owned infrastructure implementing private ports (persistence, and
+ *                    IAM's identity-provider adapter)
  *   - `layer:shared` reserved for a future domain-neutral shared kernel (unused today)
  *   - `domain:iam`   the IAM ownership boundary
  *   - `domain:audit` the MOD-AUDIT ownership boundary; other domains may depend on its public
@@ -35,10 +36,12 @@ export const restrictedImportPatterns = [
       '@vertex-os/iam/*',
       '@vertex-os/database/*',
       '@vertex-os/iam-persistence/*',
+      '@vertex-os/iam-keycloak/*',
       '@vertex-os/audit/*',
       '@vertex-os/audit-persistence/*',
       '**/domains/iam/src/**',
       '**/domains/iam-persistence/src/**',
+      '**/domains/iam-keycloak/src/**',
       '**/domains/audit/src/**',
       '**/domains/audit-persistence/src/**',
     ],

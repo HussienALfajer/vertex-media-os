@@ -16,6 +16,9 @@
       "path": "../../domains/iam-persistence/tsconfig.lib.json"
     },
     {
+      "path": "../../domains/iam-keycloak/tsconfig.lib.json"
+    },
+    {
       "path": "../../domains/iam/tsconfig.lib.json"
     },
     {

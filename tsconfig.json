@@ -25,6 +25,9 @@
       "path": "./domains/iam-persistence"
     },
     {
+      "path": "./domains/iam-keycloak"
+    },
+    {
       "path": "./domains/audit-persistence"
     },
     {
