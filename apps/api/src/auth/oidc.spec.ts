@@ -77,9 +77,13 @@ describe('OIDC client against a fake provider', () => {
   });
 
   describe('session refresh (IAM-R03F D-01, D-05)', () => {
+    /** The ID token of the latest sign-in: the session's current one. */
+    let idToken: string | undefined;
+
     async function signedIn(sessionId = 'kc-session-r') {
       const result = await signIn({ subject: 'subject-r', sessionId });
       if (!result.ok || result.value.refreshToken === undefined) throw new Error('sign-in failed');
+      idToken = result.value.idToken;
       return result.value.refreshToken;
     }
 
@@ -88,6 +92,7 @@ describe('OIDC client against a fake provider', () => {
       const refreshed = await oidc.refreshSession({
         refreshToken: first,
         idpSessionId: 'kc-session-r',
+        idToken,
       });
       expect(refreshed).toMatchObject({
         ok: true,
@@ -97,12 +102,13 @@ describe('OIDC client against a fake provider', () => {
       expect(refreshed.value.refreshToken).not.toBe(first);
       // Rotation: the used token is spent, the new one works.
       await expect(
-        oidc.refreshSession({ refreshToken: first, idpSessionId: 'kc-session-r' }),
+        oidc.refreshSession({ refreshToken: first, idpSessionId: 'kc-session-r', idToken }),
       ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
       await expect(
         oidc.refreshSession({
           refreshToken: refreshed.value.refreshToken,
           idpSessionId: 'kc-session-r',
+          idToken: refreshed.value.idToken,
         }),
       ).resolves.toMatchObject({ ok: true });
     });
@@ -111,7 +117,7 @@ describe('OIDC client against a fake provider', () => {
       const token = await signedIn('kc-session-ended');
       provider.endedProviderSessions.add('kc-session-ended');
       await expect(
-        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-ended' }),
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-ended', idToken }),
       ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
     });
 
@@ -123,7 +129,35 @@ describe('OIDC client against a fake provider', () => {
       const token = await signedIn();
       provider.refreshIdTokenClaims = claims;
       await expect(
-        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r' }),
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+    });
+
+    it('refuses a refreshed ID token naming another subject, or when no current one exists', async () => {
+      const token = await signedIn();
+      provider.refreshIdTokenClaims = { sub: 'someone-else' };
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+      provider.refreshIdTokenClaims = {};
+      const next = await signedIn();
+      await expect(
+        oidc.refreshSession({
+          refreshToken: next,
+          idpSessionId: 'kc-session-r',
+          idToken: undefined,
+        }),
+      ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
+    });
+
+    it.each([
+      ['signed by another key', 'stranger' as const],
+      ['that cannot be decoded', 'malformed' as const],
+    ])('refuses a refreshed ID token %s', async (_label, form) => {
+      const token = await signedIn();
+      provider.refreshIdTokenForm = form;
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
       ).resolves.toMatchObject({ ok: false, failure: 'rejected' });
     });
 
@@ -131,11 +165,16 @@ describe('OIDC client against a fake provider', () => {
       const token = await signedIn();
       provider.tokenStatus = 503;
       await expect(
-        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r' }),
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
+      ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
+      // Rate limiting is an outage too: a refusal here would revoke every active session.
+      provider.tokenStatus = 429;
+      await expect(
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
       ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
       provider.offline = true;
       await expect(
-        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r' }),
+        oidc.refreshSession({ refreshToken: token, idpSessionId: 'kc-session-r', idToken }),
       ).resolves.toMatchObject({ ok: false, failure: 'unavailable' });
     });
   });

@@ -61,6 +61,8 @@ export class FakeOidcProvider {
   readonly endedProviderSessions = new Set<string>();
   /** Replaces or removes (`undefined`) claims of ID tokens issued by the refresh grant. */
   refreshIdTokenClaims: Readonly<Record<string, unknown>> = {};
+  /** How the refresh grant's ID tokens are signed; `malformed` answers with an undecodable one. */
+  refreshIdTokenForm: 'provider' | 'stranger' | 'malformed' = 'provider';
   /** How many refresh grants the provider answered successfully. */
   refreshed = 0;
   private readonly codes = new Map<string, IssuedCode>();
@@ -241,19 +243,22 @@ export class FakeOidcProvider {
       return json({ error: 'invalid_grant', error_description: 'Session not active' }, 400);
     }
     const now = Math.floor(Date.now() / 1000);
-    const idToken = await this.sign(
-      compact({
-        iss: this.issuer,
-        aud: FAKE_CLIENT_ID,
-        azp: FAKE_CLIENT_ID,
-        sub: grant.subject,
-        sid: grant.sessionId,
-        iat: now,
-        exp: now + 300,
-        ...this.refreshIdTokenClaims,
-      }),
-      'provider',
-    );
+    const idToken =
+      this.refreshIdTokenForm === 'malformed'
+        ? '!!!!.!!!!.!!!!'
+        : await this.sign(
+            compact({
+              iss: this.issuer,
+              aud: FAKE_CLIENT_ID,
+              azp: FAKE_CLIENT_ID,
+              sub: grant.subject,
+              sid: grant.sessionId,
+              iat: now,
+              exp: now + 300,
+              ...this.refreshIdTokenClaims,
+            }),
+            this.refreshIdTokenForm,
+          );
     this.refreshed += 1;
     return this.tokens(idToken, grant);
   }

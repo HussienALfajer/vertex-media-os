@@ -156,6 +156,12 @@ export class AuthController {
       readCookie(request.headers.cookie, SESSION_COOKIE),
       systemAttribution(request, 'iam.session-check'),
     );
+    if (previous.outcome === 'ended') {
+      request.log.info(
+        { auth: 'session-revoked', reason: 'provider-session-ended' },
+        'session revoked',
+      );
+    }
     const { secret } = await this.runtime.sessions.establish({
       userId: result.userId,
       idpSessionId: identity.value.idpSessionId,

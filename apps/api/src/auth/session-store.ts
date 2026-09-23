@@ -90,12 +90,16 @@ export interface SessionStore {
   }): Promise<boolean>;
   /**
    * Applies a successful re-validation: the slid idle deadline and the rotated tokens, only while
-   * the session is still valid at `now`. Never revives a revoked or expired session or writes token
-   * material into it. An absent ID token keeps the stored one. `true` when it wrote.
+   * the session is still valid at `now`, still holds the claim made at `claimedAt` and still holds
+   * the refresh token (`replaces`, its ciphertext) that was refreshed. Never revives a revoked or
+   * expired session or writes token material into it, even when another request discarded its
+   * tokens in between. An absent ID token keeps the stored one. `true` when it wrote.
    */
   applyRevalidation(change: {
     readonly id: string;
     readonly now: Date;
+    readonly claimedAt: Date;
+    readonly replaces: string;
     readonly idleExpiresAt: Date;
     readonly tokens: SealedTokens & { readonly refreshToken: SealedToken };
   }): Promise<boolean>;
@@ -367,9 +371,16 @@ export function createSessionStore(
       return count === 1;
     },
 
-    async applyRevalidation({ id, now, idleExpiresAt, tokens }) {
+    async applyRevalidation({ id, now, claimedAt, replaces, idleExpiresAt, tokens }) {
       const { count } = await client.authSession.updateMany({
-        where: { id, revokedAt: null, idleExpiresAt: { gt: now }, absoluteExpiresAt: { gt: now } },
+        where: {
+          id,
+          revokedAt: null,
+          idleExpiresAt: { gt: now },
+          absoluteExpiresAt: { gt: now },
+          lastSeenAt: claimedAt,
+          refreshTokenCiphertext: replaces,
+        },
         data: {
           idleExpiresAt,
           refreshTokenCiphertext: tokens.refreshToken.ciphertext,

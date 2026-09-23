@@ -98,9 +98,11 @@ afterAll(async () => {
   const output = logLines.join('');
   expect(output).toContain('"auth":"sign-in"');
   expect(output).not.toMatch(JWT);
+  expect(output).not.toMatch(/[?&](code|state|session_state)=/);
   expect(output).not.toContain('__Host-vertex');
-  for (const secret of journey.handledSecrets([TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET]))
-    expect(output).not.toContain(secret);
+  const handled = journey.handledSecrets([TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET]);
+  expect(handled.length).toBeGreaterThan(10);
+  for (const secret of handled) expect(output).not.toContain(secret);
 });
 
 /** Moves the API's clock past its re-validation interval. */

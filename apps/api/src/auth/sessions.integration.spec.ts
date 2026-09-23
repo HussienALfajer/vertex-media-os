@@ -40,7 +40,11 @@ describe('application sessions against real PostgreSQL', () => {
   let clock: Date;
   let sessions: SessionService;
   /** Every refresh the session service asked the identity provider for, in order. */
-  let refreshes: Array<{ refreshToken: string; idpSessionId: string | undefined }>;
+  let refreshes: Array<{
+    refreshToken: string;
+    idpSessionId: string | undefined;
+    idToken: string | undefined;
+  }>;
   /** The identity provider's answer to the n-th refresh (1-based). */
   let answer: (n: number) => Promise<OidcResult<RefreshedSession>>;
 
@@ -245,8 +249,9 @@ describe('application sessions against real PostgreSQL', () => {
       advance(MINUTE);
       expect(await authenticate(secret)).toMatchObject({ revalidation: 'refreshed' });
       expect(refreshes).toEqual([
-        { refreshToken: REFRESH_TOKEN, idpSessionId: 'kc-1' },
-        { refreshToken: `${REFRESH_TOKEN}-rotated-1`, idpSessionId: 'kc-1' },
+        // The session's current ID token goes along, so the refreshed one is bound to its subject.
+        { refreshToken: REFRESH_TOKEN, idpSessionId: 'kc-1', idToken: ID_TOKEN },
+        { refreshToken: `${REFRESH_TOKEN}-rotated-1`, idpSessionId: 'kc-1', idToken: ID_TOKEN },
       ]);
       const stored = await row(session.id);
       expect(stored.lastSeenAt).toEqual(clock);
@@ -402,7 +407,7 @@ describe('application sessions against real PostgreSQL', () => {
   it('expires at the idle deadline and never revives an expired session', async () => {
     const { secret, session } = await establish();
     advance(30 * MINUTE);
-    expect(await authenticate(secret)).toEqual({ outcome: 'expired' });
+    // The store refuses an expired row on its own, even with the current claim and token.
     const before = await row(session.id);
     const store = createSessionStore(database, { auditRecorderFor: createAuditRecorder });
     await expect(
@@ -412,6 +417,8 @@ describe('application sessions against real PostgreSQL', () => {
       store.applyRevalidation({
         id: session.id,
         now: clock,
+        claimedAt: before.lastSeenAt,
+        replaces: String(before.refreshTokenCiphertext),
         idleExpiresAt: new Date(clock.getTime() + 30 * MINUTE),
         tokens: { refreshToken: { ciphertext: 'sealed', keyVersion: 1 } },
       }),
@@ -421,8 +428,36 @@ describe('application sessions against real PostgreSQL', () => {
     expect(refreshes).toEqual([]);
   });
 
+  it('does not re-arm a session whose tokens were discarded between claim and apply', async () => {
+    const { session } = await establish();
+    const deadline = session.idleExpiresAt.getTime();
+    const stored = await row(session.id);
+    const store = createSessionStore(database, { auditRecorderFor: createAuditRecorder });
+    const claimedAt = new Date(deadline - 5);
+    await expect(
+      store.claimRevalidation({ id: session.id, now: claimedAt, seenBefore: claimedAt }),
+    ).resolves.toBe(true);
+    // Another request, with a slightly later clock, sees the session expired and discards its tokens.
+    await store.discardExpiredTokens({ id: session.id, now: new Date(deadline + 1) });
+    const discarded = await row(session.id);
+    expect(discarded).toMatchObject({ refreshTokenCiphertext: null, idTokenCiphertext: null });
+    // The refresher's apply, with the earlier clock, must not bring the tokens or a deadline back.
+    await expect(
+      store.applyRevalidation({
+        id: session.id,
+        now: new Date(deadline - 1),
+        claimedAt,
+        replaces: String(stored.refreshTokenCiphertext),
+        idleExpiresAt: new Date(claimedAt.getTime() + 30 * MINUTE),
+        tokens: { refreshToken: { ciphertext: 'sealed', keyVersion: 1 } },
+      }),
+    ).resolves.toBe(false);
+    expect(await row(session.id)).toEqual(discarded);
+  });
+
   it('revokes once, discards the tokens, and never accepts the session again', async () => {
     const { secret, session } = await establish();
+    const live = await row(session.id);
     const lookup = await authenticate(secret);
     if (lookup.outcome !== 'valid') throw new Error('valid session expected');
     expect(sessions.idTokenOf(lookup.session)).toBe(ID_TOKEN);
@@ -444,6 +479,8 @@ describe('application sessions against real PostgreSQL', () => {
       store.applyRevalidation({
         id: session.id,
         now: clock,
+        claimedAt: live.lastSeenAt,
+        replaces: String(live.refreshTokenCiphertext),
         idleExpiresAt: new Date(clock.getTime() + MINUTE),
         tokens: { refreshToken: { ciphertext: 'sealed', keyVersion: 1 } },
       }),

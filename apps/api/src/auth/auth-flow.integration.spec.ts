@@ -141,7 +141,11 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
     const handle = cookieOf(login, LOGIN_COOKIE);
     if (handle) secrets.push(handle);
     const authorization = new URL(String(login.headers['location'])).searchParams;
-    for (const name of ['state', 'nonce']) secrets.push(authorization.get(name) ?? '');
+    for (const name of ['state', 'nonce']) {
+      const value = authorization.get(name);
+      expect(value).toBeTruthy();
+      secrets.push(value ?? '');
+    }
     const callback = new URL(provider.authorize(String(login.headers['location']), options));
     const cookies = [`${LOGIN_COOKIE}=${handle}`];
     if (previousSession) cookies.push(`${SESSION_COOKIE}=${previousSession}`);
@@ -435,6 +439,9 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       const response = await sessionAfterInterval(session ?? '');
       expect(response.statusCode).toBe(200);
       expect(provider.refreshed).toBe(before + 1);
+      // The rotated tokens stay on the server (Done means 4).
+      const answered = `${response.body}${JSON.stringify(response.headers)}`;
+      for (const token of provider.issued) expect(answered).not.toContain(token);
       const { session: deadlines } = response.json() as { session: { idleExpiresAt: string } };
       expect(new Date(deadlines.idleExpiresAt).getTime()).toBeGreaterThan(
         Date.now() + clockOffset + 29 * 60_000,

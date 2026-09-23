@@ -189,20 +189,25 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
         seenBefore: new Date(at.getTime() - TOUCH_INTERVAL_MS),
       });
       if (!claimed) return valid('not-due');
+      const sealed = stored.refreshToken;
       const refreshToken =
-        stored.refreshToken === undefined
+        sealed === undefined
           ? undefined
-          : ciphers.refreshToken.decrypt(
-              stored.refreshToken.ciphertext,
-              stored.refreshToken.keyVersion,
-              stored.id,
-            );
+          : ciphers.refreshToken.decrypt(sealed.ciphertext, sealed.keyVersion, stored.id);
       // Without a usable refresh token the session cannot be re-validated, so it never slides.
-      if (refreshToken === undefined) return valid('unsupported');
+      if (sealed === undefined || refreshToken === undefined) return valid('unsupported');
 
       const refreshed = await provider.refreshSession({
         refreshToken,
         idpSessionId: stored.idpSessionId,
+        idToken:
+          stored.idToken === undefined
+            ? undefined
+            : ciphers.idToken.decrypt(
+                stored.idToken.ciphertext,
+                stored.idToken.keyVersion,
+                stored.id,
+              ),
       });
       if (!refreshed.ok) {
         // An outage keeps the current deadline without sliding it; the next interval retries.
@@ -221,6 +226,8 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       const applied = await store.applyRevalidation({
         id: stored.id,
         now: now(),
+        claimedAt: at,
+        replaces: sealed.ciphertext,
         idleExpiresAt,
         tokens: {
           refreshToken: {
@@ -230,7 +237,8 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
           idToken,
         },
       });
-      // The session was revoked or expired while Keycloak answered: it stays ended.
+      // The session was revoked, expired or had its tokens discarded while Keycloak answered: it
+      // stays ended.
       if (!applied) return { outcome: 'invalid' };
       return valid('refreshed', idleExpiresAt, idToken ?? stored.idToken);
     },
