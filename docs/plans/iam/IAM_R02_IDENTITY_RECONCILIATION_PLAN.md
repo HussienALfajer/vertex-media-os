@@ -128,7 +128,7 @@ Carried-forward items and their resolution:
 - [x] M4 `domains/iam-keycloak` adapter, unit tests, boundary lint and probes
 - [x] M5 Realm SMTP and reset flow; mail sink in Compose and harness; env setup; realm contract tests
 - [x] M6 Typed configuration, composition, real-Keycloak and composed integration tests
-- [ ] M7 README, ENGINEERING Section 6; `pnpm verify` and integration suites green
+- [x] M7 README, ENGINEERING Section 6; `pnpm verify` and integration suites green
 - [ ] M8 In-run review (three reviewers); findings resolved
 - [ ] M9 Master Plan ledger, hand-off, pull request, CI green
 

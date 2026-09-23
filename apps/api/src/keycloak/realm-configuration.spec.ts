@@ -41,9 +41,7 @@ describe('mail sink image', () => {
   it('is pinned by tag and digest, identically in Compose and the test harness', () => {
     expect(MAILPIT_IMAGE).toMatch(/^axllent\/mailpit:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
     const images = [...compose.matchAll(/^\s+image:\s*(\S+)\s*$/gm)].map((match) => match[1]);
-    expect(images.filter((image) => image?.startsWith('axllent/mailpit'))).toEqual([
-      MAILPIT_IMAGE,
-    ]);
+    expect(images.filter((image) => image?.startsWith('axllent/mailpit'))).toEqual([MAILPIT_IMAGE]);
   });
 });
 
