@@ -1,12 +1,14 @@
 import {
+  IamDepartmentState,
   IamIdentitySyncState,
   IamInvitationDeliveryState,
   IamPermissionSensitivity,
   IamPermissionState,
-  type IamRoleState,
+  IamRoleState,
   IamUserAccessState,
 } from '@vertex-os/database/iam';
 import type {
+  DepartmentState,
   IdentitySyncState,
   InvitationDeliveryState,
   PermissionSensitivity,
@@ -83,3 +85,31 @@ export const roleStateFromDatabase = {
   ACTIVE: 'ACTIVE',
   INACTIVE: 'INACTIVE',
 } satisfies Record<IamRoleState, RoleState>;
+
+export const roleStateToDatabase = {
+  ACTIVE: IamRoleState.ACTIVE,
+  INACTIVE: IamRoleState.INACTIVE,
+} satisfies Record<RoleState, IamRoleState>;
+
+export const departmentStateToDatabase = {
+  ACTIVE: IamDepartmentState.ACTIVE,
+  INACTIVE: IamDepartmentState.INACTIVE,
+} satisfies Record<DepartmentState, IamDepartmentState>;
+
+export const departmentStateFromDatabase = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} satisfies Record<IamDepartmentState, DepartmentState>;
+
+/**
+ * Maps an enum label read as text by a raw statement. An unknown label throws, so an unexpected
+ * row can never be read as a permissive state.
+ */
+export function knownLabel<T extends string>(
+  labels: Readonly<Record<string, T>>,
+  value: string,
+): T {
+  const mapped = Object.hasOwn(labels, value) ? labels[value] : undefined;
+  if (mapped === undefined) throw new Error('IAM persistence read an unknown state label.');
+  return mapped;
+}

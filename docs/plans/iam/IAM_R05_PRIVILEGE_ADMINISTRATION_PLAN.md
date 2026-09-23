@@ -53,7 +53,7 @@ Carried-forward items and their resolution:
 - **D-03 Surface.** Use cases are exported from `@vertex-os/iam/composition`. Request, result and view types (`DepartmentView`, `RoleView`, outcome unions) are exported from the root; they carry no repository, no user entity and no persistence type (spec Section 44, IAM-R04 D-12). The ports are exported from `@vertex-os/iam/persistence` for the adapter only.
 - **D-04 Transaction and isolation.** Each use case is one `IamTransactionRunner.run` (READ COMMITTED), in which the change and its Audit record commit together or not at all (invariant 16). Serialization comes from explicit row locks (D-05), not from SERIALIZABLE retries.
 - **D-05 Lock order.** Every mutation that locks more than one row locks in this order: (1) the role row, `FOR UPDATE`; (2) the user row, `FOR UPDATE`; (3) department rows or permission rows, `FOR SHARE`. A department or role mutation locks only its own row `FOR UPDATE`. No path takes a lock earlier in the order after a later one, so these operations cannot deadlock one another. Reference synchronization (advisory lock → permission rows → system role row) never waits on a user row, so it cannot form a cycle with them either.
-- **D-06 Last ACTIVE System Administrator.** Every assignment or removal of the `system-administrator` role locks the role's row `FOR UPDATE` first (D-05 step 1). A removal from an ACTIVE user then counts ACTIVE holders under that lock and refuses with `last-system-admin` when the count is one. The lock serializes every count-reducing operation and the future bootstrap (spec Sections 20, 21.4); per-user versions are not relied on. IAM-MP-10's suspension, disablement, termination and bootstrap take the same lock through `RoleStore.lockSystemAdministratorRole()`.
+- **D-06 Last ACTIVE System Administrator.** Every assignment or removal of the `system-administrator` role locks the role's row `FOR UPDATE` first (D-05 step 1). A removal from an ACTIVE user then counts ACTIVE holders under that lock and refuses with `last-system-admin` when the count is one. The lock serializes every count-reducing operation and the future bootstrap (spec Sections 20, 21.4); per-user versions are not relied on. IAM-MP-10's suspension, disablement, termination and bootstrap must take the same row lock (it adds the lookup by the reserved code it needs).
 - **D-07 The target user's row is locked** (D-05 step 2) by every membership and assignment mutation before its state is read. This orders the removal against a concurrent first activation (INVITED → ACTIVE), so a removal can never read INVITED and commit after the user became the only ACTIVE administrator, and it serializes all membership and assignment changes of one user, so pre-checks for duplicates and primaries stay true until commit.
 - **D-08 Department state checks lock the department row `FOR SHARE`.** Adding a membership or making one primary locks the department `FOR SHARE`, which conflicts with a deactivation's `FOR UPDATE`; after the wait, READ COMMITTED returns the committed state, so a membership is never added to a department that a concurrent deactivation already made INACTIVE. (A foreign-key insert only takes `FOR KEY SHARE`, which does not conflict with an ordinary update; the explicit lock is required.)
 - **D-09 Primary membership.** At most one primary per user (spec Section 22). Adding a membership with `isPrimary`, or setting `isPrimary` on an existing one, is the caller's explicit choice: the current primary, if any, is demoted first and then the new one is set, so the immediate partial unique index never sees two primaries (IAM-01 Section 23). Setting `isPrimary = false` on the primary leaves the user without one. Removing the primary membership leaves the user without a primary unless the request names a replacement; the replacement must be another existing membership of the user in an ACTIVE department. The backend never picks a replacement itself (`primary-conflict` when a replacement is named for a non-primary removal or is not a membership of the user).
@@ -104,7 +104,7 @@ A version check precedes the `unchanged` decision, so a stale version is always 
 ### 5.3 Ports
 
 - `OrganizationStore`: `createDepartment` (returns `code-taken` on conflict), `lockDepartment(id, 'update' | 'share')`, `writeDepartment(id, expectedVersion, fields)` (conditional on the version; raises it by one), `lockUser(id)` → access state, `readMemberships(userId)` with each department's state, `insertMembership`, `setMembershipPrimary`, `deleteMembership`.
-- `RoleStore`: `createRole`, `lockRole(id)` (`FOR UPDATE`), `lockSystemAdministratorRole()`, `writeRole(id, expectedVersion, fields)`, `readRolePermissionCodes(roleId)`, `lockPermissions(codes)` (`FOR SHARE`, returns code and state), `replaceRolePermissions(roleId, add, remove)`, `lockUser(id)`, `hasAssignment`, `insertAssignment`, `deleteAssignment`, `countActiveSystemAdministrators()`.
+- `RoleStore`: `createRole`, `lockRole(id)` (`FOR UPDATE`; for the system role this is the D-06 lock), `writeRole(id, expectedVersion, fields)`, `readRolePermissionCodes(roleId)`, `lockPermissions(codes)` (`FOR SHARE`, returns code and state), `replaceRolePermissions(roleId, add, remove)`, `lockUser(id)`, `hasAssignment`, `insertAssignment`, `deleteAssignment`, `countActiveSystemAdministrators()`.
 
 Writes that the rules have already decided fail loudly (throw) when they do not affect exactly the expected rows; that can only mean a broken lock assumption.
 
@@ -149,10 +149,10 @@ The domain decides, the store executes: `decideMembershipAddition`, `decidePrima
 ## 9. Checklist
 
 - [x] M1 Plan committed
-- [ ] M2 Domain rules, views and outcome types; unit tests
-- [ ] M3 Ports and `IamTransactionScope`; PostgreSQL stores; runner binding
-- [ ] M4 Use cases (departments, memberships, roles, mappings, assignments); composition and root exports
-- [ ] M5 `createIamAdministration`; integration tests incl. concurrency and authorization-context effects
+- [x] M2 Domain rules, views and outcome types; unit tests
+- [x] M3 Ports and `IamTransactionScope`; PostgreSQL stores; runner binding
+- [x] M4 Use cases (departments, memberships, roles, mappings, assignments); composition and root exports
+- [x] M5 `createIamAdministration`; integration tests incl. concurrency and authorization-context effects
 - [ ] M6 `pnpm verify` and integration suites green
 - [ ] M7 In-run review (three reviewers); findings resolved
 - [ ] M8 Master Plan ledger, hand-off, pull request, CI green

@@ -2,7 +2,7 @@ export type { ApplicationUser, NewApplicationUser } from './domain/application-u
 export type { DepartmentId, RoleId, UserId } from './domain/identifiers.js';
 export type { NormalizedEmail } from './domain/email.js';
 export type { Description, DisplayName, EntityName } from './domain/text.js';
-export type { ModuleCode, PermissionCode, RoleCode } from './domain/codes.js';
+export type { DepartmentCode, ModuleCode, PermissionCode, RoleCode } from './domain/codes.js';
 export type {
   DepartmentState,
   UserAccessState,
@@ -40,3 +40,8 @@ export type {
 } from './application/ports/user-identity-store.js';
 export type { AuthorizationFacts } from './domain/authorization-context.js';
 export type { AuthorizationReader } from './application/ports/authorization-reader.js';
+export type { OrganizationStore } from './application/ports/organization-store.js';
+export type { RoleStore } from './application/ports/role-store.js';
+export type { DepartmentView, MembershipFact } from './domain/organization.js';
+export type { RoleView } from './domain/roles.js';
+export type { FieldChanges } from './domain/versioned-change.js';

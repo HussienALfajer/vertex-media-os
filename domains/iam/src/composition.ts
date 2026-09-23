@@ -32,3 +32,23 @@ export {
   resolveAuthorizationContext,
   type AuthorizationDependencies,
 } from './application/authorization.js';
+export {
+  activateDepartment,
+  addMembership,
+  createDepartment,
+  deactivateDepartment,
+  removeMembership,
+  setPrimaryMembership,
+  updateDepartment,
+  type OrganizationAdministrationDependencies,
+} from './application/administer-organization.js';
+export {
+  activateRole,
+  assignRole,
+  createRole,
+  deactivateRole,
+  removeRole,
+  replaceRolePermissions,
+  updateRole,
+  type RoleAdministrationDependencies,
+} from './application/administer-roles.js';

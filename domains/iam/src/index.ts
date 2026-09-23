@@ -29,4 +29,31 @@ export type {
   AuthorizationDenial,
   ResolveAuthorizationContextResult,
 } from './application/authorization.js';
-export type { DepartmentId, UserId } from './domain/identifiers.js';
+export type { DepartmentId, RoleId, UserId } from './domain/identifiers.js';
+export type { DepartmentView } from './domain/organization.js';
+export type { RoleView } from './domain/roles.js';
+export type {
+  AddMembershipRequest,
+  AddMembershipResult,
+  CreateDepartmentRequest,
+  CreateDepartmentResult,
+  DepartmentChangeResult,
+  DepartmentStateRequest,
+  RemoveMembershipRequest,
+  RemoveMembershipResult,
+  SetPrimaryMembershipRequest,
+  SetPrimaryMembershipResult,
+  UpdateDepartmentRequest,
+} from './application/administer-organization.js';
+export type {
+  AssignRoleResult,
+  CreateRoleRequest,
+  CreateRoleResult,
+  RemoveRoleResult,
+  ReplaceRolePermissionsRequest,
+  ReplaceRolePermissionsResult,
+  RoleAssignmentRequest,
+  RoleChangeResult,
+  RoleStateRequest,
+  UpdateRoleRequest,
+} from './application/administer-roles.js';
