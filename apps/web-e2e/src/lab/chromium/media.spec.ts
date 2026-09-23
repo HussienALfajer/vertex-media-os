@@ -150,8 +150,21 @@ test.describe('touch geometry (§14)', () => {
       expect(undersized, section).toEqual([]);
     }
     await page.getByRole('button', { name: 'إجراءات Omar Farouk (demo)' }).click();
-    for (const item of await page.getByRole('menuitem').all())
-      expect((await item.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    // Measure the open menu, not its entrance. While the entry transition (§18) runs, the
+    // popup's fractional translate puts every item edge between layout units, and Chromium
+    // reports those edges as float32 values rounded independently, so an exact 44px item can read
+    // one float step off (43.99997). Settled, the edges are exact layout units and it reads 44.
+    await expect(menu).not.toHaveAttribute('data-starting-style');
+    await menu.evaluate((popup) =>
+      Promise.all(popup.getAnimations({ subtree: true }).map((running) => running.finished)).then(
+        () => undefined,
+      ),
+    );
+    const items = await menu.getByRole('menuitem').all();
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) expect((await item.boundingBox())?.height).toBeGreaterThanOrEqual(44);
     await context.close();
   });
 
