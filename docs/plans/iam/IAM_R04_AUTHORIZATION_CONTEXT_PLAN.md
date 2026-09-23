@@ -105,8 +105,8 @@ No owner decisions: nothing here changes an item under "Changes Requiring Explic
 - [x] M2 Lint residuals and adapter-import rules (CP1-03, CP1-04) with probes
 - [x] M3 IAM root narrowed; composition entry; import sites and lint allowances (CP1-05)
 - [x] M4 Domain context, rules, reader port, capability, denial record; unit tests
-- [ ] M5 PostgreSQL reader; integration tests
-- [ ] M6 Access guard, `@Public()`, `@RequirePermission()`, CSRF in `requireSession`, `requireAuthorization`, bound capability; API and integration tests
+- [x] M5 PostgreSQL reader; integration tests
+- [x] M6 Access guard, `@Public()`, `@RequirePermission()`, CSRF in `requireSession`, `requireAuthorization`, bound capability; API and integration tests
 - [ ] M7 Documentation (ENGINEERING Section 6, README); `pnpm verify` and integration suites green
 - [ ] M8 In-run review (three reviewers); findings resolved
 - [ ] M9 Master Plan ledger, hand-off, pull request, CI green

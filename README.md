@@ -11,6 +11,9 @@ tables, the permission catalog and the protected System Administrator role exist
 with the Vertex realm (`infra/keycloak`) and a local mail sink run next to PostgreSQL. The API signs
 users in through Keycloak as a backend-for-frontend (`apps/api/src/auth`): OIDC with PKCE, an
 opaque server-side session in PostgreSQL, CSRF protection, logout and Keycloak back-channel logout.
+Every API route requires that session unless it is one of the five public routes (health, login,
+callback, back-channel logout), and a route can require an IAM permission code, checked against the
+user's current roles, permissions and departments on every request.
 IAM identity provisioning (reconciling users with Keycloak and sending invitations, in
 `domains/iam`, through the Keycloak Admin adapter `domains/iam-keycloak`) exists as application
 capabilities; no endpoint or command calls it yet.
@@ -147,7 +150,7 @@ data.
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V87, C1–C11)                    |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V106, C1–C14)                   |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
 | `pnpm build`            | Production builds of every project with a build target                            |
@@ -222,15 +225,16 @@ sends the `__Host-vertex-*` cookies to the local Keycloak, which ignores them.
 
 ## Current limitations
 
-- **No authorization yet.** Browser authentication works (see Sign-in), but only its own endpoints
-  use the session. The other endpoints are the public technical health endpoints; protected-by-
-  default routing and the authorization context arrive with IAM-MP-07.
+- **No IAM endpoints yet.** Every route except health, login, callback and back-channel logout
+  requires a session (`401 AUTHENTICATION_REQUIRED`), and the authorization context (effective
+  permission codes and active departments) is enforced by `@RequirePermission()` with
+  `403 AUTHORIZATION_DENIED` and an Audit record. No production route requires a permission yet;
+  `GET /api/iam/me` and the administration endpoints arrive with IAM-MP-11.
 - IAM tables, the IAM permission catalog and the protected System Administrator role exist
   (`pnpm iam:sync-reference`), and MOD-AUDIT appends immutable records (sign-in, activation and
   session events among them). The HTTP API touches IAM only for sign-in: it reads users by identity
   and records first activation and sign-in refusals.
-  There is no seed user, no user holding any role, no authorization, no Audit read path and no
-  IAM endpoint. Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
+  There is no seed user, no user holding any role, no Audit read path and no IAM endpoint. Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
 - Identity provisioning (creating, linking, enabling and disabling Keycloak identities and sending
   invitations) is not reachable from the API yet: no endpoint or command creates users.
