@@ -5,11 +5,11 @@ import type { AuthConfig } from '../config/auth-config.js';
 import { DATABASE_CLIENT, DatabaseModule } from '../database/database.module.js';
 import { AuthController } from './auth.controller.js';
 import { createAuthRuntime, type AuthRuntimeOptions } from './auth-runtime.js';
-import { AUTH_RUNTIME, CsrfGuard } from './csrf.guard.js';
+import { AccessGuard, AUTH_RUNTIME } from './access.guard.js';
 
 /**
- * Browser authentication (IAM-R03): the BFF endpoints and the global CSRF guard, composed over the
- * process's database client. Platform infrastructure, not an IAM domain module (spec Section 6.2).
+ * Browser authentication (IAM-R03): the BFF endpoints and the global access guard (IAM-R04),
+ * composed over the process's database client. Platform infrastructure, not an IAM domain module (spec Section 6.2).
  */
 @Module({})
 export class AuthModule {
@@ -24,7 +24,7 @@ export class AuthModule {
           inject: [DATABASE_CLIENT],
           useFactory: (database: DatabaseClient) => createAuthRuntime(config, database, options),
         },
-        { provide: APP_GUARD, useClass: CsrfGuard },
+        { provide: APP_GUARD, useClass: AccessGuard },
       ],
     };
   }
