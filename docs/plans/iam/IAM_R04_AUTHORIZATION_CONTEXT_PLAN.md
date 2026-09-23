@@ -1,6 +1,6 @@
 # IAM-R04 — Protected-by-Default API and Authorization Context
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** IAM-MP-07  
 **Risk tier:** A (reviewers: security; data and concurrency; architecture and boundaries)  
 **Branch:** `iam/r04-authorization-context`  
@@ -109,8 +109,27 @@ No owner decisions: nothing here changes an item under "Changes Requiring Explic
 - [x] M6 Access guard, `@Public()`, `@RequirePermission()`, CSRF in `requireSession`, `requireAuthorization`, bound capability; API and integration tests
 - [x] M7 Documentation (ENGINEERING Section 6, README); `pnpm verify` and integration suites green
 - [x] M8 In-run review (three reviewers); findings resolved
-- [ ] M9 Master Plan ledger, hand-off, pull request, CI green
+- [x] M9 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
 
-Written at the end of the run.
+**In-run review.** Three fresh-context reviewers checked `main...HEAD`: security; data and concurrency; architecture and boundaries. None found a blocking issue. The implementer checked the evidence of each finding before accepting it; the architecture reviewer re-checked the fixes of its findings.
+
+- **Fixed in the run:**
+  - AB-1 (major): `requireAuthorization` needed the whole authentication runtime, which no other module could inject and which carries secrets. The capability is now `CurrentActor`, the only export of the global `AuthModule` (D-10); the probe controller reaches it through ordinary injection from its own module.
+  - AB-2, S-2 (minor): the provisioning result types still carried `ApplicationUser` through the root; they moved to the composition entry (D-12).
+  - S-1 (major): two `@RequirePermission` decorators on one handler kept only the top one; a second declaration now fails when it is applied (D-04).
+  - AB-3 (minor): the template form of `process` in destructuring passed lint; rejected, probes V107–V109.
+  - AB-4 (info): ENGINEERING Section 6 wording on how the authentication area reaches IAM.
+  - DC-01 (minor): the single statement of the reader is pinned by a test.
+- **Recorded, not changed:**
+  - DC-02 (minor): the inactive-at-context-time branch (D-09) is proven with a fake runtime only; it shares `refuseInactiveUser` with the session check, which the PostgreSQL suite exercises. Accepted.
+  - DC-03, S-4 (info): denial evidence has no volume limit (D-15); carried to IAM-MP-15.
+  - S-3 (info): without a session, an unknown path answers `404` and a protected path `401`, so route existence is observable; the specification does not ask to hide it.
+  - AB-5 (info, pre-existing): inside `apps/api`, files outside `src/auth` may import adapters, and `src/auth` files may import the composition factories in `src/iam`; neither hands a caller a reader or repository.
+
+**Carried forward** (attached to the Master Plan stages):
+
+- **IAM-MP-09:** use the access guard, `@RequirePermission` and `CURRENT_ACTOR` rather than new checks; new use cases that take ports go behind `@vertex-os/iam/composition`; `DEPRECATED`/`RETIRED` mappings of custom roles are never effective (D-06).
+- **IAM-MP-11:** `GET /api/iam/me` (spec Section 25.2) on top of `CurrentActor` (D-10); unchanged there.
+- **IAM-MP-15:** volume of `iam.authorization.denied` records, with the rate-limiting item.

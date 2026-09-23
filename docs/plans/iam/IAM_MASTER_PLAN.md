@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R04` (IAM-MP-07) with `/stage IAM-R04`; `IAM-CP1` is accepted (owner decision, `audits/IAM-CP1.md` Section 5.7)  
+**Next step:** run `IAM-R05` (IAM-MP-08, IAM-MP-09) with `/stage IAM-R05`, after the `IAM-R04` pull request is merged  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -984,7 +984,7 @@ Deliver the complete first-party browser authentication lifecycle against the re
 
 ## IAM-MP-07 — Protected-by-Default API & Authorization Context
 
-**Status:** PLANNED  
+**Status:** COMPLETE (run `IAM-R04`, plan `IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`)  
 **Parent specification area:** IAM-4, Sections 16–17, 24  
 **Depends on:** IAM-MP-06 COMPLETE
 
@@ -1048,7 +1048,7 @@ Make authenticated protection the default API posture and expose the narrow, cur
 
 ## IAM-MP-08 — Department & Membership Administration Core
 
-**Status:** PLANNED  
+**Status:** READY (run `IAM-R05`)  
 **Parent specification area:** IAM-5, Sections 22, 28, 30  
 **Depends on:** IAM-MP-07 COMPLETE
 
@@ -1094,7 +1094,7 @@ Implement authoritative application-layer behavior for departments and organizat
 
 ## IAM-MP-09 — Role/Permission Administration & Last-Admin Protection
 
-**Status:** PLANNED  
+**Status:** READY (run `IAM-R05`)  
 **Parent specification area:** IAM-5, Sections 18–20, 23, 30  
 **Depends on:** IAM-MP-08 COMPLETE
 
@@ -1122,7 +1122,12 @@ Implement application-layer role and permission administration with concurrency-
 
 ### Carried forward from the IAM-MP-02 plan (open items of `IAM_02_REFERENCE_DATA_AND_AUDIT_FOUNDATION_PLAN.md` Section 40)
 
-- **`DEPRECATED`/`RETIRED` mappings:** whether custom roles may keep or receive mappings to `DEPRECATED` or `RETIRED` codes.
+- **`DEPRECATED`/`RETIRED` mappings:** whether custom roles may keep or receive mappings to `DEPRECATED` or `RETIRED` codes. Such mappings are never effective (IAM-R04 D-06), so the question is administrative clarity, not access.
+
+### Carried forward from run IAM-R04 (`IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`)
+
+- **Use the authorization boundary, do not duplicate it.** Protected routes need no annotation; a permission requirement is `@RequirePermission(code)` (one code per handler, enforced at load), and a handler that needs the actor injects `CURRENT_ACTOR` (`CurrentActor.require`). Resource and state rules stay in the IAM application services. Every new permission code needs a test proving that a user without it is denied (spec Section 18).
+- **Composition entry.** New use cases that take ports go into `@vertex-os/iam/composition` and are bound in `apps/api/src/iam`; the public root stays free of repositories, dependency types and `ApplicationUser` (IAM-R04 D-12).
 - **Custom-role version semantics** for mapping replacement, aligned with interpretation I-6 or explicitly different.
 - **System-role mappings stay unwritable** by administrative operations.
 
@@ -1264,6 +1269,10 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 ### Carried forward from the `IAM-CP1` audit (`audits/IAM-CP1.md`)
 
 - **CP1-18:** `POST /api/auth/backchannel-logout` declares form consumption but has no `requestBody` schema (`logout_token`) and no 400 body in the generated OpenAPI.
+
+### Carried forward from run IAM-R04 (`IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`)
+
+- **`GET /api/iam/me`** (spec Section 25.2) is this stage's: build it on `CurrentActor` (`CURRENT_ACTOR`), which already yields the current actor's authorization context (R04 D-10). Department names and profile fields for the UI are this stage's contract decision.
 
 ### Exit criteria
 
@@ -1494,6 +1503,10 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 - **CP1-25:** no test shows that refresh or ID token material never reaches `audit_record.change` or `reason`.
 - **CP1-27:** SECURITY Section 11 says identity-provider tokens MUST be discarded when the session ends; tokens of an expired session are discarded when the row is next seen or swept. Reconcile the canonical text or the code (with CP1-08).
 
+### Carried forward from run IAM-R04 (`IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`)
+
+- **Denial evidence volume (R04 D-15; review DC-03, S-4):** every permission denial of an authenticated user appends one `iam.authorization.denied` Audit record in its own transaction, without a limit. Bound it together with the rate-limiting item above.
+
 ### Exit criteria
 
 - the IAM specification Definition of Done is satisfied or every remaining item is explicitly classified as a blocker;
@@ -1638,6 +1651,8 @@ Fix run `IAM-R03F` (plan `IAM_R03F_SESSION_REVALIDATION_PLAN.md`) resolved CP1-0
 
 The `IAM-CP1` re-check 1 of `cd82811` (record `audits/IAM-CP1.md` Section 5) returned `IAM-CP1 FIXES REQUIRED`. CP1-01 is resolved, and so are CP1-02, CP1-10 and CP1-16; CP1-12 is resolved in the auth suites, and its remainder in the provisioning suite is CP1-26. The fix run introduced one blocking finding, CP1-21: review fix S-01 classes an identity-provider timeout as `rejected`, so a hung Keycloak revokes every session that comes due (reason `PROVIDER_SESSION_ENDED`) and a timed-out sign-in answers `AUTH_LOGIN_FAILED`. This contradicts R03F D-05 and Done means 3. By owner decision, CP1-21 was fixed in a follow-up pull request instead of a separate fix run and re-check (record Section 5.7): openid-client's `OAUTH_TIMEOUT` and `OAUTH_ABORT` are `unavailable` again, proven by unit tests that fail without the fix and by a probe against a provider that never answers. `IAM-CP1` is accepted on that decision. Its non-blocking findings are attached to IAM-MP-07, IAM-MP-10, IAM-MP-11, IAM-MP-12 and IAM-MP-15 ("Carried forward from the `IAM-CP1` audit"); CP1-22 to CP1-25, first assigned to a fix run, go to IAM-MP-15.
 
+Run `IAM-R04` delivered IAM-MP-07 (plan `IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`). It is `COMPLETE` once its pull request is merged. Every API route requires an application session unless its handler is one of the five `@Public()` routes of spec Section 24, pinned by a route inventory; CSRF is verified wherever a session is used on an unsafe method; `@RequirePermission()` checks the authorization context (ACTIVE user, ACTIVE departments with the primary, effective permission codes), read in one statement from committed state on every request that needs it and memoized per request only, and records denials as Audit evidence (R04 D-01 to D-16). `DEPRECATED` permissions are not effective (D-06). It closed CP1-03, CP1-04 and CP1-05: the IAM root exposes no repository, dependency type or user entity, and use cases that take ports sit behind the private `@vertex-os/iam/composition` entry (D-12). `GET /api/iam/me` stays with IAM-MP-11 (D-10). Its carried-forward items are attached to IAM-MP-09, IAM-MP-11 and IAM-MP-15.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
@@ -1665,9 +1680,9 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-06 OIDC / Activation / CSRF / Logout | R03 | COMPLETE | R02 merged (satisfied) |
 | `IAM-R03F` Fix run for the `IAM-CP1` blocking finding | R03F | COMPLETE | `IAM-CP1` record merged (satisfied) |
 | `IAM-CP1` Deep audit: authentication | — | COMPLETE | R03 merged (audited: FIXES REQUIRED); R03F merged (re-check 1: FIXES REQUIRED; CP1-21 fixed in a follow-up pull request, accepted by owner decision) |
-| IAM-MP-07 Default Protection & Authorization Context | R04 | READY | `IAM-CP1 ACCEPTED` (satisfied) |
-| IAM-MP-08 Department & Membership Core | R05 | PLANNED | R04 merged |
-| IAM-MP-09 Role/Permission & Last-Admin Core | R05 | PLANNED | R04 merged |
+| IAM-MP-07 Default Protection & Authorization Context | R04 | COMPLETE | `IAM-CP1 ACCEPTED` (satisfied) |
+| IAM-MP-08 Department & Membership Core | R05 | READY | R04 merged |
+| IAM-MP-09 Role/Permission & Last-Admin Core | R05 | READY | R04 merged |
 | IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | PLANNED | R05 merged |
 | `IAM-CP2` Deep audit: authorization and administration core | — | PLANNED | R06 merged |
 | IAM-MP-11 HTTP Administration Surface | R07 | PLANNED | `IAM-CP2 ACCEPTED` |
@@ -1938,15 +1953,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-06 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, and IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-07 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, and IAM-MP-07 through run `IAM-R04`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-The `IAM-CP1` deep audit returned `IAM-CP1 FIXES REQUIRED` (`docs/plans/iam/audits/IAM-CP1.md`), and fix run `IAM-R03F` resolved its blocking finding CP1-01. Re-check 1 (record Section 5) found the new blocking finding CP1-21, which was fixed in a follow-up pull request by owner decision, and `IAM-CP1` is accepted (record Section 5.7). The next step is run `IAM-R04` (IAM-MP-07). Start it in a new Claude Code session after the follow-up pull request is merged:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). The next step is run `IAM-R05` (IAM-MP-08 and IAM-MP-09). Start it in a new Claude Code session after the `IAM-R04` pull request is merged:
 
 ```text
-/stage IAM-R04
+/stage IAM-R05
 ```
 
-Its planner reads the IAM-MP-07 section, including the items carried forward from the `IAM-CP1` audit.
+Its planner reads the IAM-MP-08 and IAM-MP-09 sections, including the items carried forward from run `IAM-R04`.
 
 Do **not** plan later runs in detail now.
 
