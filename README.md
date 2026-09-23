@@ -147,7 +147,7 @@ data.
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V62, C1–C8)                     |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V87, C1–C11)                    |
 | `pnpm typecheck`        | TypeScript for every project                                                      |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
 | `pnpm build`            | Production builds of every project with a build target                            |
@@ -201,12 +201,17 @@ docs/             Canonical documentation and execution plans
 The browser signs in at `/api/auth/login` and comes back to `/` with the `__Host-vertex-session`
 cookie; it never receives a Keycloak token. `GET /api/auth/session` returns the signed-in user,
 `GET /api/auth/csrf` the token every unsafe request must send as `X-CSRF-Token`, and
-`POST /api/auth/logout` ends the session and returns the Keycloak end-session URL to open next.
+`POST /api/auth/logout` ends the session and the Keycloak session, and returns where the browser
+goes next: the post-logout URI, or Keycloak's end-session URL (without any token) when the API could
+not end the Keycloak session itself.
 A failed sign-in returns to `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED` or
 `IDENTITY_PROVIDER_UNAVAILABLE`. Only a Keycloak identity bound to an active or invited Vertex user
 may sign in; since nothing creates users yet (see below), a local sign-in ends in
 `AUTH_ACCESS_DENIED` until one exists. Sessions expire after 30 minutes idle and 10 hours in total
-(`AUTH_SESSION_*` in `.env`).
+(`AUTH_SESSION_*` in `.env`). While a session is used, the API refreshes its Keycloak session at
+most once a minute and extends the idle deadline only when Keycloak agrees; when Keycloak refuses
+(the Keycloak session ended, or the identity was disabled) the session is revoked, and while
+Keycloak is unreachable the session keeps its current deadline without extending it.
 
 Keycloak calls `KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL` (`host.docker.internal:3000`) from its
 container when a user's Keycloak session ends. Docker Desktop forwards that name to the host's

@@ -227,8 +227,9 @@ export class AuthController {
   }
 
   /**
-   * Ends the session (the CSRF guard has checked the session and its token) and returns the
-   * identity provider's end-session URL, so the Keycloak session ends too (spec Section 32).
+   * Ends the session (the CSRF guard has checked the session and its token) and the Keycloak
+   * session (spec Section 32; IAM-R03 D-17), and returns where the browser goes next: the
+   * post-logout URI, or the token-free end-session URL when the API could not end it itself.
    */
   @Post('logout')
   @HttpCode(200)

@@ -662,17 +662,41 @@ describe('brute-force protection and events', () => {
       keycloak.admin(`/attack-detection/brute-force/users/${userId}`),
     );
 
+  /**
+   * The brute-force status once Keycloak has recorded `failures` failures and, when given, reached
+   * `settled`. Keycloak answers the login form first and records the failure afterwards on its
+   * `bruteforce` executor (`DefaultBruteForceProtector.processLogin`), so an immediate read can see
+   * the previous state (IAM-R03F D-12). Gives up after 10 s and returns the last status read.
+   */
+  async function lockoutAfter(
+    userId: string,
+    failures: number,
+    settled: (status: { disabled: boolean; numFailures: number }) => boolean = () => true,
+  ) {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const status = await lockout(userId);
+      if ((status.numFailures >= failures && settled(status)) || Date.now() > deadline) {
+        return status;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
   it('locks an identity after the fifth spaced failure, not before, and records the failures', async () => {
     const email = uniqueEmail('brute');
     const user = await provisionUser(email);
     await setTestPassword(user.id);
 
     // Failures spaced beyond the quick-login window (1000 ms) count only towards failureFactor.
+    // Each is recorded before the next wait starts, so Keycloak's own spacing matches the test's.
     const beyondQuickLoginWindow = 1_200;
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, beyondQuickLoginWindow));
       expect((await submitPassword(email, `wrong password attempt ${attempt}`)).status).toBe(200);
-      const status = await lockout(user.id);
+      const status = await lockoutAfter(user.id, attempt, (current) =>
+        attempt === 5 ? current.disabled : true,
+      );
       expect(status.numFailures).toBe(attempt);
       expect(status.disabled).toBe(attempt === 5);
     }
@@ -695,7 +719,7 @@ describe('brute-force protection and events', () => {
 
     await submitPassword(email, 'wrong password, first');
     await submitPassword(email, 'wrong password, second');
-    const status = await lockout(user.id);
+    const status = await lockoutAfter(user.id, 2, (current) => current.disabled);
     expect(status.numFailures).toBe(2);
     expect(status.disabled).toBe(true);
   });
@@ -756,9 +780,11 @@ describe('brute-force protection and events', () => {
 describe('sessions, tokens and realm entry points', () => {
   it('keeps the SSO session within the application-session limits and rotates refresh tokens', async () => {
     const realm = await json<Record<string, number | boolean>>(keycloak.admin(''));
-    expect(Number(realm['ssoSessionIdleTimeout'])).toBeLessThanOrEqual(3600);
-    expect(Number(realm['ssoSessionMaxLifespan'])).toBeLessThanOrEqual(86_400);
     expect(realm).toMatchObject({
+      // Pinned to the application-session defaults (IAM-R03 D-05; IAM-CP1 CP1-10): a longer SSO
+      // idle would outlive the application's idle limit.
+      ssoSessionIdleTimeout: 1800,
+      ssoSessionMaxLifespan: 36_000,
       accessTokenLifespan: 300,
       actionTokenGeneratedByAdminLifespan: 43_200,
       actionTokenGeneratedByUserLifespan: 300,
