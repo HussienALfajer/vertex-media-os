@@ -3,6 +3,9 @@ docs/
 AGENTS.md
 CLAUDE.md
 
+# Claude Code project configuration (hand-maintained) and the desktop app's sibling worktrees
+.claude/
+
 # Dependencies, generated and build output
 node_modules/
 pnpm-lock.yaml
