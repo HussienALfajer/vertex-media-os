@@ -46,8 +46,8 @@ export class FakeOidcProvider {
   offline = false;
   /** ID tokens presented to the end-session endpoint by the relying party's server. */
   readonly endedSessions: string[] = [];
-  /** Answers the next end-session request with this HTTP status. */
-  logoutStatus: number | undefined;
+  /** Answers the next end-session request with this HTTP status, or fails it as a network error. */
+  logoutStatus: number | 'network' | undefined;
   private readonly codes = new Map<string, IssuedCode>();
 
   private constructor(
@@ -157,7 +157,8 @@ export class FakeOidcProvider {
     if (this.logoutStatus !== undefined) {
       const status = this.logoutStatus;
       this.logoutStatus = undefined;
-      return new Response('logout failure', { status });
+      if (status === 'network') throw new TypeError('fetch failed');
+      return new Response('logout page', { status });
     }
     const body = new URLSearchParams(String(init.body ?? ''));
     this.endedSessions.push(body.get('id_token_hint') ?? '');

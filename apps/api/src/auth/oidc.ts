@@ -271,8 +271,16 @@ export function createOidcClient(
             signal: AbortSignal.timeout(TIMEOUT_SECONDS * 1000),
           });
           await response.body?.cancel();
-          if (response.status < 400)
+          // Keycloak confirms by redirecting to the registered post-logout URI; any other answer
+          // (an error or a page for the user) leaves the session to the browser fallback.
+          const location = response.headers.get('location');
+          if (
+            (response.status === 302 || response.status === 303) &&
+            location !== null &&
+            location.startsWith(config.postLogoutRedirectUri)
+          ) {
             return { ended: true, browserUrl: config.postLogoutRedirectUri };
+          }
         } catch {
           // Fall through: the browser ends the Keycloak session itself, with confirmation.
         }

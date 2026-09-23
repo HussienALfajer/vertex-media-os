@@ -147,11 +147,14 @@ describe('OIDC client against a fake provider', () => {
   });
 
   it('falls back to a token-free end-session URL when the provider refuses or there is no hint', async () => {
-    provider.logoutStatus = 400;
-    for (const result of [
-      await oidc.endProviderSession('id-token-hint'),
-      await oidc.endProviderSession(undefined),
-    ]) {
+    const results = [];
+    for (const status of [400, 200, 'network'] as const) {
+      provider.logoutStatus = status;
+      results.push(await oidc.endProviderSession('id-token-hint'));
+    }
+    results.push(await oidc.endProviderSession(undefined));
+    expect(provider.endedSessions).toEqual([]);
+    for (const result of results) {
       expect(result.ended).toBe(false);
       const url = new URL(result.browserUrl);
       expect(`${url.origin}${url.pathname}`).toBe(`${FAKE_ISSUER}/protocol/openid-connect/logout`);

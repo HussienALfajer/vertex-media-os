@@ -1,6 +1,6 @@
 # IAM-R03 — Application Sessions, OIDC Login, First Activation, CSRF & Logout
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** IAM-MP-05, IAM-MP-06  
 **Risk tier:** A (reviewers: security; data and concurrency; architecture and boundaries)  
 **Branch:** `iam/r03-sessions-and-oidc`  
@@ -138,9 +138,27 @@ No owner decision is needed: every item follows the specification or the accepte
 - [x] M5 OIDC adapter, endpoints, guard, form parser, logging fixes (A2-01, request URL); API tests
 - [x] M6 Real Keycloak journeys: login, activation, denials, protocol rejections, logout, back-channel, recovery
 - [x] M7 Boundaries and probes, env setup, README, OpenAPI; `pnpm verify` and integration suites green
-- [ ] M8 In-run review (three reviewers); findings resolved
-- [ ] M9 Master Plan ledger, hand-off, pull request, CI green
+- [x] M8 In-run review (three reviewers); findings resolved
+- [x] M9 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
 
-Written at the end of the run.
+**In-run review.** Three fresh-context reviewers checked `main...HEAD`: security; data and concurrency; architecture and boundaries. The implementer checked each finding's evidence before accepting it. The security reviewer re-checked the fix of its blocking finding.
+
+- **Fixed in the run:**
+  - S-01 (blocking): logout returned an end-session URL whose `id_token_hint` handed the ID token to browser code (invariant 2). The API now ends the Keycloak session itself (D-17); the real-Keycloak test shows the Keycloak session gone and no token in any API response.
+  - F1, F2 (major): the authentication area held IAM's write-capable transaction runner; it now receives bound sign-in functions, and lint keeps adapters in `auth-runtime.ts` (probes V83, V84, C11). The OIDC library bans now cover subpath exports and web code (V85–V87).
+  - D-1, D-2 (major): the expired-attempt purge was unbounded inside the attempt's transaction; expired sessions kept their ID token. Both are bounded sweeps now, and an expired session loses its ID token when seen (D-17, D-21).
+  - S-03, S-04, D-4, D-5, D-6, D-7, F3, F4, F6, F7, F8, F9 and the callback's 500 on an unexpected failure (D-23).
+  - From the security re-check: R-01 (a test for the end-session POST failing after discovery); the API counts the Keycloak session as ended only on a redirect to the post-logout URI; revoking the replaced session is best-effort once the new session exists.
+- **Recorded, not changed:** S-02 (session rotation across sites) and D-3 (back-channel logout just before session creation), carried forward; S-05 (login attempts without rate limiting) joins the rate-limit item; F5 (Keycloak on its own host) is recorded in the Master Plan's production list; F10 (the added `resolveIdentityUser`) is recorded in D-09; F11 is fixed with F2.
+
+**Carried forward** (attached to the Master Plan stages):
+
+- **IAM-MP-07:** protected-by-default routing and the authorization context build on `requireSession` and the global `CsrfGuard`; bound capabilities only.
+- **IAM-MP-10:** suspension, disablement, termination and administrator revoke-sessions call `revokeUserSessions` and add their revocation reasons.
+- **IAM-MP-12:** the sign-in contracts; real-browser acceptance of the `__Host-` cookies on `http://127.0.0.1`; session rotation across sites (S-02).
+- **IAM-MP-15:** rate limiting of session endpoints; session-row retention and a scheduled purge; the back-channel race before session creation (D-3).
+- **Production deployment design:** Keycloak on its own host; the back-channel logout URL reachable from Keycloak (Docker Engine on Linux has no `host.docker.internal` by default).
+
+**Local environment note.** `pnpm env:setup` appends the new `AUTH_*` keys and `KEYCLOAK_WEB_CLIENT_ID` to an existing `.env` without touching other keys and needs no volume reset. `pnpm db:migrate` applies `20260923190000_auth_sessions`. A local sign-in ends in `AUTH_ACCESS_DENIED` until a Vertex user exists for the identity, because nothing creates users yet (IAM-MP-10/11).

@@ -161,9 +161,17 @@ export class AuthController {
       idToken: identity.value.idToken,
       attribution,
     });
-    // A new sign-in in the same browser always replaces the session it held (session rotation).
+    // A new sign-in in the same browser replaces the session it held (session rotation). The new
+    // session exists already, so a failure here is logged and the sign-in still completes.
     if (previous.outcome === 'valid') {
-      await this.runtime.sessions.revoke(previous.session, 'REPLACED', attribution);
+      await this.runtime.sessions
+        .revoke(previous.session, 'REPLACED', attribution)
+        .catch((error: unknown) =>
+          request.log.error(
+            { err: error, auth: 'rotation-failed' },
+            'previous session not revoked',
+          ),
+        );
     }
     request.log.info(
       { auth: 'sign-in', firstActivation: result.firstActivation },
