@@ -17,6 +17,10 @@ const rawEnvironment = 'Read raw environment variables';
 const unsafeRawSql = '$executeRawUnsafe is reserved for tests';
 const unsafeRawQuery = '$queryRawUnsafe is reserved for tests';
 const createRequireBan = 'createRequire bypasses the import boundaries';
+const stringLiteralImport = 'Write a dynamic import specifier as a string literal';
+const commonJs = 'CommonJS require bypasses the import boundaries';
+const adaptersOnlyInRuntime = 'Only auth-runtime.ts';
+const approvedEntry = 'approved root entry points';
 
 // [id, project, code, rule, message fragment?, virtual file relative to the project?]
 const violations = [
@@ -245,6 +249,70 @@ const violations = [
   ['V85', 'domains/iam', "import 'jose/jwt/verify';", nxRule, 'jose'],
   ['V86', 'domains/iam', "import 'openid-client/passport';", nxRule, 'openid-client'],
   ['V87', 'apps/web', "import 'openid-client';", nxRule, 'openid-client'],
+  // IAM-R04 D-13 (CP1-03): dynamic imports and type queries of adapters in the authentication area.
+  ...[
+    "await import('@vertex-os/iam-persistence');",
+    "type T = typeof import('@vertex-os/iam-persistence');",
+    "await import('@vertex-os/audit-persistence');",
+    "type T = typeof import('@vertex-os/audit-persistence');",
+    "await import('@vertex-os/iam-keycloak');",
+  ].map((code, index) => [
+    `V${88 + index}`,
+    'apps/api',
+    code,
+    syntaxRule,
+    adaptersOnlyInRuntime,
+    'src/auth/x.ts',
+  ]),
+  // IAM-R04 D-14 (CP1-04): template specifiers, CommonJS and destructured environment access.
+  ['V93', 'domains/iam', 'await import(`openid-client`);', syntaxRule, stringLiteralImport],
+  ['V94', 'domains/iam', "await import('openid-client');", nxRule, 'openid-client'],
+  ['V95', 'domains/iam', "await import('@vertex-os/database');", nxRule, 'layer:domain'],
+  ['V96', 'domains/iam', "import m = require('openid-client'); void m;", syntaxRule, commonJs],
+  ['V97', 'apps/api', "require('@vertex-os/iam/persistence');", syntaxRule, commonJs],
+  ['V98', 'apps/api', "require.resolve('@vertex-os/database/iam');", syntaxRule, commonJs],
+  ['V99', 'domains/iam', 'let env; ({ env } = process); void env;', syntaxRule, rawEnvironment],
+  [
+    'V100',
+    'domains/iam',
+    'function f({ env } = process) { return env; } void f;',
+    syntaxRule,
+    rawEnvironment,
+  ],
+  [
+    'V101',
+    'domains/iam',
+    'let env; ({ env } = globalThis.process); void env;',
+    syntaxRule,
+    rawEnvironment,
+  ],
+  // IAM-R04 D-12 (CP1-05): the composition entry is for the API's composition roots only.
+  [
+    'V102',
+    'apps/api',
+    "import '@vertex-os/iam/composition';",
+    importsRule,
+    approvedEntry,
+    'src/auth/x.ts',
+  ],
+  [
+    'V103',
+    'apps/api',
+    "import '@vertex-os/iam/composition';",
+    importsRule,
+    approvedEntry,
+    'src/http/x.ts',
+  ],
+  ['V104', 'domains/iam-persistence', "import '@vertex-os/iam/composition';", importsRule],
+  ['V105', 'domains/iam-keycloak', "import '@vertex-os/iam/composition';", importsRule],
+  [
+    'V106',
+    'apps/api',
+    "await import('@vertex-os/iam/composition');",
+    syntaxRule,
+    privateSubpath,
+    'src/iam/x.ts',
+  ],
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
@@ -297,13 +365,17 @@ const controls = [
     'src/auth/auth-runtime.ts',
   ],
   ['C5', 'apps/api', ["process.env['DATABASE_URL'];"], 'src/commands/iam-sync-reference.ts'],
-  // Tagged raw SQL and a literal, non-interpolated template import stay permitted.
+  // Tagged raw SQL and a literal dynamic import stay permitted.
   [
     'C6',
     'domains/iam-persistence',
     ['declare const c: any;', 'await c.$queryRaw`SELECT 1`;', 'await c.$executeRaw`SELECT 1`;'],
   ],
-  ['C7', 'apps/api', ['await import(`node:path`);']],
+  ['C7', 'apps/api', ["await import('node:path');"]],
+  // IAM-R04 D-12: the composition roots and the adapter's tests reach the composition entry.
+  ['C12', 'apps/api', imports('@vertex-os/iam/composition'), 'src/iam/x.ts'],
+  ['C13', 'apps/api', imports('@vertex-os/iam/composition'), 'src/commands/x.ts'],
+  ['C14', 'domains/iam-persistence', imports('@vertex-os/iam/composition'), 'src/x.spec.ts'],
   // The black-box end-to-end project resolves installed packages with createRequire.
   [
     'C8',

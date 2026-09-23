@@ -102,7 +102,7 @@ No owner decisions: nothing here changes an item under "Changes Requiring Explic
 ## 9. Checklist
 
 - [x] M1 Plan committed
-- [ ] M2 Lint residuals and adapter-import rules (CP1-03, CP1-04) with probes
+- [x] M2 Lint residuals and adapter-import rules (CP1-03, CP1-04) with probes
 - [ ] M3 IAM root narrowed; composition entry; import sites and lint allowances (CP1-05)
 - [ ] M4 Domain context, rules, reader port, capability, denial record; unit tests
 - [ ] M5 PostgreSQL reader; integration tests

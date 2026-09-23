@@ -1,4 +1,5 @@
 import baseConfig, {
+  restrictedEnvSyntax,
   restrictedImportPaths,
   restrictedImportPatterns,
   restrictedImportSyntax,
@@ -12,6 +13,30 @@ const authAreaPatterns = restrictedImportPatterns.map((pattern) =>
     ? { ...pattern, group: [...pattern.group, '!@vertex-os/database/auth'] }
     : pattern,
 );
+
+// The composition roots bind IAM's use cases to adapters (IAM-R04 D-12); they alone may reach
+// IAM's private composition entry.
+const compositionPatterns = restrictedImportPatterns.map((pattern) =>
+  pattern.group.includes('@vertex-os/iam/*')
+    ? { ...pattern, group: [...pattern.group, '!@vertex-os/iam/composition'] }
+    : pattern,
+);
+
+const ADAPTERS_ONLY_IN_RUNTIME =
+  'Only auth-runtime.ts composes adapters; use the bound capabilities of AuthRuntime.';
+
+// `no-restricted-imports` sees static imports only; dynamic imports and type queries of the
+// adapters are closed by syntax (IAM-CP1 CP1-03).
+const adapterImportSyntax = [
+  '@vertex-os/iam-persistence',
+  '@vertex-os/audit-persistence',
+  '@vertex-os/iam-keycloak',
+]
+  .flatMap((name) => [
+    `ImportExpression[source.value='${name}']`,
+    `TSImportType[source.value='${name}']`,
+  ])
+  .map((selector) => ({ selector, message: ADAPTERS_ONLY_IN_RUNTIME }));
 
 export default [
   ...baseConfig,
@@ -67,11 +92,26 @@ export default [
                 '@vertex-os/audit-persistence',
                 '@vertex-os/iam-keycloak',
               ],
-              message:
-                'Only auth-runtime.ts composes adapters; use the bound capabilities of AuthRuntime.',
+              message: ADAPTERS_ONLY_IN_RUNTIME,
             },
           ],
         },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        ...restrictedImportSyntax,
+        ...restrictedEnvSyntax,
+        ...restrictedRawSqlSyntax,
+        ...adapterImportSyntax,
+      ],
+    },
+  },
+  {
+    files: ['src/iam/**/*.ts', 'src/commands/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: restrictedImportPaths, patterns: compositionPatterns },
       ],
     },
   },

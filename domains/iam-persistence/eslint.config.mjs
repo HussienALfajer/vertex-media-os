@@ -24,6 +24,23 @@ export default [
     },
   },
   {
+    // Tests drive IAM's use cases against the real adapters (IAM-R04 D-12).
+    files: ['src/**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedImportPaths,
+          patterns: adapterPatterns.map((pattern) =>
+            pattern.group.includes('@vertex-os/iam/*')
+              ? { ...pattern, group: [...pattern.group, '!@vertex-os/iam/composition'] }
+              : pattern,
+          ),
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.json'],
     languageOptions: { parser: await import('jsonc-eslint-parser') },
     rules: {
