@@ -1,6 +1,5 @@
 import { type DynamicModule, Module } from '@nestjs/common';
-import { AuthModule } from './auth/auth.module.js';
-import type { AuthRuntimeOptions } from './auth/auth-runtime.js';
+import { AuthModule, type AuthModuleOptions } from './auth/auth.module.js';
 import { type AppConfig } from './config/app-config.js';
 import type { AuthConfig } from './config/auth-config.js';
 import { ConfigModule } from './config/config.module.js';
@@ -8,7 +7,7 @@ import type { IdentityProvisioningConfig } from './config/identity-provisioning-
 import { HealthModule } from './health/health.module.js';
 import { IamModule, type IamModuleOptions } from './iam/iam.module.js';
 
-export interface AppModuleOptions extends AuthRuntimeOptions, IamModuleOptions {}
+export interface AppModuleOptions extends AuthModuleOptions, IamModuleOptions {}
 
 /** Root composition module. Business domain modules are added here as they are exposed. */
 @Module({})

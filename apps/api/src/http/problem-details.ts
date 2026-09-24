@@ -116,6 +116,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
     const problem = toProblemDetails(exception, { url: request.url, requestId: request.id });
     if (problem.code === SERVICE_BUSY) void reply.header('retry-after', '1');
+    // A refusal is about this request and this session; no cache may keep it (IAM-R09 D-09).
+    void reply.header('cache-control', 'no-store');
     void reply.status(problem.status).type(PROBLEM_CONTENT_TYPE).send(problem);
   }
 }

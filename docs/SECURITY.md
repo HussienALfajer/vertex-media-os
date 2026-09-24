@@ -374,7 +374,7 @@ Application session cookies MUST:
 
 Transient cookies used to correlate an in-progress OIDC sign-in (`state`, PKCE verifier) MUST be short-lived and single-purpose, MAY use `SameSite=Lax` as the redirect flow requires, and MUST NOT carry the application session.
 
-Identity-provider tokens bound to a session MUST be stored server-side only and MUST be discarded when the session ends; associated tokens SHOULD be revoked at the identity provider on logout.
+Identity-provider tokens bound to a session MUST be stored server-side only and MUST be discarded when the session ends; associated tokens SHOULD be revoked at the identity provider on logout. A revocation discards them in the same change. A session that ends by expiry has no event of its own, so its tokens are discarded when the session is next presented, and otherwise by scheduled housekeeping, which runs once a minute. The server never uses the tokens of an expired session.
 
 Session identifiers MUST rotate after successful authentication and other privilege-establishing events where appropriate.
 

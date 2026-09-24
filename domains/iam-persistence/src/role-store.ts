@@ -19,7 +19,7 @@ import {
   roleStateFromDatabase,
   roleStateToDatabase,
 } from './enum-mapping.js';
-import { readAuthorizationFacts } from './authorization-reader.js';
+import { readActorFacts } from './authorization-reader.js';
 import { lockUserRow } from './user-lock.js';
 
 interface RoleRow {
@@ -206,14 +206,9 @@ export function createRoleStore(client: IamPersistenceClient): RoleStore {
       return rows.map((row) => row.permissionCode as PermissionCode);
     },
 
-    async readActorAuthority(userId) {
-      const [facts, holding] = [
-        await readAuthorizationFacts(client, userId),
-        await client.iamUserRoleAssignment.count({
-          where: { userId, role: { code: SYSTEM_ADMINISTRATOR_ROLE_CODE } },
-        }),
-      ];
-      return { facts, holdsSystemAdministratorRole: holding > 0 };
+    readActorAuthority(userId) {
+      // One statement, so the facts and the holding are one snapshot (IAM-R09 D-11).
+      return readActorFacts(client, userId);
     },
 
     async readUserGrant(userId) {

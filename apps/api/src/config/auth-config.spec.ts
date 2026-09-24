@@ -19,7 +19,9 @@ describe('loadAuthConfig', () => {
         idleTimeoutSeconds: 1800,
         absoluteTimeoutSeconds: 36000,
         loginAttemptTimeoutSeconds: 600,
+        retentionDays: 30,
       },
+      rateLimits: { windowSeconds: 60, signIn: 60, logout: 30, evidence: 30 },
       tokenEncryptionSecret: TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET,
     });
   });
@@ -29,6 +31,12 @@ describe('loadAuthConfig', () => {
     ['AUTH_SESSION_IDLE_TIMEOUT_SECONDS', '299'],
     ['AUTH_SESSION_ABSOLUTE_TIMEOUT_SECONDS', '86401'],
     ['AUTH_LOGIN_ATTEMPT_TIMEOUT_SECONDS', '1801'],
+    ['AUTH_SESSION_RETENTION_DAYS', '0'],
+    ['AUTH_SESSION_RETENTION_DAYS', '366'],
+    ['AUTH_RATE_LIMIT_WINDOW_SECONDS', '9'],
+    ['AUTH_RATE_LIMIT_SIGN_IN', '0'],
+    ['AUTH_RATE_LIMIT_LOGOUT', '10001'],
+    ['AUTH_EVIDENCE_LIMIT', 'many'],
     ['KEYCLOAK_ISSUER_URL', 'http://127.0.0.1:8080/'],
     ['KEYCLOAK_WEB_REDIRECT_URI', 'http://127.0.0.1:4200/api/auth/callback?x=1'],
     ['AUTH_TOKEN_ENCRYPTION_SECRET', 'too-short'],

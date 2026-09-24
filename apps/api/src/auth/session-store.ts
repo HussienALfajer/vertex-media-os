@@ -126,6 +126,38 @@ export interface SessionStore {
     readonly now: Date;
     readonly attribution: AuditAttribution;
   }): Promise<number>;
+  /**
+   * Records a back-channel logout that revoked no session (spec Section 33; IAM-R09 D-05): a token
+   * that was refused or could not be verified, or a valid one that matched none. The record names
+   * the web client, never a session, subject or token.
+   */
+  recordBackchannelLogout(event: BackchannelLogoutEvent): Promise<void>;
+  /**
+   * Bounded housekeeping (IAM-R09 D-06, D-07): deletes expired login attempts, discards the tokens
+   * of sessions whose idle deadline lies after `tokensExpiredAfter` and at or before `now`
+   * (SECURITY Section 11), and deletes session rows whose idle deadline is at or before
+   * `purgeBefore`. Each statement repeats its predicate outside the batch subquery, so a row that a
+   * concurrent statement changed is re-checked after the lock wait (CP1-22). `expiredTokensRemain`
+   * says whether that window still holds expired sessions with tokens when the run ends.
+   */
+  housekeep(change: {
+    readonly now: Date;
+    readonly tokensExpiredAfter: Date;
+    readonly purgeBefore: Date;
+  }): Promise<HousekeepingResult & { readonly expiredTokensRemain: boolean }>;
+}
+
+/** What one housekeeping run removed. */
+export interface HousekeepingResult {
+  readonly loginAttemptsDeleted: number;
+  readonly sessionTokensDiscarded: number;
+  readonly sessionsPurged: number;
+}
+
+export interface BackchannelLogoutEvent {
+  readonly clientId: string;
+  readonly outcome: 'rejected' | 'unavailable' | 'no-match';
+  readonly attribution: AuditAttribution;
 }
 
 export interface SessionStoreOptions {
@@ -137,8 +169,10 @@ export interface SessionStoreOptions {
   readonly auditRecorderFor: (handle: DatabaseClient | DatabaseTransaction) => AuditRecorder;
 }
 
-/** Rows each sweep handles, so one statement stays well inside the statement timeout. */
-const SWEEP_BATCH = 200;
+/** Rows each housekeeping statement handles, so one statement stays well inside the statement timeout. */
+export const HOUSEKEEPING_BATCH = 200;
+/** Batches of each kind one housekeeping run handles at most; the next run continues. */
+export const HOUSEKEEPING_MAX_BATCHES = 10;
 
 const sessionSelect = {
   id: true,
@@ -229,25 +263,15 @@ export function createSessionStore(
 ): SessionStore {
   const client = authPersistenceOf(database);
 
-  /**
-   * Bounded housekeeping on each new sign-in (IAM-R03 review D-1, D-2): removes a batch of expired
-   * login attempts and discards the tokens of a batch of expired sessions (SECURITY Section 11).
-   * Each is one small statement outside any transaction, so a backlog can slow the sweep down but
-   * never blocks a sign-in; a failed sweep is left to the next one.
-   */
-  async function sweep(now: Date): Promise<void> {
-    try {
-      await client.$executeRaw`DELETE FROM auth_login_attempt WHERE id IN (
-        SELECT id FROM auth_login_attempt WHERE expires_at <= ${now} LIMIT ${SWEEP_BATCH})`;
-      await client.$executeRaw`UPDATE auth_session
-        SET id_token_ciphertext = NULL, id_token_key_version = NULL,
-          refresh_token_ciphertext = NULL, refresh_token_key_version = NULL
-        WHERE id IN (SELECT id FROM auth_session
-          WHERE (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)
-          AND (idle_expires_at <= ${now} OR absolute_expires_at <= ${now}) LIMIT ${SWEEP_BATCH})`;
-    } catch {
-      // Housekeeping only: the attempt is already stored.
+  /** Runs `statement` until it affects less than a batch, at most `HOUSEKEEPING_MAX_BATCHES` times. */
+  async function inBatches(statement: () => Promise<number>): Promise<number> {
+    let total = 0;
+    for (let batch = 0; batch < HOUSEKEEPING_MAX_BATCHES; batch += 1) {
+      const affected = await statement();
+      total += affected;
+      if (affected < HOUSEKEEPING_BATCH) break;
     }
+    return total;
   }
 
   /** Revokes the live sessions `where` selects and records one Audit entry per session. */
@@ -296,7 +320,6 @@ export function createSessionStore(
           expiresAt: attempt.expiresAt,
         },
       });
-      await sweep(attempt.createdAt);
     },
 
     async consumeLoginAttempt(handleHash, now) {
@@ -421,6 +444,65 @@ export function createSessionStore(
 
     revokeIdpSession({ idpSessionId, reason, now, attribution }) {
       return revokeWhere({ idpSessionId }, reason, now, attribution);
+    },
+
+    async housekeep({ now, tokensExpiredAfter, purgeBefore }) {
+      // Each statement is small and outside any transaction. The outer predicates repeat the inner
+      // ones: after a lock wait PostgreSQL re-checks only the outer WHERE (CP1-22). A session has
+      // expired exactly when its idle deadline passed (auth_session_expiry_ck: idle <= absolute).
+      const loginAttemptsDeleted = await inBatches(
+        () => client.$executeRaw`DELETE FROM auth_login_attempt
+          WHERE id IN (SELECT id FROM auth_login_attempt WHERE expires_at <= ${now}
+            LIMIT ${HOUSEKEEPING_BATCH})
+          AND expires_at <= ${now}`,
+      );
+      const sessionTokensDiscarded = await inBatches(
+        () => client.$executeRaw`UPDATE auth_session
+          SET id_token_ciphertext = NULL, id_token_key_version = NULL,
+            refresh_token_ciphertext = NULL, refresh_token_key_version = NULL
+          WHERE id IN (SELECT id FROM auth_session
+              WHERE idle_expires_at > ${tokensExpiredAfter} AND idle_expires_at <= ${now}
+              AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)
+            LIMIT ${HOUSEKEEPING_BATCH})
+          AND idle_expires_at > ${tokensExpiredAfter} AND idle_expires_at <= ${now}
+          AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)`,
+      );
+      // A batch that lost rows to a concurrent discard stops the loop early, so the window is
+      // re-read rather than inferred from the count (IAM-R09 review DC-1).
+      const [remaining] = await client.$queryRaw<Array<{ remain: boolean }>>`SELECT EXISTS (
+          SELECT 1 FROM auth_session
+          WHERE idle_expires_at > ${tokensExpiredAfter} AND idle_expires_at <= ${now}
+            AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)
+        ) AS remain`;
+      // Sessions are authentication state, not IAM entities; their establishment and revocation
+      // stay in the Audit records (IAM-R09 D-07).
+      const sessionsPurged = await inBatches(
+        () => client.$executeRaw`DELETE FROM auth_session
+          WHERE id IN (SELECT id FROM auth_session WHERE idle_expires_at <= ${purgeBefore}
+            LIMIT ${HOUSEKEEPING_BATCH})
+          AND idle_expires_at <= ${purgeBefore}`,
+      );
+      return {
+        loginAttemptsDeleted,
+        sessionTokensDiscarded,
+        sessionsPurged,
+        expiredTokensRemain: remaining?.remain ?? true,
+      };
+    },
+
+    async recordBackchannelLogout({ clientId, outcome, attribution }) {
+      const entry = createAuditEntry({
+        sourceModule: 'iam',
+        action: 'iam.session.backchannel-logout',
+        actor: attribution.actor,
+        target: { type: 'iam.oidc-client', id: clientId },
+        result: outcome === 'no-match' ? 'SUCCEEDED' : 'REFUSED',
+        traceId: attribution.traceId,
+        change: { after: outcome === 'no-match' ? { matched: 'none' } : { failure: outcome } },
+      });
+      if (!entry.ok)
+        throw new Error(`Session store built an invalid audit entry (${entry.reason}).`);
+      await options.auditRecorderFor(database).append(entry.value);
     },
   };
   return Object.freeze(store);

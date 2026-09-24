@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R09` (IAM-MP-15; Tier A, session effort `high`) with `/stage IAM-R09`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
+**Next step:** run `IAM-R09B` (IAM-MP-15 part 2; Tier A, session effort `high`) with `/stage IAM-R09B`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 ---
@@ -478,7 +478,8 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R08` | IAM-MP-12 | B | security; tests and verification (swapped by the run planner, R08 D-02) | — |
 | `IAM-R08B` | IAM-MP-13 | B | architecture and boundaries; tests and verification | — |
 | `IAM-R08C` | IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
-| `IAM-R09` | IAM-MP-15 | A | security; data and concurrency; tests and verification | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
+| `IAM-R09` | IAM-MP-15 (part 1: backend security, concurrency and operational hardening; test evidence) | A | security; data and concurrency; tests and verification | — |
+| `IAM-R09B` | IAM-MP-15 (part 2: real-browser journeys, cross-engine cookies, closeout and Definition of Done map) | A | security; tests and verification; architecture and boundaries | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
 
 Grouping rules behind the table:
 
@@ -486,6 +487,7 @@ Grouping rules behind the table:
 - IAM-MP-04 and IAM-MP-10 stay alone: identity linking and user lifecycle carry the highest failure cost and the most concurrency.
 - `IAM-R08` is Tier B because the backend stays authoritative for every rule it presents. Its planner splits it if the frontend diff would not be reviewable in one pass.
 - The `IAM-R08` planner split it into `IAM-R08` (IAM-MP-12), `IAM-R08B` (IAM-MP-13) and `IAM-R08C` (IAM-MP-14): the three stages together would not be reviewable in one pass (plan `IAM_R08_FRONTEND_SESSION_PLAN.md` D-01). Each stays Tier B.
+- The `IAM-R09` planner split IAM-MP-15 into `IAM-R09` (backend and test evidence) and `IAM-R09B` (browser journeys and closeout): one pull request with both would not be reviewable in one pass (plan `IAM_R09_SECURITY_HARDENING_PLAN.md` D-01). Both stay Tier A.
 - Each stage's "Audit focus" in Section 10 is the review focus of its run and of the checkpoint that covers it.
 
 ### 8.4 Scope rule
@@ -529,7 +531,7 @@ IAM-MP-12  Frontend Authentication & Session Experience                   [R08]
 IAM-MP-13  Frontend User, Access & Provisioning Administration            [R08]
 IAM-MP-14  Frontend Departments, Roles & Permissions Administration       [R08]
       ↓
-IAM-MP-15  End-to-End Security, Concurrency & Operational Hardening       [R09]
+IAM-MP-15  End-to-End Security, Concurrency & Operational Hardening       [R09, R09B]
       ↓
 Final IAM Module Audit
       ↓
@@ -1498,7 +1500,7 @@ Complete the IAM administration UI for organizational and privilege management w
 
 ## IAM-MP-15 — End-to-End Security, Concurrency & Operational Hardening
 
-**Status:** READY (run `IAM-R09`)  
+**Status:** part 1 COMPLETE (run `IAM-R09`); part 2 READY (run `IAM-R09B`)  
 **Parent specification area:** IAM-7, Sections 46–60  
 **Depends on:** IAM-MP-14 COMPLETE
 
@@ -1579,6 +1581,18 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 - **Real-browser cookie behavior (from IAM-R03):** prove that Chromium, Firefox and WebKit accept the `__Host-` cookies on `http://127.0.0.1` locally (only a fetch-based browser was used so far).
 - **Session rotation across sites (IAM-R03 review S-02):** the rotation of an existing session at the callback reads the `SameSite=Strict` session cookie on a navigation from Keycloak. It works while Keycloak and the web app share a site (locally, and a production subdomain of the same registrable domain); verify it for the deployed topology, or rotate differently.
 - **CP1-17:** back-channel logout through the local Compose Keycloak and a running API (a real login, then a Keycloak-side logout) was never probed end to end; only the Linux CI path is proven.
+
+### Resolved by run IAM-R09 (`IAM_R09_SECURITY_HARDENING_PLAN.md`)
+
+Rate limiting and the denial evidence bound (R03, R04 D-15), retention and scheduled housekeeping (R03, CP1-08, CP1-22, CP1-27), back-channel logout before session creation (R03 D-3), CP1-09, CP1-11, CP1-14, CP1-15, CP1-23 to CP1-25, SEC-5 (no code change, D-12), SEC-6, DC-4, SA-2, T-8, trace IDs (no code change; production item in Section 15, D-14) and no-store on refusals. The required concurrency races and the CSRF and security-negative coverage are mapped to discriminating tests (plan Section 8).
+
+### Carried forward to run IAM-R09B
+
+- Every item above under "Carried forward from run IAM-R08B", "from run IAM-R08C" and "from run IAM-R08" (browser journeys through the real API, the catalog bound revisit, three-engine `__Host-` cookies, rotation across sites, CP1-17).
+- The remaining major deliverables: the real-Keycloak browser journeys (invitation and first activation; login, logout, expiry and revocation; privilege-change effect; suspended-user access loss; last System Administrator; bootstrap and recovery), the Keycloak policy and configuration verification map, the dependency audit, documentation synchronization, the temporary-code sweep, the Definition of Done map (spec Section 56) and full repository verification.
+- **Login-attempt volume beyond housekeeping (R09 review S-3):** each admitted login still stores an attempt, and housekeeping deletes at most 2,000 expired attempts per minute. Clients spread over many addresses under the sign-in limit can grow `auth_login_attempt` for as long as they keep it up. Decide whether a process-wide sign-in ceiling is needed, or record the residual for the production deployment design.
+- **Housekeeping wiring (R09 review T-4):** no test shows that the server entry schedules housekeeping through `AuthModule`; the scheduler class itself is tested. Cover it with the closeout verification.
+- **Reactivated permissions (R09 D-12, SEC-5):** whoever reactivates a DEPRECATED permission reviews the roles that map it; for `IAM-FINAL`.
 
 ### Exit criteria
 
@@ -1738,6 +1752,8 @@ Run `IAM-R08B` delivered IAM-MP-13 (plan `IAM_R08B_USER_ADMINISTRATION_PLAN.md`)
 
 Run `IAM-R08C` delivered IAM-MP-14 (plan `IAM_R08C_PRIVILEGE_ADMINISTRATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. The web app has department and role lists and details, the read-only permission catalog, and a permission editor for custom roles that builds the requested set from ACTIVE catalog entries only and saves through an explicit review of additions and removals (D-08). The system role's protection follows the API's `isSystem` flag, never a name or code (D-07). Department and role deactivation, role activation and permission edits confirm with the target, consequence and reach (D-05, D-06). Stale writes keep the draft; unconfirmed results and refused codes reload the record and the catalog (D-11, D-16). The user directory filters by department and role (D-09). No API change. Its carried-forward items are attached to IAM-MP-15.
 
+Run `IAM-R09` delivered IAM-MP-15 part 1 (plan `IAM_R09_SECURITY_HARDENING_PLAN.md`); its planner split IAM-MP-15 into `IAM-R09` and `IAM-R09B` (D-01). It is `COMPLETE` once its pull request is merged. Login, callback and logout are rate limited per client address (IPv6 per /64) with configured values; a refused login stores no attempt and answers `AUTH_RATE_LIMITED` (D-03, D-04). Denials and rejected back-channel logout tokens write Audit evidence up to a bound, and a back-channel logout that revokes nothing is now recorded (D-04, D-05). Housekeeping runs once a minute independent of sign-in: race-safe, indexed statements delete expired login attempts, discard expired sessions' tokens and purge session rows past `AUTH_SESSION_RETENTION_DAYS` (D-06, D-07; SECURITY Section 11 updated). A back-channel logout that races a sign-in ends the new session (D-08). Malformed JSON answers `VALIDATION_FAILED`, Problem Details are `no-store`, a failed revocation after a restriction still reconciles, the actor's authority is one statement, and the realm disables `delete_credential` (D-09 to D-13). The race, secret-scan, `env:setup` and contention evidence is discriminating (D-15 to D-18). Its carried-forward items are attached to IAM-MP-15 ("Carried forward to run IAM-R09B") and to the production open items below.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
@@ -1753,6 +1769,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
   - narrowing `vertex-provisioner` with fine-grained admin permissions (also reviewed by the Final IAM Module Audit);
   - production SMTP (run IAM-R02): the realm's `KEYCLOAK_SMTP_*` values, TLS (`starttls`/`ssl`) and trust, and a real sender domain. Mailpit is local and test only.
   - Keycloak on its own host (run IAM-R03 D-06): the `__Host-vertex-*` cookies use `Path=/`, so a Keycloak on the web app's host would receive them. Keycloak must also reach the API's back-channel logout URL; locally only Docker Desktop forwards `host.docker.internal` to a loopback API.
+  - The reverse proxy (run IAM-R09 D-04, D-14; review S-4): the API trusts `X-Forwarded-For` from loopback only, so the production proxy must be the only way in, append the client address (`$remote_addr`) and set a fresh `X-Request-Id` on every request. The local Vite proxies pass both headers through unchanged.
+  - Per-process authentication state (run IAM-R09 D-03, D-08): the rate limits, the evidence bound and the memory of recent back-channel logouts live in the API process. More than one API process needs a shared store for them.
   - Session re-validation across API processes (run IAM-R03F review DC-04): one Keycloak refresh per session and interval relies on one clock and a refresh shorter than the 60 s interval. More than one API process, or clocks skewed by tens of seconds, could refresh one session twice and revoke it through Keycloak's refresh-token reuse detection. Keep one API process, or re-check the claim when scaling out.
 
 | Stage | Run | Status | Required before the run starts |
@@ -1775,8 +1793,9 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | COMPLETE | R07 merged (satisfied) |
 | IAM-MP-13 Frontend User & Access Admin | R08B | COMPLETE | R08 merged (satisfied) |
 | IAM-MP-14 Frontend Department/Role/Permission Admin | R08C | COMPLETE | R08B merged (satisfied) |
-| IAM-MP-15 E2E & Hardening | R09 | READY | R08C merged (satisfied) |
-| `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09 merged |
+| IAM-MP-15 E2E & Hardening, part 1 (backend and test evidence) | R09 | COMPLETE | R08C merged (satisfied) |
+| IAM-MP-15 E2E & Hardening, part 2 (browser journeys and closeout) | R09B | READY | R09 merged (satisfied) |
+| `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09B merged |
 
 The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
 
@@ -2063,15 +2082,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-14 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, IAM-MP-12 through run `IAM-R08`, IAM-MP-13 through run `IAM-R08B`, and IAM-MP-14 through run `IAM-R08C`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-14 and IAM-MP-15 part 1 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, IAM-MP-12 through run `IAM-R08`, IAM-MP-13 through run `IAM-R08B`, IAM-MP-14 through run `IAM-R08C`, and IAM-MP-15 part 1 through run `IAM-R09`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The `IAM-R08` planner split the frontend run (Section 8.3). The next step is run `IAM-R09` (IAM-MP-15; Tier A, session effort `high`). Start it in a new Claude Code session with effort `high`:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The `IAM-R08` planner split the frontend run, and the `IAM-R09` planner split IAM-MP-15 (Section 8.3). The next step is run `IAM-R09B` (IAM-MP-15 part 2; Tier A, session effort `high`). Start it in a new Claude Code session with effort `high`:
 
 ```text
-/stage IAM-R09
+/stage IAM-R09B
 ```
 
-Its planner reads the IAM-MP-15 section, including the items carried forward to it. After its pull request is merged, the Final IAM Module Audit follows (Section 17).
+Its planner reads the IAM-MP-15 section, including "Carried forward to run IAM-R09B". After its pull request is merged, the Final IAM Module Audit follows (Section 17).
 
 Do **not** plan later runs in detail now.
 

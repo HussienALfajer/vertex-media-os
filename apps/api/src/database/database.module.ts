@@ -9,8 +9,9 @@ export const DATABASE_CLIENT = Symbol('DATABASE_CLIENT');
 /**
  * `GET /api/health/ready` answers within about three seconds even when PostgreSQL is unreachable
  * or stalled, and nothing the check started is still running once it has answered. Sign-in and
- * session statements (IAM-R03 D-21) are key lookups, single-row writes, and batches bounded to a
- * few hundred rows, so the same bounds hold for them. The IAM directory's searches (IAM-R07 D-03)
+ * session statements (IAM-R03 D-21) are key lookups and single-row writes; session housekeeping
+ * (IAM-R09 D-06) changes batches of 200 rows found through the idle-deadline index, so the same
+ * bounds hold for them. The IAM directory's searches (IAM-R07 D-03)
  * scan small tables (spec Section 51) one bounded page at a time, so the bounds stay; a statement
  * that exceeds them answers `503 SERVICE_BUSY` (D-15). Revisit these values when a module adds
  * queries that scan large tables (reports).

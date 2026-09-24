@@ -3,8 +3,8 @@ import { ConfigurationError } from './app-config.js';
 
 /**
  * Typed configuration of browser authentication (docs/modules/iam.md Section 39; IAM-R03 D-16): the
- * `vertex-web` OIDC client, the session limits and the secret that protects stored ID and refresh
- * tokens.
+ * `vertex-web` OIDC client, the session limits and retention, the rate limits and the secret that
+ * protects stored ID and refresh tokens.
  * Mapped from the environment exactly once. Kept apart from `AppConfig`, which commands such as
  * the reference synchronization load without any identity-provider value.
  */
@@ -26,6 +26,21 @@ export interface AuthConfig {
     readonly idleTimeoutSeconds: number;
     readonly absoluteTimeoutSeconds: number;
     readonly loginAttemptTimeoutSeconds: number;
+    /** Days a session row is kept after its idle deadline before housekeeping deletes it (IAM-R09 D-07). */
+    readonly retentionDays: number;
+  };
+  /**
+   * Per-window limits of the authentication endpoints and of the security evidence that repeatable
+   * input writes (SECURITY Sections 30, 37; IAM-R09 D-03, D-04).
+   */
+  readonly rateLimits: {
+    readonly windowSeconds: number;
+    /** `GET /api/auth/login` and `GET /api/auth/callback` per client address. */
+    readonly signIn: number;
+    /** `POST /api/auth/logout` per client address. */
+    readonly logout: number;
+    /** Audit records of authorization denials per user, and of rejected logout tokens per address. */
+    readonly evidence: number;
   };
   /** Secret: the key material the token encryption keys are derived from (D-17, R03F D-06). */
   readonly tokenEncryptionSecret: string;
@@ -59,6 +74,11 @@ const environmentSchema = z
       .max(86_400)
       .default(36_000),
     AUTH_LOGIN_ATTEMPT_TIMEOUT_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
+    AUTH_SESSION_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(10).max(3_600).default(60),
+    AUTH_RATE_LIMIT_SIGN_IN: z.coerce.number().int().min(1).max(10_000).default(60),
+    AUTH_RATE_LIMIT_LOGOUT: z.coerce.number().int().min(1).max(10_000).default(30),
+    AUTH_EVIDENCE_LIMIT: z.coerce.number().int().min(1).max(10_000).default(30),
     AUTH_TOKEN_ENCRYPTION_SECRET: z.string().min(32, 'must be at least 32 characters'),
   })
   .refine(
@@ -106,6 +126,13 @@ export function loadAuthConfig(source: Readonly<Record<string, string | undefine
       idleTimeoutSeconds: env.AUTH_SESSION_IDLE_TIMEOUT_SECONDS,
       absoluteTimeoutSeconds: env.AUTH_SESSION_ABSOLUTE_TIMEOUT_SECONDS,
       loginAttemptTimeoutSeconds: env.AUTH_LOGIN_ATTEMPT_TIMEOUT_SECONDS,
+      retentionDays: env.AUTH_SESSION_RETENTION_DAYS,
+    },
+    rateLimits: {
+      windowSeconds: env.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+      signIn: env.AUTH_RATE_LIMIT_SIGN_IN,
+      logout: env.AUTH_RATE_LIMIT_LOGOUT,
+      evidence: env.AUTH_EVIDENCE_LIMIT,
     },
     tokenEncryptionSecret: env.AUTH_TOKEN_ENCRYPTION_SECRET,
   };

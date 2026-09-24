@@ -243,7 +243,7 @@
       "alias": "delete_credential",
       "name": "Delete Credential",
       "providerId": "delete_credential",
-      "enabled": true,
+      "enabled": false,
       "defaultAction": false,
       "priority": 100,
       "config": {}

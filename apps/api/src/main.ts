@@ -1,4 +1,5 @@
 import { createApp } from './app.factory.js';
+import { HOUSEKEEPING_INTERVAL_MS } from './auth/housekeeping.js';
 import { ConfigurationError, loadAppConfig } from './config/app-config.js';
 import { loadAuthConfig } from './config/auth-config.js';
 import { loadIdentityProvisioningConfig } from './config/identity-provisioning-config.js';
@@ -8,7 +9,10 @@ async function bootstrap(): Promise<void> {
   const config = loadAppConfig(process.env);
   const auth = loadAuthConfig(process.env);
   const provisioning = loadIdentityProvisioningConfig(process.env);
-  const app = await createApp(config, auth, provisioning);
+  // The server schedules session housekeeping; commands and tests create apps without it.
+  const app = await createApp(config, auth, provisioning, {
+    housekeepingIntervalMs: HOUSEKEEPING_INTERVAL_MS,
+  });
 
   // SIGINT/SIGTERM close the HTTP server and release the database pool.
   app.enableShutdownHooks();

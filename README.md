@@ -229,14 +229,23 @@ cookie; it never receives a Keycloak token. `GET /api/auth/session` returns the 
 `POST /api/auth/logout` ends the session and the Keycloak session, and returns where the browser
 goes next: the post-logout URI, or Keycloak's end-session URL (without any token) when the API could
 not end the Keycloak session itself.
-A failed sign-in returns to `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED` or
-`IDENTITY_PROVIDER_UNAVAILABLE`. Only a Keycloak identity bound to an active or invited Vertex user
+A failed sign-in returns to `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED`,
+`AUTH_RATE_LIMITED` or `IDENTITY_PROVIDER_UNAVAILABLE`. Only a Keycloak identity bound to an active or invited Vertex user
 may sign in; a local sign-in ends in `AUTH_ACCESS_DENIED` until `pnpm iam:bootstrap` (or an
 administrator) has created the user. Sessions expire after 30 minutes idle and 10 hours in total
 (`AUTH_SESSION_*` in `.env`). While a session is used, the API refreshes its Keycloak session at
 most once a minute and extends the idle deadline only when Keycloak agrees; when Keycloak refuses
 (the Keycloak session ended, or the identity was disabled) the session is revoked, and while
 Keycloak is unreachable the session keeps its current deadline without extending it.
+
+Sign-in (`/api/auth/login` and the callback) and logout are rate-limited per client address, and the
+Audit records written for repeatable input (authorization denials per user, refused back-channel
+logout tokens per address) are bounded; the values are `AUTH_RATE_LIMIT_*` and
+`AUTH_EVIDENCE_LIMIT` in `.env`. The API counts the address that the local reverse proxy appends to
+`X-Forwarded-For`, so a deployment must put such a proxy in front of it. Once a minute the server
+deletes expired login attempts, discards the tokens of expired sessions and deletes session rows
+`AUTH_SESSION_RETENTION_DAYS` (default 30) after their idle deadline; the Audit records of each
+session stay.
 
 Keycloak calls `KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL` (`host.docker.internal:3000`) from its
 container when a user's Keycloak session ends. Docker Desktop forwards that name to the host's
@@ -264,5 +273,5 @@ settings of `.env` (`KEYCLOAK_ISSUER_URL`, `KEYCLOAK_PROVISIONER_CLIENT_ID`,
 
 - There is no IAM user interface yet; the administration is reachable only through the API.
 - MOD-AUDIT appends immutable records for every IAM change and refusal, but has no read path.
-  Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
+  The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.

@@ -1,8 +1,10 @@
-import type { AuditAttribution } from '@vertex-os/audit';
+import { parseSystemProcess, type AuditAttribution } from '@vertex-os/audit';
 import type { AuthConfig } from '../config/auth-config.js';
 import type { OidcClient } from './oidc.js';
 import { csrfTokenFor, hashSecret, isSecretShaped, matchesHash, newSecret } from './secrets.js';
 import type {
+  BackchannelLogoutEvent,
+  HousekeepingResult,
   LoginAttemptSecrets,
   RevocationReason,
   SessionStore,
@@ -46,6 +48,18 @@ export type SessionLookup =
  */
 export const TOUCH_INTERVAL_MS = 60_000;
 
+const backchannelProcess = parseSystemProcess('iam.backchannel-logout');
+if (!backchannelProcess.ok) throw new Error('Invalid system process code.');
+/** The actor of revocations that a back-channel logout causes. */
+const BACKCHANNEL_LOGOUT_PROCESS = { type: 'SYSTEM', process: backchannelProcess.value } as const;
+
+const DAY_MS = 86_400_000;
+/** How far before the previous run's time a token sweep reads again, against clock steps. */
+const SWEEP_MARGIN_MS = 3_600_000;
+
+/** Identity-provider sessions a back-channel logout ended that are remembered at most (IAM-R09 D-08). */
+export const RECENT_LOGOUTS_MAX = 10_000;
+
 /**
  * The application-session policy of IAM-R03 D-03, D-04, D-17 and D-18 and IAM-R03F D-02 to D-05 on
  * top of the store: secret generation, idle and absolute expiry, re-validation against the identity
@@ -62,7 +76,15 @@ export interface SessionService {
     readonly idToken: string | undefined;
     readonly refreshToken: string | undefined;
     readonly attribution: AuditAttribution;
-  }): Promise<{ readonly secret: string; readonly session: StoredSession }>;
+  }): Promise<{
+    readonly secret: string;
+    readonly session: StoredSession;
+    /**
+     * A back-channel logout ended the identity-provider session while this sign-in completed; the
+     * new session is already revoked and its secret must not reach the browser (IAM-R09 D-08).
+     */
+    readonly endedByProvider: boolean;
+  }>;
   /**
    * Resolves a cookie value to a session. When the interval has passed, re-validates it against
    * the identity provider and slides its idle deadline only if the provider refreshed its session;
@@ -84,11 +106,23 @@ export interface SessionService {
     reason: RevocationReason,
     attribution: AuditAttribution,
   ): Promise<number>;
+  /**
+   * Revokes every live session bound to an identity-provider session that a back-channel logout
+   * ended, and remembers that session for the login-attempt timeout, so a sign-in that completes
+   * after this revocation cannot leave a live session behind (IAM-R09 D-08).
+   */
   revokeIdpSession(
     idpSessionId: string,
     reason: RevocationReason,
     attribution: AuditAttribution,
   ): Promise<number>;
+  /** Records a back-channel logout that revoked nothing, for the `vertex-web` client (IAM-R09 D-05). */
+  recordBackchannelLogout(event: Omit<BackchannelLogoutEvent, 'clientId'>): Promise<void>;
+  /**
+   * One housekeeping run at the current time (IAM-R09 D-07): expired login attempts, the tokens of
+   * expired sessions, and session rows past the retention period.
+   */
+  housekeep(): Promise<HousekeepingResult>;
 }
 
 export interface SessionServiceOptions {
@@ -97,6 +131,8 @@ export interface SessionServiceOptions {
   /** Refreshes the identity provider's session (IAM-R03F D-01). */
   readonly provider: Pick<OidcClient, 'refreshSession'>;
   readonly limits: AuthConfig['session'];
+  /** The `vertex-web` client the back-channel logout evidence names. */
+  readonly clientId: string;
   /** The current time; tests move it to cross deadlines. */
   readonly now?: () => Date;
 }
@@ -107,6 +143,13 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
   const idleMs = limits.idleTimeoutSeconds * 1000;
   const absoluteMs = limits.absoluteTimeoutSeconds * 1000;
   const attemptMs = limits.loginAttemptTimeoutSeconds * 1000;
+  const recentLogouts = createRecentLogouts(attemptMs, () => now().getTime());
+  /**
+   * The time up to which a completed housekeeping run discarded every expired session's tokens. A
+   * session's idle deadline only moves forward while it is live, so later runs read only the
+   * deadlines after it (with a margin) and use the idle-deadline index (review DATA-1).
+   */
+  let tokensSweptUntil: Date | undefined;
 
   const idleDeadline = (at: Date, absolute: Date) =>
     new Date(Math.min(at.getTime() + idleMs, absolute.getTime()));
@@ -147,7 +190,18 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
         }),
         attribution,
       });
-      return { secret, session };
+      // Checked only after the insert committed. A back-channel logout remembers its session
+      // before it revokes, so either its revocation saw this row or this check sees the memory.
+      if (idpSessionId === undefined || !recentLogouts.has(idpSessionId)) {
+        return { secret, session, endedByProvider: false };
+      }
+      await store.revoke({
+        id: session.id,
+        reason: 'BACKCHANNEL_LOGOUT',
+        now: now(),
+        attribution: { actor: BACKCHANNEL_LOGOUT_PROCESS, traceId: attribution.traceId },
+      });
+      return { secret, session, endedByProvider: true };
     },
 
     async authenticate(secret: string | undefined, attribution: AuditAttribution) {
@@ -268,10 +322,56 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
     },
 
     revokeIdpSession(idpSessionId, reason, attribution) {
+      recentLogouts.remember(idpSessionId);
       return store.revokeIdpSession({ idpSessionId, reason, now: now(), attribution });
+    },
+
+    recordBackchannelLogout(event) {
+      return store.recordBackchannelLogout({ ...event, clientId: options.clientId });
+    },
+
+    async housekeep() {
+      const at = now();
+      const purgeBefore = new Date(at.getTime() - limits.retentionDays * DAY_MS);
+      const tokensExpiredAfter =
+        tokensSweptUntil === undefined
+          ? purgeBefore
+          : new Date(Math.max(purgeBefore.getTime(), tokensSweptUntil.getTime() - SWEEP_MARGIN_MS));
+      const { expiredTokensRemain, ...result } = await store.housekeep({
+        now: at,
+        tokensExpiredAfter,
+        purgeBefore,
+      });
+      // Rows left in the window (a batch bound, or rows lost to a concurrent discard) keep the
+      // window where it was; the next run reads it again (review DC-1).
+      if (!expiredTokensRemain) tokensSweptUntil = at;
+      return result;
     },
   };
   return Object.freeze(service);
+}
+
+/**
+ * Identity-provider sessions ended by a back-channel logout, kept for `ttlMs` in this process (one
+ * API process in V1, Master Plan Section 15). A Keycloak session identifier is never reused, so
+ * remembering one cannot refuse a later, different sign-in. Bounded: the oldest entry goes first.
+ */
+function createRecentLogouts(ttlMs: number, now: () => number) {
+  const ended = new Map<string, number>();
+  return {
+    remember(idpSessionId: string): void {
+      ended.delete(idpSessionId);
+      ended.set(idpSessionId, now() + ttlMs);
+      for (const [key, expiresAt] of ended) {
+        if (ended.size <= RECENT_LOGOUTS_MAX && expiresAt > now()) break;
+        ended.delete(key);
+      }
+    },
+    has(idpSessionId: string): boolean {
+      const expiresAt = ended.get(idpSessionId);
+      return expiresAt !== undefined && expiresAt > now();
+    },
+  };
 }
 
 function seal(

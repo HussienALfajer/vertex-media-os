@@ -140,6 +140,17 @@ export function keycloakJourney(context: JourneyContext) {
     };
   }
 
+  /**
+   * The secrets of every stored login attempt, straight from their rows: none of them may be
+   * logged. A test that calls `/api/auth/login` itself calls this afterwards (CP1-24).
+   */
+  async function collectLoginAttempts(): Promise<void> {
+    const attempts = await postgres.sql(
+      "SELECT state || ' ' || nonce || ' ' || code_verifier FROM auth_login_attempt",
+    );
+    secrets.push(...attempts.split(/\s+/).filter((value) => value !== ''));
+  }
+
   function browser(): VertexBrowser {
     return new VertexBrowser(context.apiOrigin, secrets);
   }
@@ -156,11 +167,7 @@ export function keycloakJourney(context: JourneyContext) {
     expect(login.status).toBe(302);
     const authorization = login.headers.get('location') ?? '';
     expect(authorization.startsWith(`${keycloak.issuer}/protocol/openid-connect/auth?`)).toBe(true);
-    // The login attempt's secrets, straight from its row: none of them may be logged.
-    const attempts = await postgres.sql(
-      "SELECT state || ' ' || nonce || ' ' || code_verifier FROM auth_login_attempt",
-    );
-    secrets.push(...attempts.split(/\s+/).filter((value) => value !== ''));
+    await collectLoginAttempts();
 
     let page: Page = await open(vertex, authorization, keycloak.baseUrl);
     let enrolledSecret: string | undefined;
@@ -233,6 +240,7 @@ export function keycloakJourney(context: JourneyContext) {
     invitedIdentity,
     browser,
     signIn,
+    collectLoginAttempts,
     sessionStatus,
     keycloakSessions,
     handledSecrets,

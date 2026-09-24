@@ -83,6 +83,38 @@ describe('API over Fastify inject without PostgreSQL', () => {
     expect(response.json()).toMatchObject({ status: 404, code: 'NOT_FOUND' });
   });
 
+  it('marks every problem answer as not storable, the guard refusals included (IAM-R09 D-09)', async () => {
+    for (const request of [
+      { method: 'GET' as const, url: '/api/does-not-exist' },
+      { method: 'GET' as const, url: '/api/health/ready' },
+      { method: 'GET' as const, url: '/api/iam/users' },
+      { method: 'GET' as const, url: '/api/iam/me' },
+    ]) {
+      const response = await app.inject(request);
+      expect(response.statusCode).toBeGreaterThanOrEqual(400);
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+  });
+
+  it('answers a body the JSON parser refuses as a validation failure, without echoing it (SA-2)', async () => {
+    for (const payload of [
+      '{"displayName": "sentinel-json-4b1c',
+      '',
+      '{"__proto__": {"sentinel": 1}}',
+      '{"constructor": {"prototype": {"sentinel": 1}}}',
+    ]) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/iam/users',
+        headers: { 'content-type': 'application/json' },
+        payload,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ code: 'VALIDATION_FAILED', fields: ['body'] });
+      expect(response.body).not.toContain('sentinel');
+    }
+  });
+
   it('applies the security header baseline to every response', async () => {
     for (const url of ['/api/health/live', '/api/does-not-exist']) {
       const { headers } = await app.inject({ method: 'GET', url });

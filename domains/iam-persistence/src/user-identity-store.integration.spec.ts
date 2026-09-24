@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AuditEntry, AuditRecorder } from '@vertex-os/audit';
 import type { IamTransactionRunner, UserId } from '@vertex-os/iam/persistence';
@@ -37,6 +38,54 @@ describe('UserIdentityStore against real PostgreSQL', () => {
 
   async function row(id: UserId) {
     return postgres.client.iamApplicationUser.findUniqueOrThrow({ where: { id } });
+  }
+
+  /** Runs SQL with psql in its own connection and returns the unaligned, tuple-only output. */
+  async function psql(statement: string): Promise<string> {
+    const result = await postgres.container.exec([
+      'psql',
+      '-U',
+      postgres.container.getUsername(),
+      '-d',
+      postgres.container.getDatabase(),
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-t',
+      '-A',
+      '-c',
+      statement,
+    ]);
+    if (result.exitCode !== 0) throw new Error(`psql failed: ${result.output}`);
+    return result.output.trim();
+  }
+
+  /**
+   * Runs `statement` in a transaction that keeps its row locks for `seconds`, and resolves once it
+   * sleeps: the competing operation started next provably meets the uncommitted write (CP1-09).
+   */
+  async function holdWrite(statement: string, seconds = 1.5): Promise<{ done: Promise<string> }> {
+    const marker = `hold_${randomUUID().replaceAll('-', '')}`;
+    const done = psql(`BEGIN; ${statement}; SELECT pg_sleep(${seconds}) AS ${marker}; COMMIT;`);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const sleeping = await psql(
+        `SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%AS ${marker}%' AND wait_event = 'PgSleep'`,
+      );
+      if (sleeping === '1') return { done };
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('the lock-holding transaction never started sleeping');
+  }
+
+  /** Waits until at least `count` statements wait on a lock: the competitors are in flight. */
+  async function competitorsWaiting(count: number): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const waiting = Number(
+        await psql("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"),
+      );
+      if (waiting >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('the competing writes never waited on the held lock');
   }
 
   it('binds an unbound user at its version and raises the version by one', async () => {
@@ -117,32 +166,40 @@ describe('UserIdentityStore against real PostgreSQL', () => {
     });
   });
 
-  it('lets exactly one of two users bind the same identity at the same time', async () => {
+  it('refuses a second binding of an identity while the first one is still uncommitted', async () => {
     const first = await invitedUser('first@example.invalid');
     const second = await invitedUser('second@example.invalid');
 
-    const results = await Promise.allSettled(
-      [first, second].map((user) =>
-        runner.run(({ users }) =>
-          users.bindIdentity({
-            id: user.id,
-            expectedVersion: 1,
-            issuer: ISSUER,
-            subject: 'contested',
-          }),
-        ),
-      ),
+    // The first binding has written but not committed, so the second one's holder check passes and
+    // only the unique key can stop it (CP1-09).
+    const hold = await holdWrite(
+      `UPDATE iam_application_user SET identity_issuer = '${ISSUER}', identity_subject = 'contested',
+         version = version + 1 WHERE id = '${first.id}' AND version = 1 AND identity_subject IS NULL`,
     );
+    const competing = runner.run(({ users }) =>
+      users.bindIdentity({
+        id: second.id,
+        expectedVersion: 1,
+        issuer: ISSUER,
+        subject: 'contested',
+      }),
+    );
+    const settled = competing.then(
+      (value) => ({ status: 'fulfilled' as const, value }),
+      (reason: unknown) => ({ status: 'rejected' as const, reason }),
+    );
+    await competitorsWaiting(1);
+    await hold.done;
 
-    const bound = await postgres.client.iamApplicationUser.count({
-      where: { identitySubject: 'contested' },
-    });
-    expect(bound).toBe(1);
+    const result = await settled;
+    expect(result.status === 'fulfilled' && result.value.outcome === 'updated').toBe(false);
     expect(
-      results.filter(
-        (result) => result.status === 'fulfilled' && result.value.outcome === 'updated',
-      ),
-    ).toHaveLength(1);
+      await postgres.client.iamApplicationUser.findMany({
+        where: { identitySubject: 'contested' },
+        select: { id: true },
+      }),
+    ).toEqual([{ id: first.id }]);
+    expect(await row(second.id)).toMatchObject({ identitySubject: null, version: 1 });
   });
 
   it('records delivery states: SENT sets invitationSentAt, FAILED keeps it', async () => {
@@ -177,20 +234,29 @@ describe('UserIdentityStore against real PostgreSQL', () => {
     });
   });
 
-  it('lets exactly one of several concurrent writers at one version succeed', async () => {
+  it('turns writers at a version that a concurrent write consumed into conflicts', async () => {
     const user = await invitedUser();
 
-    const results = await Promise.all(
-      Array.from({ length: 6 }, () =>
-        runner.run(({ users }) =>
-          users.recordInvitationDelivery({ id: user.id, expectedVersion: 1, state: 'FAILED' }),
-        ),
+    const hold = await holdWrite(
+      `UPDATE iam_application_user SET invitation_delivery_state = 'SENT', invitation_sent_at = now(),
+         version = version + 1
+         WHERE id = '${user.id}' AND version = 1`,
+    );
+    const competing = Array.from({ length: 3 }, () =>
+      runner.run(({ users }) =>
+        users.recordInvitationDelivery({ id: user.id, expectedVersion: 1, state: 'FAILED' }),
       ),
     );
+    await competitorsWaiting(3);
+    await hold.done;
 
-    expect(results.filter((result) => result.outcome === 'updated')).toHaveLength(1);
-    expect(results.filter((result) => result.outcome === 'version-conflict')).toHaveLength(5);
-    expect((await row(user.id)).version).toBe(2);
+    // Each waited on the row lock, then re-checked its version on the committed row (CP1-09).
+    expect((await Promise.all(competing)).map((result) => result.outcome)).toEqual([
+      'version-conflict',
+      'version-conflict',
+      'version-conflict',
+    ]);
+    expect(await row(user.id)).toMatchObject({ invitationDeliveryState: 'SENT', version: 2 });
   });
 
   it('rolls a write back when later work in the same transaction fails', async () => {
@@ -270,42 +336,73 @@ describe('UserIdentityStore against real PostgreSQL', () => {
     expect(await row(user.id)).toMatchObject({ accessState: 'SUSPENDED', firstActivatedAt: null });
   });
 
-  it('activates once when several first sign-ins write at the same version', async () => {
+  it('activates once when several first sign-ins meet an uncommitted activation', async () => {
     const user = await boundUser();
-    const results = await Promise.all(
-      Array.from({ length: 6 }, () =>
-        runner.run(({ users }) =>
-          users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
-        ),
+    const hold = await holdWrite(
+      `UPDATE iam_application_user SET access_state = 'ACTIVE', first_activated_at = now(),
+         version = version + 1 WHERE id = '${user.id}' AND version = ${user.version}
+         AND access_state = 'INVITED'`,
+    );
+    const competing = Array.from({ length: 3 }, () =>
+      runner.run(({ users }) =>
+        users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
       ),
     );
-    expect(results.filter((result) => result.outcome === 'updated')).toHaveLength(1);
-    expect(results.filter((result) => result.outcome === 'version-conflict')).toHaveLength(5);
+    await competitorsWaiting(3);
+    await hold.done;
+
+    expect((await Promise.all(competing)).map((result) => result.outcome)).toEqual([
+      'version-conflict',
+      'version-conflict',
+      'version-conflict',
+    ]);
     expect((await row(user.id)).version).toBe(user.version + 1);
   });
 
-  it('lets exactly one of a first activation and a concurrent suspension commit', async () => {
-    for (let round = 0; round < 5; round += 1) {
-      await postgres.client.$executeRawUnsafe('TRUNCATE iam_application_user CASCADE');
-      const user = await boundUser();
-      const [activation, suspension] = await Promise.all([
-        runner.run(({ users }) =>
-          users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
-        ),
-        postgres.client.$executeRawUnsafe(
-          `UPDATE iam_application_user SET access_state = 'SUSPENDED', version = version + 1
-           WHERE id = '${user.id}' AND version = ${user.version}`,
-        ),
-      ]);
-      const committed = await row(user.id);
-      expect([activation.outcome === 'updated', suspension === 1]).toContain(true);
-      expect(activation.outcome === 'updated').not.toBe(suspension === 1);
-      expect(committed.version).toBe(user.version + 1);
-      if (suspension === 1) {
-        expect(committed).toMatchObject({ accessState: 'SUSPENDED', firstActivatedAt: null });
-      } else {
-        expect(committed.accessState).toBe('ACTIVE');
-      }
-    }
+  it('never activates a user whose suspension is in flight', async () => {
+    const user = await boundUser();
+    const hold = await holdWrite(
+      `UPDATE iam_application_user SET access_state = 'SUSPENDED', version = version + 1
+         WHERE id = '${user.id}' AND version = ${user.version}`,
+    );
+    const activation = runner.run(({ users }) =>
+      users.recordFirstActivation({ id: user.id, expectedVersion: user.version }),
+    );
+    await competitorsWaiting(1);
+    await hold.done;
+
+    expect(await activation).toEqual({ outcome: 'version-conflict' });
+    expect(await row(user.id)).toMatchObject({
+      accessState: 'SUSPENDED',
+      firstActivatedAt: null,
+      version: user.version + 1,
+    });
+  });
+
+  it('applies a suspension that meets an in-flight activation on top of it, never unseen', async () => {
+    const user = await boundUser();
+    const hold = await holdWrite(
+      `UPDATE iam_application_user SET access_state = 'ACTIVE', first_activated_at = now(),
+         version = version + 1 WHERE id = '${user.id}' AND version = ${user.version}
+         AND access_state = 'INVITED'`,
+    );
+    // The lifecycle store's restriction path: lock the user row, then write at the version read
+    // under that lock (IAM-R06 D-06). The lock waits for the activation to commit.
+    const suspension = runner.run(async ({ lifecycle }) => {
+      const locked = await lifecycle.lockUser(user.id);
+      if (!locked) throw new Error('user missing');
+      return lifecycle.writeAccessRestriction({
+        id: user.id,
+        expectedVersion: locked.version,
+        accessState: 'SUSPENDED',
+      });
+    });
+    await competitorsWaiting(1);
+    await hold.done;
+
+    expect(await suspension).toMatchObject({ accessState: 'SUSPENDED', version: user.version + 2 });
+    const committed = await row(user.id);
+    expect(committed).toMatchObject({ accessState: 'SUSPENDED', version: user.version + 2 });
+    expect(committed.firstActivatedAt).toBeInstanceOf(Date);
   });
 });

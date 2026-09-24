@@ -13,6 +13,7 @@ const IAM_SYSTEM_ROLE_CODE = '20260923041312_iam_system_role_code';
 const AUTH_SESSIONS = '20260923190000_auth_sessions';
 const AUTH_REFRESH_TOKEN = '20260923210000_auth_session_refresh_token';
 const AUTH_SESSION_LIFECYCLE = '20260924020000_auth_session_lifecycle';
+const AUTH_SESSION_HOUSEKEEPING = '20260924200000_auth_session_housekeeping';
 const migrationsRoot = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
 const schemaRoot = fileURLToPath(new URL('../prisma/schema', import.meta.url));
 
@@ -105,6 +106,7 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
         { name: AUTH_SESSIONS, finished: true, rolledBack: false },
         { name: AUTH_REFRESH_TOKEN, finished: true, rolledBack: false },
         { name: AUTH_SESSION_LIFECYCLE, finished: true, rolledBack: false },
+        { name: AUTH_SESSION_HOUSEKEEPING, finished: true, rolledBack: false },
       ]);
       expect(await hasSystemCodeCheck(client)).toBe(true);
       expect(await roles(client)).toEqual(before);
@@ -162,10 +164,16 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
 
         await postgres.prisma(['migrate', 'deploy']);
 
-        expect((await history(client)).slice(-2)).toEqual([
+        expect((await history(client)).slice(-3)).toEqual([
           { name: AUTH_REFRESH_TOKEN, finished: true, rolledBack: false },
           { name: AUTH_SESSION_LIFECYCLE, finished: true, rolledBack: false },
+          { name: AUTH_SESSION_HOUSEKEEPING, finished: true, rolledBack: false },
         ]);
+        // The housekeeping index is built over the existing rows (IAM-R09 D-06).
+        const [index] = await client.$queryRaw<Array<{ count: number }>>`
+          SELECT count(*)::int AS count FROM pg_indexes
+          WHERE tablename = 'auth_session' AND indexname = 'auth_session_idle_expires_at_idx'`;
+        expect(index?.count).toBe(1);
         const rows = await client.$queryRaw<
           Array<{ refresh: boolean; idToken: boolean; revoked: boolean }>
         >`SELECT refresh_token_ciphertext IS NULL AND refresh_token_key_version IS NULL AS refresh,
