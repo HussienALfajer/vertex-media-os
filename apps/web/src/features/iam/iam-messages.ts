@@ -418,6 +418,11 @@ const en: IamMessages = {
 
 const messages = { ar, en };
 
+/** The copy of one language, for code outside React. */
+export function messagesFor(language: keyof typeof messages): IamMessages {
+  return messages[language];
+}
+
 export function useIamMessages(): IamMessages {
   return messages[useUiSettings().language];
 }

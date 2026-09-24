@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiProblem, NetworkFailure } from '../../lib/http';
 import type { IamMessages } from './iam-messages';
+import { messagesFor } from './iam-messages';
 import { describeMutationFailure } from './iam-problems';
 
 // The English copy is enough to tell the branches apart.
@@ -56,5 +57,22 @@ describe('describeMutationFailure (IAM-R08B D-11)', () => {
     expect(describeMutationFailure(new ApiProblem(418, 'SOMETHING_NEW'), messages).message).toBe(
       'problemGeneric',
     );
+  });
+
+  it('words the busy wait and the identity-service outcomes in both languages', () => {
+    const ar = messagesFor('ar');
+    const en = messagesFor('en');
+    expect(describeMutationFailure(new ApiProblem(503, 'SERVICE_BUSY', [], 3), ar).message).toBe(
+      'الخدمة مشغولة الآن. أعد المحاولة بعد 3 ثانية.',
+    );
+    expect(describeMutationFailure(new ApiProblem(503, 'SERVICE_BUSY', [], 3), en).message).toBe(
+      'The service is busy. Try again in 3 seconds.',
+    );
+    expect(
+      describeMutationFailure(new ApiProblem(503, 'IDENTITY_PROVIDER_UNAVAILABLE'), en).message,
+    ).toContain('The result is recorded on the account');
+    expect(
+      describeMutationFailure(new ApiProblem(409, 'IAM_IDENTITY_CONFLICT'), en).message,
+    ).toContain('identity-service operator');
   });
 });

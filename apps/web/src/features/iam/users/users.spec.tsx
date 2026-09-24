@@ -318,7 +318,8 @@ describe('the user directory', () => {
   it('tells no users from no matching results', async () => {
     fakeApi({ 'GET /api/iam/users': () => json(200, page([])) }, ['iam.users.read']);
     renderAt('/users?accessState=DISABLED');
-    expect(await screen.findByRole('button', { name: /مسح/ })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'لا توجد نتائج مطابقة' })).toBeTruthy();
+    expect(screen.queryByText('لا يوجد مستخدمون بعد')).toBeNull();
     expect(screen.queryByRole('button', { name: 'دعوة مستخدم' })).toBeNull();
   });
 
@@ -327,6 +328,23 @@ describe('the user directory', () => {
     renderAt('/users');
     expect(await screen.findByText('لا يوجد مستخدمون بعد')).toBeTruthy();
     expect(screen.getByText('لم يُضف أي مستخدم بعد.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'دعوة مستخدم' })).toBeNull();
+  });
+
+  it('keeps paging in the address and returns to the first page when the filter changes', async () => {
+    const api = fakeApi({
+      'GET /api/iam/users': () => json(200, { ...page([summary()], 60), page: 2, pageSize: 50 }),
+    });
+    const { router } = renderAt('/users?page=2&pageSize=50&accessState=NOPE');
+    await screen.findByRole('link', { name: 'سارة' });
+    // An unknown filter value is dropped, not sent.
+    expect(api.calls.some((call) => call.url === '/api/iam/users?page=2&pageSize=50')).toBe(true);
+    fireEvent.change(screen.getByRole('combobox', { name: 'حالة الوصول' }), {
+      target: { value: 'ACTIVE' },
+    });
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ pageSize: 50, accessState: 'ACTIVE' }),
+    );
   });
 
   it('presents a refusal as missing access and a failure as an error, never as empty', async () => {
@@ -564,12 +582,18 @@ describe('the user detail', () => {
     const dialog = await chooseAction('إعادة تفعيل الوصول');
     // The confirmation explains both outcomes without predicting one.
     expect(dialog.textContent).toContain('يحدد الخادم النتيجة');
+    // Restoring access is not a harmful commitment: primary, not danger (DS Section 35).
+    expect(
+      within(dialog)
+        .getByRole('button', { name: 'إعادة تفعيل الوصول' })
+        .getAttribute('data-intent'),
+    ).not.toBe('danger');
     fireEvent.click(within(dialog).getByRole('button', { name: 'إعادة تفعيل الوصول' }));
     expect(await screen.findByText(message)).toBeTruthy();
     expect(api.unsafe()[0]?.body).toEqual({ expectedVersion: 3 });
   });
 
-  it('explains a refused transition, keeps the dialog and reloads the user', async () => {
+  it('explains a refusal in the dialog and keeps the reason; a rule refusal needs no reload', async () => {
     let reads = 0;
     fakeApi({
       [detailRoute]: () => {
@@ -587,6 +611,53 @@ describe('the user detail', () => {
     ).toBeTruthy();
     expect((within(dialog).getByLabelText(/السبب/) as HTMLTextAreaElement).value).toBe('تحقيق');
     expect(reads).toBe(1);
+  });
+
+  it('reloads the user after a refusal that means its state changed', async () => {
+    let reads = 0;
+    fakeApi({
+      [detailRoute]: () => {
+        reads += 1;
+        return json(200, detail());
+      },
+      [`POST /api/iam/users/${TARGET_ID}/suspend`]: () =>
+        problem(409, 'IAM_INVALID_ACCESS_TRANSITION'),
+    });
+    renderAt(detailPath);
+    const dialog = await chooseAction('إيقاف الوصول مؤقتًا');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إيقاف الوصول مؤقتًا' }));
+    expect(await within(dialog).findByText(/لا تسمح حالة الوصول الحالية/)).toBeTruthy();
+    await waitFor(() => expect(reads).toBe(2));
+  });
+
+  it('offers nothing but synchronization and session revocation for a TERMINATED user', async () => {
+    fakeApi({ [detailRoute]: () => json(200, detail({ accessState: 'TERMINATED' })) });
+    renderAt(detailPath);
+    const items = within(await openUserActions())
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+    expect(items).toEqual(['مزامنة الهوية', 'إنهاء الجلسات']);
+  });
+
+  it('offers invitation resend only while INVITED', async () => {
+    fakeApi({ [detailRoute]: () => json(200, detail({ accessState: 'INVITED' })) });
+    renderAt(detailPath);
+    const items = within(await openUserActions())
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+    expect(items).toContain('إعادة إرسال الدعوة');
+    expect(items).not.toContain('إعادة تفعيل الوصول');
+  });
+
+  it('says a resend failed after an earlier confirmed sending (spec 11.3)', async () => {
+    fakeApi({
+      [detailRoute]: () =>
+        json(200, detail({ accessState: 'INVITED', invitationDeliveryState: 'FAILED' })),
+    });
+    renderAt(detailPath);
+    const facts = await screen.findByRole('region', { name: 'حالة الحساب' });
+    expect(facts.textContent).toContain('تعذّر تأكيد إرسال الدعوة');
+    expect(facts.textContent).toContain('تعذّر تأكيد إعادة الإرسال. آخر إرسال مؤكد:');
   });
 
   it('treats a lost answer as unconfirmed and reads the user again before any repeat', async () => {
@@ -633,13 +704,16 @@ describe('the user detail', () => {
   });
 
   it('reports identity synchronization and the invitation outcome separately', async () => {
+    let resends = 0;
     const api = fakeApi({
       [detailRoute]: () =>
         json(200, detail({ accessState: 'INVITED', identitySyncState: 'FAILED' })),
       [`POST /api/iam/users/${TARGET_ID}/sync-identity`]: () =>
         json(200, { user: user({ accessState: 'INVITED' }), invitation: 'SENT' }),
       [`POST /api/iam/users/${TARGET_ID}/resend-invitation`]: () =>
-        problem(503, 'SERVICE_BUSY', {}),
+        resends++ === 0
+          ? problem(503, 'SERVICE_BUSY', {})
+          : json(200, { user: user({ accessState: 'INVITED' }), invitation: 'NO_ACTION_REQUIRED' }),
     });
     renderAt(detailPath);
     fireEvent.click(
@@ -653,6 +727,13 @@ describe('the user detail', () => {
       within(await openUserActions()).getByRole('menuitem', { name: 'إعادة إرسال الدعوة' }),
     );
     expect(await screen.findByText('الخدمة مشغولة الآن. أعد المحاولة بعد قليل.')).toBeTruthy();
+
+    fireEvent.click(
+      within(await openUserActions()).getByRole('menuitem', { name: 'إعادة إرسال الدعوة' }),
+    );
+    expect(await screen.findByText('نتيجة إعادة إرسال الدعوة')).toBeTruthy();
+    expect(screen.getByText('لا تحتاج الهوية إلى دعوة.')).toBeTruthy();
+    expect(screen.queryByText('اكتملت مزامنة الهوية')).toBeNull();
   });
 
   it('removes the user data when the administrator loses iam.users.read (review AB-2)', async () => {
@@ -747,6 +828,8 @@ describe('roles and departments of a user', () => {
     renderAt(detailPath);
     fireEvent.click(await screen.findByRole('button', { name: 'إسناد دور' }));
     const dialog = await screen.findByRole('dialog', { name: 'إسناد دور إلى المستخدم' });
+    expect(dialog.textContent).toContain('سارة');
+    expect(dialog.textContent).toContain('sara@example.test');
     const select = within(dialog).getByRole('combobox', { name: /الدور/ });
     await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(2));
     // A role the user already holds is not offered again.
@@ -818,6 +901,10 @@ describe('roles and departments of a user', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'إجراءات قسم العمليات' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'إزالة من القسم' }));
     const dialog = await screen.findByRole('alertdialog', { name: 'إزالة المستخدم من القسم؟' });
+    expect(dialog.textContent).toContain('سارة');
+    expect(dialog.textContent).toContain('sara@example.test');
+    expect(dialog.textContent).toContain('العمليات · رئيسي');
+    expect(dialog.textContent).toContain('لا تتغير أدواره ولا صلاحياته');
     fireEvent.change(within(dialog).getByRole('combobox', { name: /القسم الرئيسي الجديد/ }), {
       target: { value: SALES },
     });
@@ -828,6 +915,98 @@ describe('roles and departments of a user', () => {
       url: `/api/iam/users/${TARGET_ID}/departments/${OPS}?replacementPrimaryDepartmentId=${SALES}`,
       body: undefined,
     });
+  });
+
+  it('removes a secondary membership without a replacement and a role without a reason', async () => {
+    const api = fakeApi({
+      [detailRoute]: () => json(200, detail()),
+      [`DELETE /api/iam/users/${TARGET_ID}/departments/${SALES}`]: () =>
+        json(200, { primaryDepartmentId: OPS }),
+      [`DELETE /api/iam/users/${TARGET_ID}/roles/${EDITOR}`]: () =>
+        new Response(null, { status: 204 }),
+    });
+    renderAt(detailPath);
+    fireEvent.click(await screen.findByRole('button', { name: 'إجراءات قسم المبيعات' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'إزالة من القسم' }));
+    const membership = await screen.findByRole('alertdialog');
+    // Only the primary membership asks for a replacement.
+    expect(within(membership).queryByRole('combobox')).toBeNull();
+    fireEvent.click(within(membership).getByRole('button', { name: 'إزالة من القسم' }));
+    expect(await screen.findByText('أُزيل المستخدم من القسم')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'إزالة دور محرر' }));
+    const role = await screen.findByRole('alertdialog', { name: 'إزالة الدور من المستخدم؟' });
+    fireEvent.change(within(role).getByLabelText(/السبب/), { target: { value: '   ' } });
+    fireEvent.click(within(role).getByRole('button', { name: 'إزالة الدور' }));
+    expect(await screen.findByText('أُزيل الدور')).toBeTruthy();
+    expect(api.unsafe().map(({ url, body }) => [url, body])).toEqual([
+      [`/api/iam/users/${TARGET_ID}/departments/${SALES}`, undefined],
+      [`/api/iam/users/${TARGET_ID}/roles/${EDITOR}`, undefined],
+    ]);
+  });
+
+  it('re-reads the own access after removing one of the administrator’s own roles', async () => {
+    let sessionReads = 0;
+    fakeApi({
+      [`GET /api/iam/users/${ADMIN.id}`]: () => json(200, detail({ id: ADMIN.id })),
+      [`DELETE /api/iam/users/${ADMIN.id}/roles/${EDITOR}`]: () =>
+        new Response(null, { status: 204 }),
+      'GET /api/auth/session': () => {
+        sessionReads += 1;
+        return json(200, {
+          user: ADMIN,
+          session: {
+            idleExpiresAt: '2026-09-24T10:00:00.000Z',
+            absoluteExpiresAt: '2026-09-24T18:00:00.000Z',
+          },
+        });
+      },
+    });
+    renderAt(`/users/${ADMIN.id}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'إزالة دور محرر' }));
+    const dialog = await screen.findByRole('alertdialog');
+    const before = sessionReads;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إزالة الدور' }));
+    expect(await screen.findByText('أُزيل الدور')).toBeTruthy();
+    await waitFor(() => expect(sessionReads).toBeGreaterThan(before));
+  });
+
+  it('hides pickers without read access to departments and roles', async () => {
+    fakeApi({ [detailRoute]: () => json(200, detail()) }, [
+      'iam.users.read',
+      'iam.users.manage-departments',
+      'iam.users.manage-roles',
+    ]);
+    renderAt(detailPath);
+    await screen.findByRole('region', { name: 'الملف' });
+    expect(screen.queryByRole('button', { name: 'إضافة إلى قسم' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'إسناد دور' })).toBeNull();
+    // Removal needs no picker, so it stays available.
+    expect(screen.getByRole('button', { name: 'إزالة دور محرر' })).toBeTruthy();
+  });
+
+  it('says when a picker lists only the first page of a longer list', async () => {
+    fakeApi({
+      [detailRoute]: () => json(200, detail()),
+      'GET /api/iam/roles': () =>
+        json(200, {
+          ...page([
+            {
+              id: SYSTEM,
+              code: 'x',
+              name: 'دور',
+              description: null,
+              state: 'ACTIVE',
+              isSystem: false,
+              version: 1,
+            },
+          ]),
+          total: 140,
+        }),
+    });
+    renderAt(detailPath);
+    fireEvent.click(await screen.findByRole('button', { name: 'إسناد دور' }));
+    expect(await screen.findByText('تُعرض أول 100 من أصل 140.')).toBeTruthy();
   });
 
   it('adds a membership and re-reads the administrator’s own access after changing their own grants', async () => {
