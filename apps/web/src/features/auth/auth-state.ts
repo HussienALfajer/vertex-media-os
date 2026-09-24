@@ -42,6 +42,7 @@ export interface CurrentDepartment {
 interface AnyQuery {
   readonly queryKey: readonly unknown[];
   readonly meta?: Record<string, unknown> | undefined;
+  readonly state: { readonly data: unknown };
   setState(state: { data: undefined; dataUpdatedAt: number }): void;
 }
 
@@ -79,18 +80,30 @@ export async function readAuthState(signal?: AbortSignal): Promise<AuthState> {
       permissionCodes: stringsOf(me['permissionCodes']),
     };
   } catch (error) {
-    if (isApiProblem(error, 401)) {
-      const reason: SignedOutReason =
-        error.code === 'AUTH_SESSION_EXPIRED'
-          ? 'expired'
-          : error.code === 'AUTH_SESSION_INVALID'
-            ? 'ended'
-            : 'required';
-      return { status: 'signed-out', reason };
-    }
-    if (isApiProblem(error, 403, 'IAM_USER_INACTIVE')) return { status: 'inactive' };
+    const refused = refusedSessionState(error);
+    if (refused !== undefined) return refused;
     throw error;
   }
+}
+
+/**
+ * The state a session refusal proves: `401` is signed out (with the reason its code names) and
+ * `403 IAM_USER_INACTIVE` is inactive. The API clears the session cookie with such a refusal, so
+ * the state is taken from the refusal itself, never from a re-read that would only answer
+ * `AUTHENTICATION_REQUIRED` (review S-2).
+ */
+function refusedSessionState(error: unknown): AuthState | undefined {
+  if (isApiProblem(error, 401)) {
+    const reason: SignedOutReason =
+      error.code === 'AUTH_SESSION_EXPIRED'
+        ? 'expired'
+        : error.code === 'AUTH_SESSION_INVALID'
+          ? 'ended'
+          : 'required';
+    return { status: 'signed-out', reason };
+  }
+  if (isApiProblem(error, 403, 'IAM_USER_INACTIVE')) return { status: 'inactive' };
+  return undefined;
 }
 
 /**
@@ -112,7 +125,9 @@ function requiredPermission(query: AnyQuery): string | undefined {
 /**
  * Keeps protected data consistent with the authentication state: everything protected goes when
  * the state leaves `signed-in` or names another user, and a query whose declared permission the
- * refreshed codes no longer include is removed. Returns the unsubscribe function.
+ * refreshed codes no longer include is removed. Removal empties the cache only; `SessionGate`
+ * remounts the protected views on the same changes so none keeps rendering removed data (review
+ * S-1). Returns the unsubscribe function.
  */
 export function watchAuthState(client: QueryClient): () => void {
   let signedInUser: string | undefined;
@@ -130,8 +145,10 @@ export function watchAuthState(client: QueryClient): () => void {
     const codes = new Set(state.permissionCodes);
     client.removeQueries({
       predicate: (query) => {
+        // Only held data is removed: a view mounted after the loss may still ask, and the API
+        // answers it with 403 (removing its query mid-flight would leave it pending forever).
         const permission = requiredPermission(query);
-        return permission !== undefined && !codes.has(permission);
+        return permission !== undefined && !codes.has(permission) && query.state.data !== undefined;
       },
     });
   });
@@ -139,14 +156,20 @@ export function watchAuthState(client: QueryClient): () => void {
 
 /**
  * Reacts to an API refusal of any protected query or mutation: a `401` or an inactive account
- * clears protected state and re-reads the authentication state; a `403 AUTHORIZATION_DENIED`
+ * clears protected state and becomes the authentication state; a `403 AUTHORIZATION_DENIED`
  * drops the refused query's data (its error stays) and re-reads the permission codes.
  */
 export function handleApiError(client: QueryClient, error: unknown, query?: AnyQuery): void {
   if (query !== undefined && query.queryKey[0] === AUTH_QUERY_KEY[0]) return;
-  if (isApiProblem(error, 401) || isApiProblem(error, 403, 'IAM_USER_INACTIVE')) {
+  const refused = refusedSessionState(error);
+  if (refused !== undefined) {
     clearProtectedState(client);
-    void refreshAuthState(client);
+    // Only the first refusal names the reason: the API cleared the cookie with it, so any later
+    // request (a view refetching while it unmounts) answers `AUTHENTICATION_REQUIRED`.
+    const current = client.getQueryData(authQuery.queryKey);
+    if (current === undefined || current.status === 'signed-in') {
+      client.setQueryData(authQuery.queryKey, refused);
+    }
     return;
   }
   if (isApiProblem(error, 403, 'AUTHORIZATION_DENIED')) {
@@ -174,9 +197,10 @@ export async function signOut(client: QueryClient): Promise<string | undefined> 
     return next;
   } catch (error) {
     // The session is already gone: the browser is signed out either way.
-    if (isApiProblem(error, 401) || isApiProblem(error, 403, 'IAM_USER_INACTIVE')) {
+    const refused = refusedSessionState(error);
+    if (refused !== undefined) {
       clearProtectedState(client);
-      await refreshAuthState(client);
+      client.setQueryData(authQuery.queryKey, refused);
       return undefined;
     }
     throw error;

@@ -1,6 +1,10 @@
 import nx from '@nx/eslint-plugin';
 import vertexUi from '../../packages/ui/lint/vertex-ui-plugin.mjs';
-import baseConfig from '../../eslint.config.mjs';
+import baseConfig, {
+  restrictedEnvSyntax,
+  restrictedImportSyntax,
+  restrictedRawSqlSyntax,
+} from '../../eslint.config.mjs';
 
 export default [
   ...nx.configs['flat/react'],
@@ -25,18 +29,31 @@ export default [
     rules: {
       'no-restricted-globals': [
         'error',
-        ...['localStorage', 'sessionStorage', 'indexedDB'].map((name) => ({
+        ...['localStorage', 'sessionStorage', 'indexedDB', 'cookieStore'].map((name) => ({
           name,
           message: 'Application code keeps no state in browser storage (IAM-R08 D-14).',
         })),
       ],
+      // Replaces the root's options for these files, so the root's selectors are composed in.
+      'no-restricted-syntax': [
+        'error',
+        ...restrictedImportSyntax,
+        ...restrictedEnvSyntax,
+        ...restrictedRawSqlSyntax,
+        {
+          selector: "MemberExpression[property.name='cookie'][object.property.name='document']",
+          message: 'The session cookie is HttpOnly; browser code never reads or writes cookies.',
+        },
+      ],
       'no-restricted-properties': [
         'error',
-        ...['localStorage', 'sessionStorage', 'indexedDB'].map((property) => ({
-          object: 'window',
-          property,
-          message: 'Application code keeps no state in browser storage (IAM-R08 D-14).',
-        })),
+        ...['window', 'globalThis', 'self'].flatMap((object) =>
+          ['localStorage', 'sessionStorage', 'indexedDB', 'cookieStore'].map((property) => ({
+            object,
+            property,
+            message: 'Application code keeps no state in browser storage (IAM-R08 D-14).',
+          })),
+        ),
         {
           object: 'document',
           property: 'cookie',

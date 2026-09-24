@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ErrorState, LoadingState, Page, PageHeader } from '@vertex-os/ui';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { useAuthMessages } from './auth-messages';
 import { authQuery } from './auth-state';
 import { SignedOutPage, type SignInFailure } from './signed-out-page';
@@ -36,7 +36,12 @@ export function SessionGate({ authError, children }: SessionGateProps) {
       </Page>
     );
   }
-  if (auth.data.status === 'signed-in') return children;
+  if (auth.data.status === 'signed-in') {
+    // A different user or permission set remounts the protected views, so a view never keeps
+    // showing data whose query was removed for that change (D-10; review S-1).
+    const access = `${auth.data.user.id}:${auth.data.permissionCodes.join(',')}`;
+    return <Fragment key={access}>{children}</Fragment>;
+  }
   return (
     <SignedOutPage
       reason={auth.data.status === 'inactive' ? 'inactive' : auth.data.reason}

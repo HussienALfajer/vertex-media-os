@@ -309,4 +309,101 @@ describe('protected state in the query client', () => {
 
     expect(client.getQueryData(protectedKey)).toEqual(['a protected row']);
   });
+
+  it('forgets the CSRF token and the mutation cache when protected state is cleared (T-2)', async () => {
+    const fetchMock = routeFetch({
+      ...signedIn(),
+      'GET /api/auth/csrf': () => json(200, { token: 'csrf-of-the-old-session' }),
+      'POST /api/things': () => json(200, { done: true }),
+    });
+    await client.fetchQuery(authQuery);
+    await client
+      .getMutationCache()
+      .build(client, { mutationFn: () => apiRequest('/api/things', { method: 'POST' }) })
+      .execute(undefined);
+    expect(client.getMutationCache().getAll()).toHaveLength(1);
+
+    fetchMock.mockImplementation((path: string, init: RequestInit) =>
+      Promise.resolve(
+        path === '/api/auth/session'
+          ? json(401, { code: 'AUTH_SESSION_INVALID' })
+          : path === '/api/auth/csrf'
+            ? json(200, { token: 'csrf-of-the-new-session' })
+            : json(200, { method: init.method }),
+      ),
+    );
+    await client.refetchQueries({ queryKey: authQuery.queryKey });
+    expect(client.getMutationCache().getAll()).toHaveLength(0);
+
+    await apiRequest('/api/things', { method: 'POST' });
+    const post = fetchMock.mock.calls.at(-1);
+    expect(fetchMock.mock.calls.at(-2)?.[0]).toBe('/api/auth/csrf');
+    expect((post?.[1].headers as Record<string, string>)['x-csrf-token']).toBe(
+      'csrf-of-the-new-session',
+    );
+  });
+
+  it('clears protected data when the first state read is inactive (T-6)', async () => {
+    routeFetch({ 'GET /api/auth/session': problem(403, 'IAM_USER_INACTIVE') });
+    await seedProtected();
+
+    await client.fetchQuery(authQuery);
+
+    expect(client.getQueryData(protectedKey)).toBeUndefined();
+  });
+
+  it('does not clear protected data when reading the state itself fails (T-6)', async () => {
+    const fetchMock = routeFetch(signedIn());
+    await client.fetchQuery(authQuery);
+    await seedProtected();
+
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(json(403, { code: 'AUTHORIZATION_DENIED' })),
+    );
+    await client.refetchQueries({ queryKey: authQuery.queryKey });
+
+    expect(client.getQueryState(authQuery.queryKey)?.status).toBe('error');
+    expect(client.getQueryData(protectedKey)).toEqual(['a protected row']);
+  });
+
+  it('never retries a refused read, and retries a network failure twice (T-6)', async () => {
+    vi.useFakeTimers();
+    try {
+      const refused = vi.fn(() => apiRequest('/api/iam/users'));
+      routeFetch({ 'GET /api/iam/users': problem(404, 'NOT_FOUND') });
+      const first = client.fetchQuery({ queryKey: ['a'], queryFn: refused }).catch(() => undefined);
+      await vi.runAllTimersAsync();
+      await first;
+      expect(refused).toHaveBeenCalledTimes(1);
+
+      const unreachable = vi.fn(() => Promise.reject(new NetworkFailure('down')));
+      const second = client
+        .fetchQuery({ queryKey: ['b'], queryFn: unreachable })
+        .catch(() => undefined);
+      await vi.runAllTimersAsync();
+      await second;
+      expect(unreachable).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never polls the session: no read happens without focus or a refusal (D-06, T-5)', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = routeFetch(signedIn());
+      const observer = new QueryObserver(client, authQuery);
+      const unsubscribe = observer.subscribe(() => undefined);
+      await vi.advanceTimersByTimeAsync(1_000);
+      const reads = fetchMock.mock.calls.length;
+      expect(reads).toBe(2);
+
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+      expect(fetchMock.mock.calls.length).toBe(reads);
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

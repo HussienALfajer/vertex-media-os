@@ -49,12 +49,15 @@ function signedOut(code = 'AUTHENTICATION_REQUIRED'): Routes {
   return { ...live, 'GET /api/auth/session': refusal(401, code) };
 }
 
-/** Answers by `METHOD /path`; an unknown request never settles, so it cannot pass by accident. */
+/** A request that stays in flight, for pending states. */
+const pending: Handler = () => new Promise<Response>(() => undefined);
+
+/** Answers by `METHOD /path`; an unknown request fails like an unreachable API (review T-10). */
 function routeFetch(routes: Routes) {
   const mock = vi.fn((path: string, init?: RequestInit) => {
     const handler = routes[`${init?.method ?? 'GET'} ${path}`];
     return handler === undefined
-      ? new Promise<Response>(() => undefined)
+      ? Promise.reject(new Error(`Unexpected request ${init?.method ?? 'GET'} ${path}`))
       : Promise.resolve(handler());
   });
   vi.stubGlobal('fetch', mock);
@@ -112,7 +115,7 @@ describe('Vertex OS technical shell', () => {
   });
 
   it('provides one main landmark, named navigation and a skip link to the main content', async () => {
-    routeFetch({});
+    routeFetch({ 'GET /api/auth/session': pending, 'GET /api/health/live': pending });
 
     renderApp();
 
@@ -126,7 +129,7 @@ describe('Vertex OS technical shell', () => {
   });
 
   it('shows a pending state while the liveness check is in flight', async () => {
-    routeFetch({ ...signedIn, 'GET /api/health/live': () => new Promise(() => undefined) });
+    routeFetch({ ...signedIn, 'GET /api/health/live': pending });
 
     renderApp();
 
@@ -277,6 +280,8 @@ describe('session experience', () => {
 
     expect(await screen.findByText(title)).toBeTruthy();
     await vi.waitFor(() => expect(router.state.location.search).toEqual({}));
+    // Replaced, not pushed: going back cannot return to the failure address (D-08).
+    expect(router.history.length).toBe(1);
     expect(screen.getByText(title)).toBeTruthy();
   });
 
