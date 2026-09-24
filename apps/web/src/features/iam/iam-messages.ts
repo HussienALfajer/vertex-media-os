@@ -11,6 +11,8 @@ const ar = {
   searchUsers: 'البحث في المستخدمين',
   searchHelp: 'بالاسم أو البريد الإلكتروني.',
   accessFilter: 'حالة الوصول',
+  departmentFilter: 'القسم',
+  roleFilter: 'الدور',
   all: 'الكل',
   inviteUser: 'دعوة مستخدم',
   directoryCaption: 'دليل المستخدمين',
@@ -201,6 +203,14 @@ const ar = {
   problemDepartmentNotFound: 'القسم غير موجود.',
   problemMembershipNotFound: 'لم يعد المستخدم عضوًا في هذا القسم.',
   problemAssignmentNotFound: 'لم يعد المستخدم يحمل هذا الدور.',
+  problemDepartmentCodeTaken: 'يوجد قسم بهذا الرمز.',
+  problemRoleCodeTaken: 'يوجد دور بهذا الرمز.',
+  problemSystemRoleProtected:
+    'دور مسؤول النظام محمي: لا يُغيَّر اسمه ولا حالته ولا صلاحياته من الواجهة. حُمّل الدور الحالي.',
+  problemUnknownPermission:
+    'إحدى الصلاحيات غير مسجّلة في الكتالوج. حُمّل الكتالوج الحالي؛ راجع اختيارك.',
+  problemPermissionNotAssignable:
+    'إحدى الصلاحيات لم تعد نشطة ولا يمكن ربطها. حُمّل الكتالوج الحالي؛ راجع اختيارك.',
   problemDenied: 'لا تملك صلاحية تنفيذ هذا الإجراء.',
   problemUncertain:
     'لم تتأكد النتيجة، وقد يكون الإجراء نُفّذ. حُمّلت حالة المستخدم الحالية؛ راجعها قبل إعادة المحاولة.',
@@ -216,6 +226,8 @@ const en: IamMessages = {
   searchUsers: 'Search users',
   searchHelp: 'By name or email.',
   accessFilter: 'Access',
+  departmentFilter: 'Department',
+  roleFilter: 'Role',
   all: 'All',
   inviteUser: 'Invite user',
   directoryCaption: 'User directory',
@@ -410,6 +422,14 @@ const en: IamMessages = {
   problemDepartmentNotFound: 'The department does not exist.',
   problemMembershipNotFound: 'The user is no longer a member of this department.',
   problemAssignmentNotFound: 'The user no longer holds this role.',
+  problemDepartmentCodeTaken: 'A department with this code already exists.',
+  problemRoleCodeTaken: 'A role with this code already exists.',
+  problemSystemRoleProtected:
+    'The System Administrator role is protected: its name, state and permissions cannot be changed here. The current role is loaded.',
+  problemUnknownPermission:
+    'A permission is not registered in the catalog. The current catalog is loaded; review your choice.',
+  problemPermissionNotAssignable:
+    'A permission is no longer active and cannot be mapped. The current catalog is loaded; review your choice.',
   problemDenied: 'You do not have permission for this action.',
   problemUncertain:
     'The result is not confirmed, and the action may have been applied. The user’s current state is loaded; check it before trying again.',

@@ -8,6 +8,7 @@ import { AccountArea } from './features/auth/account-area';
 import { authQuery } from './features/auth/auth-state';
 import { useIamMessages } from './features/iam/iam-messages';
 import { IAM_PERMISSIONS } from './features/iam/iam-queries';
+import { useOrganizationMessages } from './features/iam/organization/organization-messages';
 
 /**
  * The production shell. Its navigation lists only destinations that exist; business modules add
@@ -17,6 +18,7 @@ import { IAM_PERMISSIONS } from './features/iam/iam-queries';
 export function ApplicationShell({ children }: { children: ReactNode }) {
   const messages = useAppMessages();
   const iamMessages = useIamMessages();
+  const organizationMessages = useOrganizationMessages();
   const { pathname } = useLocation();
   const { data: auth } = useQuery(authQuery);
   const signedIn = auth?.status === 'signed-in' ? auth : undefined;
@@ -38,6 +40,30 @@ export function ApplicationShell({ children }: { children: ReactNode }) {
           icon: 'user',
           current: pathname === '/users' || pathname.startsWith('/users/'),
           anyOf: [IAM_PERMISSIONS.usersRead],
+        },
+        {
+          id: 'departments',
+          label: organizationMessages.departments,
+          href: '/departments',
+          icon: 'folder',
+          current: pathname === '/departments' || pathname.startsWith('/departments/'),
+          anyOf: [IAM_PERMISSIONS.departmentsRead],
+        },
+        {
+          id: 'roles',
+          label: organizationMessages.roles,
+          href: '/roles',
+          icon: 'shield',
+          current: pathname === '/roles' || pathname.startsWith('/roles/'),
+          anyOf: [IAM_PERMISSIONS.rolesRead],
+        },
+        {
+          id: 'permissions',
+          label: organizationMessages.permissions,
+          href: '/permissions',
+          icon: 'lock',
+          current: pathname === '/permissions',
+          anyOf: [IAM_PERMISSIONS.permissionsRead],
         },
       ],
     },

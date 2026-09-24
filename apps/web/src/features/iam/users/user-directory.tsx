@@ -27,22 +27,30 @@ import { isApiProblem } from '../../../lib/http';
 import { useAccess } from '../../auth/use-access';
 import { ACCESS_STATES, type AccessState, type UserSummary } from '../iam-api';
 import { useIamMessages } from '../iam-messages';
-import { IAM_PERMISSIONS, usersQuery } from '../iam-queries';
+import {
+  departmentsQuery,
+  IAM_PERMISSIONS,
+  LIST_BOUND,
+  rolesQuery,
+  usersQuery,
+} from '../iam-queries';
 import { AccessStatus, accessLabel, IdentityStatus, InvitationStatus } from '../iam-states';
 
 export interface DirectoryParams {
   readonly page: number;
   readonly pageSize: PageSize;
   readonly accessState?: AccessState | undefined;
+  readonly departmentId?: string | undefined;
+  readonly roleId?: string | undefined;
 }
 
 /** The API bounds search text to 100 characters (IAM-R07 D-03). */
 const SEARCH_MAX = 100;
 
 /**
- * The user directory (spec Sections 40, 42): a bounded, server-paged list with search and an
- * access-state filter. The page, page size and filter live in the address; the search text is
- * personal data and stays in memory (IAM-R08B D-03).
+ * The user directory (spec Sections 40, 42): a bounded, server-paged list with search and access
+ * state, department and role filters. The page, page size and filters live in the address; the
+ * search text is personal data and stays in memory (IAM-R08B D-03; IAM-R08C D-09).
  */
 export function UserDirectory({
   params,
@@ -62,6 +70,20 @@ export function UserDirectory({
     // Background refresh and paging keep the authorized rows on screen (DS Section 34).
     placeholderData: keepPreviousData,
   });
+  // Filter choices: one bounded page of each list, in every state (IAM-R08C D-09).
+  const readsDepartments = can(IAM_PERMISSIONS.departmentsRead);
+  const readsRoles = can(IAM_PERMISSIONS.rolesRead);
+  const departments = useQuery({
+    ...departmentsQuery({ page: 1, pageSize: LIST_BOUND }),
+    enabled: readsDepartments,
+  });
+  const roles = useQuery({
+    ...rolesQuery({ page: 1, pageSize: LIST_BOUND }),
+    enabled: readsRoles,
+  });
+  const departmentName = (id: string) =>
+    departments.data?.items.find((department) => department.id === id)?.name ?? id;
+  const roleName = (id: string) => roles.data?.items.find((role) => role.id === id)?.name ?? id;
 
   const header = (
     <PageHeader
@@ -163,7 +185,15 @@ export function UserDirectory({
     },
   ];
 
-  const filtered = search !== '' || params.accessState !== undefined;
+  const filtered =
+    search !== '' ||
+    params.accessState !== undefined ||
+    params.departmentId !== undefined ||
+    params.roleId !== undefined;
+  const without = (filter: 'accessState' | 'departmentId' | 'roleId'): DirectoryParams => {
+    const { [filter]: _removed, ...rest } = params;
+    return { ...rest, page: 1 };
+  };
   const clearFilters = () => {
     setSearchText('');
     setSearch('');
@@ -193,17 +223,35 @@ export function UserDirectory({
           }
           filters={
             <FilterBar
-              active={
-                params.accessState === undefined
+              active={[
+                ...(params.accessState === undefined
                   ? []
                   : [
                       {
                         id: 'access',
                         label: `${messages.accessFilter}: ${accessLabel(params.accessState, language) ?? params.accessState}`,
-                        onRemove: () => onParamsChange({ page: 1, pageSize: params.pageSize }),
+                        onRemove: () => onParamsChange(without('accessState')),
                       },
-                    ]
-              }
+                    ]),
+                ...(params.departmentId === undefined
+                  ? []
+                  : [
+                      {
+                        id: 'department',
+                        label: `${messages.departmentFilter}: ${departmentName(params.departmentId)}`,
+                        onRemove: () => onParamsChange(without('departmentId')),
+                      },
+                    ]),
+                ...(params.roleId === undefined
+                  ? []
+                  : [
+                      {
+                        id: 'role',
+                        label: `${messages.roleFilter}: ${roleName(params.roleId)}`,
+                        onRemove: () => onParamsChange(without('roleId')),
+                      },
+                    ]),
+              ]}
               onClearAll={clearFilters}
             >
               <Field label={messages.accessFilter}>
@@ -212,7 +260,7 @@ export function UserDirectory({
                   onChange={(event) => {
                     const value = event.currentTarget.value;
                     const state = ACCESS_STATES.find((candidate) => candidate === value);
-                    onParamsChange({ page: 1, pageSize: params.pageSize, accessState: state });
+                    onParamsChange({ ...params, page: 1, accessState: state });
                   }}
                 >
                   <option value="all">{messages.all}</option>
@@ -223,6 +271,56 @@ export function UserDirectory({
                   ))}
                 </Select>
               </Field>
+              {readsDepartments && (
+                <Field label={messages.departmentFilter}>
+                  <Select
+                    value={params.departmentId ?? 'all'}
+                    disabled={departments.data === undefined}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      onParamsChange({
+                        ...params,
+                        page: 1,
+                        departmentId: value === 'all' ? undefined : value,
+                      });
+                    }}
+                  >
+                    <option value="all">{messages.all}</option>
+                    {departments.data?.items.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.state === 'ACTIVE'
+                          ? department.name
+                          : `${department.name} (${messages.inactive})`}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+              {readsRoles && (
+                <Field label={messages.roleFilter}>
+                  <Select
+                    value={params.roleId ?? 'all'}
+                    disabled={roles.data === undefined}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      onParamsChange({
+                        ...params,
+                        page: 1,
+                        roleId: value === 'all' ? undefined : value,
+                      });
+                    }}
+                  >
+                    <option value="all">{messages.all}</option>
+                    {roles.data?.items.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.state === 'ACTIVE'
+                          ? role.name
+                          : `${role.name} (${messages.inactive})`}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
             </FilterBar>
           }
         />

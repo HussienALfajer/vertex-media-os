@@ -40,9 +40,9 @@ const VISUAL_BROWSER = {
  * §56): a test that passes only on retry still fails the run, is annotated on the GitHub run,
  * and keeps the failed attempt's trace and screenshot.
  *
- * `users-admin.spec.ts` renders the user administration screens of the production build with the
- * browser's `/api` requests answered in the page (IAM-R08B D-15); signed-in journeys through the
- * real API and Keycloak belong to IAM-MP-15.
+ * `users-admin.spec.ts` and `privileges-admin.spec.ts` render the IAM administration screens of the
+ * production build with the browser's `/api` requests answered in the page (IAM-R08B D-15,
+ * IAM-R08C D-14); signed-in journeys through the real API and Keycloak belong to IAM-MP-15.
  *
  * The smoke journeys observe liveness, the signed-out entry (a session read without a cookie
  * is refused before any database access) and a sign-in start that cannot reach the identity
@@ -70,7 +70,12 @@ export default defineConfig({
   projects: [
     {
       name: 'smoke',
-      testMatch: ['smoke.spec.ts', 'production.spec.ts', 'users-admin.spec.ts'],
+      testMatch: [
+        'smoke.spec.ts',
+        'production.spec.ts',
+        'users-admin.spec.ts',
+        'privileges-admin.spec.ts',
+      ],
       use: { ...devices['Desktop Chrome'], baseURL: `http://127.0.0.1:${WEB_PORT}` },
     },
     {
