@@ -23,6 +23,7 @@ import {
   AddMembershipBody,
   AssignRoleBody,
   EmptyBody,
+  ReasonBody,
   refs,
   RemoveMembershipQuery,
   SetMembershipBody,
@@ -193,6 +194,8 @@ export class UserGrantsController {
     permission: permission(IAM_PERMISSIONS.usersManageRoles),
     unsafe: true,
     params: ['userId', 'roleId'],
+    body: refs.ReasonBody,
+    bodyRequired: false,
     success: { status: 204, description: 'The role is removed.' },
     errors: {
       404: `${USER_NOT_FOUND}, \`IAM_ROLE_NOT_FOUND\`, \`IAM_ROLE_ASSIGNMENT_NOT_FOUND\``,
@@ -206,9 +209,11 @@ export class UserGrantsController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    parseInput(EmptyBody, body);
+    // An optional reason, as for the assignment (spec Section 53; IAM-R08B D-02). It travels in
+    // the body, never in the query string, which reaches access logs.
+    const input = parseInput(ReasonBody, body);
     const ids = { userId: pathId('userId', userId), roleId: pathId('roleId', roleId) };
-    const attribution = await actorAttribution(this.actors, request, reply);
+    const attribution = await actorAttribution(this.actors, request, reply, input?.reason);
     const result = await this.administration.removeRole(ids, attribution);
     if (result.outcome !== 'removed') refuse(result);
   }

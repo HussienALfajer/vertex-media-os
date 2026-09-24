@@ -512,8 +512,23 @@ describe('memberships and role assignments', () => {
     expect([assigned.statusCode, assigned.json()]).toEqual([201, { userId: user, roleId: custom }]);
     const twice = await call(admin, 'POST', `/api/iam/users/${user}/roles`, { roleId: custom });
     expect(problemOf(twice).code).toBe('IAM_DUPLICATE_ROLE_ASSIGNMENT');
-    const removed = await call(admin, 'DELETE', `/api/iam/users/${user}/roles/${custom}`);
+    // The removal takes the same optional reason, and refuses unknown fields (IAM-R08B D-02).
+    const extra = await call(admin, 'DELETE', `/api/iam/users/${user}/roles/${custom}`, {
+      reason: 'No longer needed.',
+      roleId: custom,
+    });
+    expect([extra.statusCode, problemOf(extra).code]).toEqual([400, 'VALIDATION_FAILED']);
+    const removed = await call(admin, 'DELETE', `/api/iam/users/${user}/roles/${custom}`, {
+      reason: 'No longer needed.',
+    });
     expect([removed.statusCode, removed.body]).toEqual([204, '']);
+    expect(
+      await value(`SELECT reason FROM audit_record WHERE action = 'iam.user.role-removed'
+         AND actor_user_id = '${admin.id}' AND result = 'SUCCEEDED'`),
+    ).toBe('No longer needed.');
+    await call(admin, 'POST', `/api/iam/users/${user}/roles`, { roleId: custom });
+    const withoutReason = await call(admin, 'DELETE', `/api/iam/users/${user}/roles/${custom}`);
+    expect([withoutReason.statusCode, withoutReason.body]).toEqual([204, '']);
     const gone = await call(admin, 'DELETE', `/api/iam/users/${user}/roles/${custom}`);
     expect(problemOf(gone).code).toBe('IAM_ROLE_ASSIGNMENT_NOT_FOUND');
 

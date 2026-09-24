@@ -125,6 +125,17 @@ describe('IAM HTTP contract', () => {
     }
   });
 
+  it('documents the optional reason when a role is removed (IAM-R08B D-02)', () => {
+    const operation =
+      createOpenApiDocument(app).paths['/api/iam/users/{userId}/roles/{roleId}']?.delete;
+    expect(operation?.requestBody).toMatchObject({
+      required: false,
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/IamReasonRequest' } },
+      },
+    });
+  });
+
   it('documents the back-channel logout body and its 400 answer (CP1-18)', () => {
     const operation = createOpenApiDocument(app).paths['/api/auth/backchannel-logout']?.post;
     expect(operation?.requestBody).toMatchObject({
