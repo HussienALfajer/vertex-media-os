@@ -1,6 +1,6 @@
 # IAM-R08 — Frontend Authentication and Session Experience
 
-**Status:** IN PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** IAM-MP-12 (the run is split at planning time, D-01)  
 **Risk tier:** B (reviewers: security; tests and verification, D-02)  
 **Branch:** `iam/r08-frontend-session`  
@@ -50,15 +50,15 @@ The production web application learns its authentication state from the backend 
 - **D-03 Real-Keycloak browser evidence moves to IAM-MP-15.** Proving `__Host-` cookie acceptance in three engines, rotation across sites and CP1-17 needs a real Keycloak, PostgreSQL and API behind the Playwright suite. IAM-MP-15 owns "focused real-Keycloak browser journeys" and the login/logout/revocation journeys; building that harness here would duplicate it. IAM-MP-12's exit criteria do not depend on it.
 - **D-04 No backend change.** `/api/auth/session` returns the user and deadlines; `/api/iam/me` returns the ACTIVE departments and effective permission codes (R07 D-12). Together they satisfy spec Section 41, so the session response is not widened.
 - **D-05 Bootstrap.** One query (`['auth']`) reads the session, then `/me`, and resolves to a state, not an exception: `signed-in` (user, ACTIVE departments, permission codes; the deadlines are not kept, D-06), `signed-out` with a reason (`required`, `expired`, `ended`), or `inactive` (`403 IAM_USER_INACTIVE`, the session is revoked by the API). A network failure or another status is a query error: service unavailable with retry, never signed-out. A background refetch that fails keeps the signed-in state (DESIGN_SYSTEM Section 34: background refresh keeps authorized content).
-- **D-06 No session timers.** The browser never polls the session and never schedules a request at the idle deadline, because every session read is a use that slides the deadline (R03F); a timer in several tabs would keep an idle session alive. The session state is refreshed on window focus and after any `401` or `403 AUTHORIZATION_DENIED`; the next request after expiry answers `401` and moves the app to signed-out.
+- **D-06 No session timers.** The browser never polls the session and never schedules a request at the idle deadline, because every session read is a use that slides the deadline (R03F); a timer in several tabs would keep an idle session alive. The session state is refreshed on window focus and after a `403 AUTHORIZATION_DENIED`; the next request after expiry answers `401` and moves the app to signed-out (D-10).
 - **D-07 HTTP client.** Relative `/api/...` paths only, `credentials: 'same-origin'`, JSON bodies. Unsafe methods carry `X-CSRF-Token`; the token is fetched from `/api/auth/csrf` on first need and held in a module variable (never storage, never the query cache). A `403 CSRF_VALIDATION_FAILED` drops the token and is reported, not retried (the next action fetches a new one). Errors: `ApiProblem` (status, `code`, `fields`, `retryAfterSeconds`) and `NetworkFailure`. Response bodies are checked by small type guards; no validation library is added to the web app.
 - **D-08 Sign-in.** A primary button whose action is a top-level navigation to `/api/auth/login` (spec Section 13), through one `leaveApplication` helper that tests observe; the design system has no link styled as a primary action, and none is added for this. The callback's `authError` (`AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED`, `IDENTITY_PROVIDER_UNAVAILABLE`) is shown on the signed-out page; unknown values are ignored; the parameter is removed from the address with a history replacement once read.
 - **D-09 Sign-out.** `POST /api/auth/logout`; on success clear protected state and navigate to `logoutUrl` (only `http:`/`https:` URLs are followed). A `401` means the session is already gone: clear and show signed-out. A network failure keeps the state and reports the error.
-- **D-10 Protected-state clearing.** One function removes every query except the authentication state and the liveness check, the mutation cache, and the CSRF token. It runs when the auth state leaves `signed-in`, when the signed-in user ID changes (another tab signed in as someone else), on sign-out, and on any `401` from any query or mutation. A query that answers `403 AUTHORIZATION_DENIED` loses its data (the error stays), and the auth state is refetched. Queries may declare `meta.permission`; when the refreshed permission codes no longer include it, the query is removed.
+- **D-10 Protected-state clearing.** One function removes every query except the authentication state and the liveness check, the mutation cache, and the CSRF token. It runs when the auth state leaves `signed-in`, when the signed-in user ID changes (another tab signed in as someone else), on sign-out, and on a session refusal (`401`, `403 IAM_USER_INACTIVE`) of any query or mutation. The refusal itself becomes the auth state (signed out with its reason, or inactive): the API clears the session cookie with it, so a re-read would only answer `AUTHENTICATION_REQUIRED`, and a later refusal does not replace the first one's reason (review S-2). A query that answers `403 AUTHORIZATION_DENIED` loses its data (the error stays), and the auth state is refetched. Queries declare `meta.permission`; when the refreshed permission codes no longer include it, the query is removed at the loss whatever its state, and afterwards only while it holds data (a view mounted after the loss is left to its `403`; review S-7). A refusal also cancels a state read in flight, so an answer given before the session ended cannot restore `signed-in` (review S-8). Removal empties the cache, not a mounted view, so the session gate remounts the protected views whenever the user or the permission set changes (review S-1).
 - **D-11 Navigation.** Navigation items declare the permission codes that make them visible (any of); a pure filter drops the rest and empty groups (DESIGN_SYSTEM Section 30). Only destinations that exist are listed: this run has Home only; IAM-R08B adds the first administration item. The filter is UX; the backend decides (invariant 19).
 - **D-12 Route structure.** A pathless `_app` layout owns the session gate and the shell; `/` moves under it. The design-system lab (`/dev/ui`) stays outside the gate. The not-found page stays public and uses the shell with the navigation the current state allows.
 - **D-13 Signed-out page.** Title, explanation, the sign-in action and the existing system-status region (the liveness check is public and helps when sign-in fails because a service is down). No password or MFA field anywhere (spec Section 40).
-- **D-14 Storage lint.** Application code under `apps/web/src` (tests excepted) must not reference `localStorage`, `sessionStorage`, `indexedDB` or `document.cookie`; UI preferences stay inside `@vertex-os/ui`.
+- **D-14 Storage lint.** Application code under `apps/web/src` (tests excepted) must not reference `localStorage`, `sessionStorage`, `indexedDB` or `cookieStore` (bare, or through `window`, `globalThis`, `self`) or `document.cookie`; UI preferences stay inside `@vertex-os/ui`. The web config composes the root's `no-restricted-syntax` selectors into its own entry, and boundary probes V125–V135 and C18 pin the rule (review S-4, T-3).
 
 No owner decisions: the split is the planner's call (`docs/PLANNING.md` Section 5); no item under "Changes Requiring Explicit Approval" is touched.
 
@@ -84,10 +84,10 @@ The shell's sidebar footer shows the display name, the primary department name w
 
 ## 6. Done means
 
-1. Browser code stores no token or session identifier: the only credential is the `HttpOnly` cookie; no application code touches browser storage or `document.cookie` (lint, D-14), and a test shows a full bootstrap and sign-out leave storage without authentication data. (Exit: no token or raw session ID; no storage.)
-2. `401`, `403 IAM_USER_INACTIVE`, `403 AUTHORIZATION_DENIED`, session expiry and network failure lead to distinct states, each proven by a component test. (Exit: semantically distinct.)
+1. Browser code stores no token or session identifier: the only credential is the `HttpOnly` cookie; no application code touches browser storage or `document.cookie` (lint and boundary probes, D-14), and a test shows a full bootstrap and sign-out leave storage without authentication data. (Exit: no token or raw session ID; no storage.)
+2. `401`, `403 IAM_USER_INACTIVE`, `403 AUTHORIZATION_DENIED`, session expiry and network failure lead to distinct states, each proven by a component test (a bootstrap refusal and a refusal met by a protected view). (Exit: semantically distinct.)
 3. Unsafe requests carry the in-memory CSRF token from `/api/auth/csrf`; a CSRF refusal drops it; proven by tests.
-4. Protected queries are removed on sign-out, on `401`, on user change and on permission loss, and lose their data on `403 AUTHORIZATION_DENIED`; proven by tests. (Exit: stale protected data removed.)
+4. Protected queries are removed on sign-out, on a session refusal, on user change and on permission loss, and lose their data on `403 AUTHORIZATION_DENIED`; a mounted protected view stops showing that data; proven by query-client and component tests. (Exit: stale protected data removed.)
 5. Navigation shows only items whose permission the user holds; the filter is a presentation helper and the backend authorizes every request. (Exit: visibility is UX only.)
 6. Sign-in is a top-level navigation to `/api/auth/login`; `authError` codes are shown in Arabic and English and removed from the address.
 7. Sign-out calls the API with the CSRF token, clears state and follows `logoutUrl`.
@@ -101,7 +101,7 @@ Only those of the Run Contract. A needed API or UI-package change would be a sco
 ## 8. Verification
 
 - `pnpm nx run @vertex-os/web:test`, `:lint`, `:typecheck` while working (`NX_DAEMON=false`).
-- `pnpm verify` before review.
+- `pnpm verify` before review, including `pnpm lint:boundaries`.
 - `pnpm test:e2e` (smoke journeys changed). No integration suite is touched (no API or persistence change).
 
 ## 9. Checklist
@@ -111,10 +111,21 @@ Only those of the Run Contract. A needed API or UI-package change would be a sco
 - [x] M3 Auth state: bootstrap query, clearing, query-cache handlers, tests
 - [x] M4 Routes, gate, signed-out page, account area, navigation filter, messages, tests
 - [x] M5 Storage lint; smoke journeys
-- [ ] M6 `pnpm verify`, `pnpm test:e2e`
-- [ ] M7 In-run review and fixes
-- [ ] M8 Master Plan ledger, hand-off, pull request, CI
+- [x] M6 `pnpm verify`, `pnpm test:e2e`
+- [x] M7 In-run review and fixes
+- [x] M8 Master Plan ledger, hand-off, pull request, CI
 
 ## 10. Hand-off
 
-Written at the end of the run.
+**In-run review.** Two fresh-context reviewers checked `main...HEAD`: security; tests and verification (D-02). The implementer checked the evidence of each finding before accepting it.
+
+- **Blocking, fixed:** S-1 (removed queries kept rendering in mounted views; the gate now remounts protected views on a user or permission change) and T-1 (no component test for `403 AUTHORIZATION_DENIED`, and nothing proved the state re-read after it).
+- **Fixed in the run:** S-2 (the refusal's reason was lost because the API clears the cookie with it; the refusal now becomes the state), S-3 and T-2 (clearing the CSRF token and mutation cache untested), S-4 and T-3 (storage lint gaps and no probe; the web config also dropped the root's `no-restricted-syntax` selectors for its files, now composed in and pinned by probes V134–V135), T-4 to T-8, T-10.
+- **Re-check:** the security reviewer re-ran after the fixes: S-1 to S-4 resolved, no blocking finding. Its minor S-7 (an in-flight read at the moment of permission loss could still be shown) and S-8 (a state read in flight could restore `signed-in` after a refusal) were fixed; S-8 has a test that fails without the fix. For S-7 no jsdom test could be made to fail without the fix (the remounted view refetches and supersedes the read), so the fix rests on reading `watchAuthState`.
+- **Rejected:** T-12 (verification not run): `pnpm verify` and `pnpm test:e2e` were run; the checklist had not been ticked yet.
+- **Recorded, not changed:** S-5 (stale CSRF token after a same-user session replacement fails once, closed), S-6 (`http:` logout URLs are accepted; production uses `https:`), S-9 (the reason from a refusal lasts until the next state read, for example on window focus, then the page shows the plain sign-in), S-10 (the storage lint misses computed and aliased forms; it is a guard beside review), S-11 (a protected query without `meta.permission` keeps its rows until its own `403`), T-9 (resolved by M8), T-11 (carried).
+
+**Carried forward** (attached to the Master Plan stages):
+
+- **IAM-MP-13:** the foundation to build on; navigation wiring test (T-11); the CSRF refusal message (S-5); every protected query declares `meta.permission`, ideally through a typed helper (S-11); the gate remounts protected views on any permission change, which would reset an open form (re-check note).
+- **IAM-MP-15:** real-browser `__Host-` cookies in three engines, session rotation across sites, CP1-17 (D-03).

@@ -176,4 +176,34 @@ describe('the session gate and protected views', () => {
       expect(screen.queryByRole('heading', { name: 'Protected area' })).toBeNull();
     },
   );
+
+  it('keeps the refusal when a state read answered before it arrives later (review S-8)', async () => {
+    stubApi(api);
+    renderGate(client);
+    expect(await screen.findByText('rows: ["row of A"]')).toBeTruthy();
+
+    const late = stubApi(api);
+    let answerLate: () => void = () => undefined;
+    late.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          answerLate = () => resolve(json(200, { user: A, session: SESSION }));
+        }),
+    );
+    void client.refetchQueries({ queryKey: AUTH_QUERY_KEY });
+    api.users = () => {
+      api.refuse = { status: 401, code: 'AUTHENTICATION_REQUIRED' };
+      return json(401, { code: 'AUTH_SESSION_INVALID' });
+    };
+    await act(() => client.refetchQueries({ queryKey: ['iam', 'users'] }));
+    const meReads = () => late.mock.calls.filter(([path]) => path === '/api/iam/me').length;
+    const meReadsBefore = meReads();
+    act(() => answerLate());
+
+    expect(await screen.findByText(/لم تعد الجلسة صالحة/)).toBeTruthy();
+    // The late read runs to its end (its /me request) before the state is checked again.
+    await vi.waitFor(() => expect(meReads()).toBeGreaterThan(meReadsBefore));
+    await act(() => Promise.resolve());
+    expect(client.getQueryData(AUTH_QUERY_KEY)).toEqual({ status: 'signed-out', reason: 'ended' });
+  });
 });

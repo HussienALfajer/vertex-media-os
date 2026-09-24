@@ -131,6 +131,7 @@ function requiredPermission(query: AnyQuery): string | undefined {
  */
 export function watchAuthState(client: QueryClient): () => void {
   let signedInUser: string | undefined;
+  let heldCodes: ReadonlySet<string> = new Set();
   return client.getQueryCache().subscribe((event) => {
     if (event.type !== 'updated' || event.query.queryKey[0] !== AUTH_QUERY_KEY[0]) return;
     const state = event.query.state.data as AuthState | undefined;
@@ -138,17 +139,25 @@ export function watchAuthState(client: QueryClient): () => void {
     if (state.status !== 'signed-in') {
       if (signedInUser !== undefined || state.status === 'inactive') clearProtectedState(client);
       signedInUser = undefined;
+      heldCodes = new Set();
       return;
     }
     if (signedInUser !== undefined && signedInUser !== state.user.id) clearProtectedState(client);
     signedInUser = state.user.id;
     const codes = new Set(state.permissionCodes);
+    const lost = new Set([...heldCodes].filter((code) => !codes.has(code)));
+    heldCodes = codes;
     client.removeQueries({
       predicate: (query) => {
-        // Only held data is removed: a view mounted after the loss may still ask, and the API
-        // answers it with 403 (removing its query mid-flight would leave it pending forever).
+        // At the loss everything of that permission goes, in flight or not (review S-7). Later,
+        // only held data goes: a view mounted after the loss may still ask, and the API answers
+        // it with 403 (removing its query mid-flight would leave it pending forever).
         const permission = requiredPermission(query);
-        return permission !== undefined && !codes.has(permission) && query.state.data !== undefined;
+        return (
+          permission !== undefined &&
+          !codes.has(permission) &&
+          (lost.has(permission) || query.state.data !== undefined)
+        );
       },
     });
   });
@@ -164,12 +173,16 @@ export function handleApiError(client: QueryClient, error: unknown, query?: AnyQ
   const refused = refusedSessionState(error);
   if (refused !== undefined) {
     clearProtectedState(client);
-    // Only the first refusal names the reason: the API cleared the cookie with it, so any later
-    // request (a view refetching while it unmounts) answers `AUTHENTICATION_REQUIRED`.
-    const current = client.getQueryData(authQuery.queryKey);
-    if (current === undefined || current.status === 'signed-in') {
-      client.setQueryData(authQuery.queryKey, refused);
-    }
+    // A state read already in flight may have been answered before the session ended; it must not
+    // land afterwards (review S-8). Only the first refusal names the reason: the API cleared the
+    // cookie with it, so any later request (a view refetching while it unmounts) answers
+    // `AUTHENTICATION_REQUIRED`.
+    void client.cancelQueries({ queryKey: AUTH_QUERY_KEY }).then(() => {
+      const current = client.getQueryData(authQuery.queryKey);
+      if (current === undefined || current.status === 'signed-in') {
+        client.setQueryData(authQuery.queryKey, refused);
+      }
+    });
     return;
   }
   if (isApiProblem(error, 403, 'AUTHORIZATION_DENIED')) {

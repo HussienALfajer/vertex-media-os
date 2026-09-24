@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R08` (IAM-MP-12, IAM-MP-13, IAM-MP-14) with `/stage IAM-R08`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
+**Next step:** run `IAM-R08B` (IAM-MP-13) with `/stage IAM-R08B`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 ---
@@ -1327,7 +1327,7 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 
 ## IAM-MP-12 — Frontend Authentication & Session Experience
 
-**Status:** READY (run `IAM-R08`)  
+**Status:** COMPLETE (run `IAM-R08`)  
 **Parent specification area:** IAM-6, Sections 40–41  
 **Depends on:** IAM-MP-11 COMPLETE
 
@@ -1354,12 +1354,11 @@ Integrate the real web application shell with backend-owned authentication/sessi
 ### Carried forward from run IAM-R03 (`IAM_R03_SESSIONS_AND_OIDC_PLAN.md`)
 
 - **Contracts to consume:** `/api/auth/login` (top-level navigation); the callback returns to `/` or `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`; `GET /api/auth/session`; `GET /api/auth/csrf` (hold the token in memory, send `X-CSRF-Token` on every unsafe request); `POST /api/auth/logout` returns `logoutUrl`, which the browser opens.
-- **Real-browser cookie behavior:** prove that Chromium, Firefox and WebKit accept the `__Host-` cookies on `http://127.0.0.1` locally (only a fetch-based browser was used so far).
-- **Session rotation across sites (R03 review S-02):** the rotation of an existing session at the callback reads the `SameSite=Strict` session cookie on a navigation from Keycloak. It works while Keycloak and the web app share a site (locally, and a production subdomain of the same registrable domain); verify it for the deployed topology, or rotate differently.
+- **Real-browser cookie behavior** and **session rotation across sites (R03 review S-02):** moved to IAM-MP-15 by run `IAM-R08` (plan D-03); both need the real-Keycloak browser harness that stage builds.
 
 ### Carried forward from the `IAM-CP1` audit (`audits/IAM-CP1.md`)
 
-- **CP1-17:** back-channel logout through the local Compose Keycloak and a running API (a real login, then a Keycloak-side logout) was never probed end to end; only the Linux CI path is proven.
+- **CP1-17:** moved to IAM-MP-15 by run `IAM-R08` (plan D-03).
 
 ### Carried forward from run IAM-R07 (`IAM_R07_HTTP_ADMINISTRATION_PLAN.md`)
 
@@ -1386,7 +1385,7 @@ Integrate the real web application shell with backend-owned authentication/sessi
 
 ## IAM-MP-13 — Frontend User, Access & Provisioning Administration
 
-**Status:** PLANNED (run `IAM-R08B`)  
+**Status:** READY (run `IAM-R08B`)  
 **Parent specification area:** IAM-6, Sections 40, 42, 52–54  
 **Depends on:** IAM-MP-12 COMPLETE
 
@@ -1416,6 +1415,14 @@ Deliver the primary IAM administrator workflows for users and access state using
 ### Carried forward from run IAM-R07 (`IAM_R07_HTTP_ADMINISTRATION_PLAN.md`)
 
 - **Reason for removing a role (review SA-4):** `DELETE /api/iam/users/{userId}/roles/{roleId}` takes no body and no reason (R07 D-08), also when it removes the System Administrator role, which spec Sections 52–53 list as a high-risk change for which the API SHOULD accept a reason. If the confirmation UI asks for one, the run adds a way to carry it (for example an optional body or a `reason` query parameter kept out of logs) or records why not.
+
+### Carried forward from run IAM-R08 (`IAM_R08_FRONTEND_SESSION_PLAN.md`)
+
+- **Foundation to build on:** `apiRequest` (in-memory CSRF, `ApiProblem` with `code`, `fields`, `retryAfterSeconds`; `NetworkFailure`), the query client's refusal handling, and `meta.permission` on every protected query so permission loss removes its data (plan D-07, D-10). Protected views live under the `_app` layout, which remounts them when the user or the permission set changes.
+- **Navigation wiring (review T-11):** the first administration item is the first to carry `anyOf`; test that the shell shows or hides it by the user's permission codes.
+- **Every protected query declares `meta.permission` (review S-11):** a query without it keeps its rows after permission loss until its own `403`; a typed query helper can make the declaration mandatory.
+- **Remount on permission change (IAM-R08 re-check):** the session gate remounts protected views whenever the user or the permission set changes, so a permission added to an administrator resets an open form. Keep it, or narrow the key, once forms exist.
+- **CSRF refusal message (review S-5):** after a sign-in in another tab replaces the same user's session, the next unsafe request fails once with `403 CSRF_VALIDATION_FAILED` (the stale token is dropped). Mutation errors should present it as "try again", not as a connectivity problem.
 
 ### Exit criteria
 
@@ -1551,6 +1558,12 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 - **T-8:** `isDatabaseContention` is proven for SQLSTATE 57014 and Prisma P2028 only; 55P03, 40P01, 40001 and P2034 are classified but untested.
 - **Trace IDs:** a well-formed client `X-Request-Id` becomes the Audit `trace_id` (pre-existing); a client can make its records share a trace ID with others. `actor_user_id` is unaffected.
 - **No-store on refusals:** guard refusals (401, 403) of IAM routes do not carry `Cache-Control: no-store`; their Problem Details hold no personal data.
+
+### Carried forward from run IAM-R08 (`IAM_R08_FRONTEND_SESSION_PLAN.md`, D-03)
+
+- **Real-browser cookie behavior (from IAM-R03):** prove that Chromium, Firefox and WebKit accept the `__Host-` cookies on `http://127.0.0.1` locally (only a fetch-based browser was used so far).
+- **Session rotation across sites (IAM-R03 review S-02):** the rotation of an existing session at the callback reads the `SameSite=Strict` session cookie on a navigation from Keycloak. It works while Keycloak and the web app share a site (locally, and a production subdomain of the same registrable domain); verify it for the deployed topology, or rotate differently.
+- **CP1-17:** back-channel logout through the local Compose Keycloak and a running API (a real login, then a Keycloak-side logout) was never probed end to end; only the Linux CI path is proven.
 
 ### Exit criteria
 
@@ -1704,6 +1717,8 @@ Run `IAM-R06` delivered IAM-MP-10 (plan `IAM_R06_USER_LIFECYCLE_PLAN.md`). It is
 
 Run `IAM-R07` delivered IAM-MP-11 (plan `IAM_R07_HTTP_ADMINISTRATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. `/api/iam` exposes spec Section 25: the current user, the user directory and lifecycle, memberships, role assignments, departments, roles and mappings, and the permission catalog, in `apps/api/src/iam/http` over the bound capabilities of `IamModule` (R07 D-01). Every route declares its specification permission; request bodies and queries are strict Zod schemas that also generate the OpenAPI components; every refusal maps through one table to a stable code; every change is attributed to the session's USER actor, which lint and a test over every mutating route enforce (D-04 to D-07). A read-only directory adds bounded, literally searched pages (D-02, D-03). Reactivation checks the grant ceiling under the target's row lock before Keycloak is called and again in its final commit (D-11, review SA-1). The authentication module exports the session revocation bound to `AuthRuntime.sessions` (D-09); lock-wait and transaction timeouts answer `503 SERVICE_BUSY`, and the driver's query timeout now trails the statement timeout (D-15). It closed the R02, R04, R05 and R06 items attached to IAM-MP-11, the owner decisions S-1 and SEC-2 over HTTP, and CP1-18. Its carried-forward items are attached to IAM-MP-12, IAM-MP-13 and IAM-MP-15.
 
+Run `IAM-R08` delivered IAM-MP-12 (plan `IAM_R08_FRONTEND_SESSION_PLAN.md`); its planner split the frontend run into `IAM-R08`, `IAM-R08B` and `IAM-R08C` (D-01). It is `COMPLETE` once its pull request is merged. The web app reads its authentication state from `/api/auth/session` and `/api/iam/me` and never handles a token: signed out, expired, ended, inactive, unavailable and signed in are distinct states; sign-in is a top-level navigation to the API and the callback's `authError` is explained once; sign-out uses the in-memory CSRF token and follows `logoutUrl` (D-05 to D-09). Protected data is removed on sign-out, on a session refusal (whose reason is kept, because the API clears the cookie with it), on a user change and on permission loss, and the protected views remount on those changes (D-10; review S-1, S-2). Lint and boundary probes keep application code away from browser storage and cookies (D-14). The real-Keycloak browser items (three-engine cookies, rotation across sites, CP1-17) moved to IAM-MP-15 (D-03). Its carried-forward items are attached to IAM-MP-13 and IAM-MP-15.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
@@ -1738,8 +1753,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | COMPLETE | R05 merged (satisfied) |
 | `IAM-CP2` Deep audit: authorization and administration core | — | DEFERRED into `IAM-FINAL` | owner decision 2026-09-24 |
 | IAM-MP-11 HTTP Administration Surface | R07 | COMPLETE | R06 merged (satisfied) |
-| IAM-MP-12 Frontend Authentication & Session UX | R08 | READY | R07 merged (satisfied) |
-| IAM-MP-13 Frontend User & Access Admin | R08B | PLANNED | R08 merged |
+| IAM-MP-12 Frontend Authentication & Session UX | R08 | COMPLETE | R07 merged (satisfied) |
+| IAM-MP-13 Frontend User & Access Admin | R08B | READY | R08 merged (satisfied) |
 | IAM-MP-14 Frontend Department/Role/Permission Admin | R08C | PLANNED | R08B merged |
 | IAM-MP-15 E2E & Hardening | R09 | PLANNED | R08C merged |
 | `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09 merged |
@@ -2029,15 +2044,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-11 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, and IAM-MP-11 through run `IAM-R07`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-12 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, and IAM-MP-12 through run `IAM-R08`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The next step is run `IAM-R08` (IAM-MP-12, IAM-MP-13, IAM-MP-14; Tier B, session effort `medium`). Start it in a new Claude Code session:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The `IAM-R08` planner split the frontend run (Section 8.3). The next step is run `IAM-R08B` (IAM-MP-13; Tier B, session effort `medium`). Start it in a new Claude Code session:
 
 ```text
-/stage IAM-R08
+/stage IAM-R08B
 ```
 
-Its planner reads the three stage sections, including the IAM-R07 contracts carried forward to IAM-MP-12 and the reason question carried forward to IAM-MP-13, and splits the run if the frontend diff would not be reviewable in one pass (Section 8.3).
+Its planner reads the IAM-MP-13 section, including the IAM-R07 contracts, the reason question (SA-4) and the IAM-R08 foundation carried forward to it.
 
 Do **not** plan later runs in detail now.
 
