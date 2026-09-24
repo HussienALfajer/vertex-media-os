@@ -22,6 +22,7 @@ import {
   type IdentityProvisioningConfig,
 } from '../config/identity-provisioning-config.js';
 import { createIdentityProvisioning, type IdentityProvisioning } from './identity-provisioning.js';
+import { seedInvitedUser } from '../../test-support/iam-users.js';
 
 /**
  * IAM identity provisioning composed with its real adapters: PostgreSQL, the Audit adapter, and
@@ -72,16 +73,7 @@ function uniqueEmail(label: string): string {
 /** Commits a new INVITED user, as user creation does before any Keycloak work (spec Section 12). */
 async function invitedUser(label: string): Promise<{ id: UserId; email: string }> {
   const email = uniqueEmail(label);
-  const created = await createApplicationUserRepository(database).create({
-    email: email as never,
-    displayName: 'Synthetic User' as never,
-    accessState: 'INVITED',
-    identitySyncState: 'PENDING',
-    invitationDeliveryState: 'NOT_SENT',
-    memberships: [],
-    roleIds: [],
-  });
-  if (created.outcome !== 'created') throw new Error('seed user');
+  const created = { user: { id: await seedInvitedUser(postgres, email) } };
   return { id: created.user.id, email };
 }
 

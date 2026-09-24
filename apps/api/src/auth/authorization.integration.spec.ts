@@ -3,7 +3,6 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { parseSystemProcess, parseTraceId, type AuditAttribution } from '@vertex-os/audit';
 import { createAuditRecorder } from '@vertex-os/audit-persistence';
 import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
-import { createApplicationUserRepository } from '@vertex-os/iam-persistence';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TEST_AUTH_ENVIRONMENT, testAuthConfig } from '../../test-support/auth-config.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
@@ -13,6 +12,7 @@ import { csrfTokenFor } from './secrets.js';
 import { createSessionStore } from './session-store.js';
 import { createSessionService } from './sessions.js';
 import { createTokenCiphers } from './token-cipher.js';
+import { seedInvitedUser } from '../../test-support/iam-users.js';
 
 /**
  * The authorization context over HTTP against real PostgreSQL (IAM-R04 Done means 3 to 8): the
@@ -59,16 +59,9 @@ describe('authorization context against PostgreSQL', () => {
 
   /** An ACTIVE user with a live session; returns the cookie secret. */
   async function signedInUser(): Promise<{ id: string; secret: string }> {
-    const created = await createApplicationUserRepository(database).create({
-      email: `${randomUUID()}@example.invalid` as never,
-      displayName: 'Synthetic User' as never,
-      accessState: 'INVITED',
-      identitySyncState: 'PENDING',
-      invitationDeliveryState: 'NOT_SENT',
-      memberships: [],
-      roleIds: [],
-    });
-    if (created.outcome !== 'created') throw new Error('seed user');
+    const created = {
+      user: { id: await seedInvitedUser(postgres, `${randomUUID()}@example.invalid`) },
+    };
     const id = created.user.id;
     await postgres.sql(
       `UPDATE iam_application_user SET access_state = 'ACTIVE', first_activated_at = now(),

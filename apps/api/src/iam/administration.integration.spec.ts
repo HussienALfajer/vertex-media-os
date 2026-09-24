@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   parseAdministrativeReason,
+  parseSystemProcess,
   parseTraceId,
   userActor,
   type AuditAttribution,
@@ -9,14 +10,12 @@ import { createAuditRecorder } from '@vertex-os/audit-persistence';
 import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
 import { iamPermissionManifest } from '@vertex-os/iam';
 import { synchronizeIamReferenceData } from '@vertex-os/iam/composition';
-import {
-  createApplicationUserRepository,
-  createIamTransactionRunner,
-} from '@vertex-os/iam-persistence';
+import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
 import { createIamAdministration, type IamAdministration } from './administration.js';
 import { createIamAuthorization, type IamAuthorization } from './authorization.js';
+import { seedInvitedUser } from '../../test-support/iam-users.js';
 
 /**
  * IAM department, membership, role and permission administration composed with its real adapters
@@ -63,16 +62,29 @@ beforeEach(async () => {
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
-const ADMIN_ID = '00000000-0000-4000-8000-00000000a001';
+/**
+ * The R05 rules are tested as a system process, which the grant ceiling does not limit (spec
+ * Section 23.1); the ceiling's own cases below act as users (IAM-R06 D-12).
+ */
+const TEST_PROCESS = 'iam.test-administration';
 
 function by(reason?: string): AuditAttribution {
-  const actor = userActor(ADMIN_ID);
+  const process = parseSystemProcess(TEST_PROCESS);
   const traceId = parseTraceId('trace-administration-test');
-  if (!actor.ok || !traceId.ok) throw new Error('attribution fixture');
-  if (reason === undefined) return { actor: actor.value, traceId: traceId.value };
+  if (!process.ok || !traceId.ok) throw new Error('attribution fixture');
+  const actor = { type: 'SYSTEM', process: process.value } as const;
+  if (reason === undefined) return { actor, traceId: traceId.value };
   const parsed = parseAdministrativeReason(reason);
   if (!parsed.ok) throw new Error('reason fixture');
-  return { actor: actor.value, traceId: traceId.value, reason: parsed.value };
+  return { actor, traceId: traceId.value, reason: parsed.value };
+}
+
+/** A user actor, subject to the grant ceiling. */
+function as(userId: string): AuditAttribution {
+  const actor = userActor(userId);
+  const traceId = parseTraceId('trace-administration-ceiling');
+  if (!actor.ok || !traceId.ok) throw new Error('attribution fixture');
+  return { actor: actor.value, traceId: traceId.value };
 }
 
 function sql(statement: string): Promise<string> {
@@ -85,16 +97,9 @@ async function value(statement: string): Promise<string> {
 }
 
 async function invitedUser(): Promise<string> {
-  const created = await createApplicationUserRepository(database).create({
-    email: `${randomUUID()}@example.invalid` as never,
-    displayName: 'Synthetic User' as never,
-    accessState: 'INVITED',
-    identitySyncState: 'PENDING',
-    invitationDeliveryState: 'NOT_SENT',
-    memberships: [],
-    roleIds: [],
-  });
-  if (created.outcome !== 'created') throw new Error('seed user');
+  const created = {
+    user: { id: await seedInvitedUser(postgres, `${randomUUID()}@example.invalid`) },
+  };
   return created.user.id;
 }
 
@@ -582,10 +587,10 @@ describe('roles and permission mappings', () => {
     ]);
     expect(
       await value(
-        `SELECT actor_type || '|' || actor_user_id || '|' || target_type || '|' || target_id
+        `SELECT actor_type || '|' || actor_process || '|' || target_type || '|' || target_id
            || '|' || trace_id || '|' || reason FROM audit_record WHERE action = 'iam.role.activated'`,
       ),
-    ).toBe(`USER|${ADMIN_ID}|iam.role|${system}|trace-administration-test|Try`);
+    ).toBe(`SYSTEM|${TEST_PROCESS}|iam.role|${system}|trace-administration-test|Try`);
   });
 
   it('replaces mappings with one version step and never newly maps a non-ACTIVE code (Done means 7)', async () => {
@@ -805,5 +810,150 @@ describe('last ACTIVE System Administrator', () => {
     expect((await context(user)).permissionCodes).toEqual(
       iamPermissionManifest.permissions.map((permission) => permission.code).sort(),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Grant ceiling (spec Section 23.1; IAM-R06 D-12)
+// ---------------------------------------------------------------------------------------------
+
+describe('grant ceiling', () => {
+  /** An ACTIVE user holding one custom role with exactly `codes`. */
+  async function holder(code: string, codes: string[]): Promise<string> {
+    const user = await activeUser();
+    const role = await customRole(code, codes);
+    expect(await admin.assignRole({ userId: user, roleId: role }, by())).toEqual({
+      outcome: 'assigned',
+    });
+    return user;
+  }
+
+  async function assignments(userId: string): Promise<string> {
+    return value(`SELECT count(*) FROM iam_user_role_assignment WHERE user_id = '${userId}'`);
+  }
+
+  async function refusal(action: string): Promise<string> {
+    return value(
+      `SELECT result || '|' || actor_type || '|' || actor_user_id || '|' || target_type
+         || '|' || coalesce(change::text, '') FROM audit_record WHERE action = '${action}'
+         AND result = 'REFUSED'`,
+    );
+  }
+
+  it('refuses self-escalation to the System Administrator role and records the attempt', async () => {
+    const manager = await holder('user-admin', ['iam.users.manage-roles', 'iam.users.read']);
+    const system = await systemRoleId();
+
+    expect(await admin.assignRole({ userId: manager, roleId: system }, as(manager))).toEqual({
+      outcome: 'grant-exceeds-actor',
+    });
+    expect(await assignments(manager)).toBe('1');
+    expect(await refusal('iam.user.role-assigned')).toBe(
+      `REFUSED|USER|${manager}|iam.user|{"after": {"roleId": "${system}", "roleCode": "system-administrator"}}`,
+    );
+    expect((await context(manager)).permissionCodes).toEqual([
+      'iam.users.manage-roles',
+      'iam.users.read',
+    ]);
+  });
+
+  it('assigns only roles whose ACTIVE permissions the actor holds', async () => {
+    const manager = await holder('user-admin', ['iam.users.manage-roles', 'iam.users.read']);
+    const target = await activeUser();
+    const reader = await customRole('reader', ['iam.users.read']);
+    const empty = await customRole('empty');
+    const powerful = await customRole('powerful', ['iam.users.read', 'iam.roles.manage']);
+
+    expect(await admin.assignRole({ userId: target, roleId: reader }, as(manager))).toEqual({
+      outcome: 'assigned',
+    });
+    expect(await admin.assignRole({ userId: target, roleId: empty }, as(manager))).toEqual({
+      outcome: 'assigned',
+    });
+    expect(await admin.assignRole({ userId: target, roleId: powerful }, as(manager))).toEqual({
+      outcome: 'grant-exceeds-actor',
+    });
+    expect(await assignments(target)).toBe('2');
+  });
+
+  it('refuses mapping a code into a role, even the actor own role, beyond what they hold', async () => {
+    const manager = await holder('role-admin', ['iam.roles.manage', 'iam.users.read']);
+    const own = await value(`SELECT id FROM iam_role WHERE code = 'role-admin'`);
+
+    expect(
+      await admin.replaceRolePermissions(
+        {
+          roleId: own,
+          expectedVersion: 2,
+          permissionCodes: ['iam.roles.manage', 'iam.users.read', 'iam.sessions.revoke'],
+        },
+        as(manager),
+      ),
+    ).toEqual({ outcome: 'grant-exceeds-actor' });
+    expect(await refusal('iam.role.permissions-replaced')).toBe(
+      `REFUSED|USER|${manager}|iam.role|{"after": {"permissionCodes": ["iam.sessions.revoke"]}}`,
+    );
+    // Removing a mapping is never limited, and keeping held codes is allowed.
+    expect(
+      await admin.replaceRolePermissions(
+        { roleId: own, expectedVersion: 2, permissionCodes: ['iam.roles.manage'] },
+        as(manager),
+      ),
+    ).toMatchObject({ outcome: 'updated', permissionCodes: ['iam.roles.manage'] });
+    expect((await context(manager)).permissionCodes).toEqual(['iam.roles.manage']);
+  });
+
+  it('refuses activating a role that maps permissions the actor lacks; deactivation is free', async () => {
+    const manager = await holder('role-admin', ['iam.roles.manage']);
+    const dormant = await customRole('dormant', ['iam.sessions.revoke']);
+    const managed = await customRole('managed', ['iam.roles.manage']);
+    for (const roleId of [dormant, managed]) {
+      expect(await admin.deactivateRole({ roleId, expectedVersion: 2 }, as(manager))).toMatchObject(
+        { outcome: 'updated' },
+      );
+    }
+
+    expect(await admin.activateRole({ roleId: dormant, expectedVersion: 3 }, as(manager))).toEqual({
+      outcome: 'grant-exceeds-actor',
+    });
+    expect(
+      await admin.activateRole({ roleId: managed, expectedVersion: 3 }, as(manager)),
+    ).toMatchObject({ outcome: 'updated' });
+    expect(await value(`SELECT state FROM iam_role WHERE id = '${dormant}'`)).toBe('INACTIVE');
+    expect(await refusal('iam.role.activated')).toBe(`REFUSED|USER|${manager}|iam.role|`);
+  });
+
+  it('gives an actor who is not ACTIVE nothing to grant', async () => {
+    const manager = await holder('user-admin', ['iam.users.manage-roles', 'iam.users.read']);
+    await sql(`UPDATE iam_application_user SET access_state = 'SUSPENDED' WHERE id = '${manager}'`);
+    const reader = await customRole('reader', ['iam.users.read']);
+    const target = await activeUser();
+
+    expect(await admin.assignRole({ userId: target, roleId: reader }, as(manager))).toEqual({
+      outcome: 'grant-exceeds-actor',
+    });
+  });
+
+  it('never limits an ACTIVE System Administrator, and never limits removals', async () => {
+    const system = await systemRoleId();
+    const root = await activeUser();
+    const other = await activeUser();
+    await admin.assignRole({ userId: root, roleId: system }, by());
+    const powerful = await customRole('powerful');
+
+    expect(await admin.assignRole({ userId: other, roleId: system }, as(root))).toEqual({
+      outcome: 'assigned',
+    });
+    expect(
+      await admin.replaceRolePermissions(
+        { roleId: powerful, expectedVersion: 1, permissionCodes: ['iam.sessions.revoke'] },
+        as(root),
+      ),
+    ).toMatchObject({ outcome: 'updated' });
+    // A user without any permission may still remove: the ceiling limits grants only.
+    const nobody = await activeUser();
+    expect(await admin.removeRole({ userId: other, roleId: system }, as(nobody))).toEqual({
+      outcome: 'removed',
+    });
   });
 });

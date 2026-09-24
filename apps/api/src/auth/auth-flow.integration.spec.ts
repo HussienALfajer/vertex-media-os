@@ -4,10 +4,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createAuditRecorder } from '@vertex-os/audit-persistence';
 import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
 import { authPersistenceOf } from '@vertex-os/database/auth';
-import {
-  createApplicationUserRepository,
-  createIamTransactionRunner,
-} from '@vertex-os/iam-persistence';
+import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TEST_AUTH_ENVIRONMENT, testAuthConfig } from '../../test-support/auth-config.js';
@@ -21,6 +18,7 @@ import { startMigratedPostgres, type MigratedPostgres } from '../../test-support
 import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { LOGIN_COOKIE, SESSION_COOKIE } from './cookies.js';
+import { seedInvitedUser } from '../../test-support/iam-users.js';
 
 /**
  * The BFF endpoints end to end against real PostgreSQL, IAM and the Audit adapter, with a fake
@@ -92,16 +90,9 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
   async function seedUser(
     accessState: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'DISABLED' | 'TERMINATED' = 'INVITED',
   ): Promise<{ id: string; subject: string }> {
-    const created = await createApplicationUserRepository(database).create({
-      email: `${randomUUID()}@example.invalid` as never,
-      displayName: 'Synthetic User' as never,
-      accessState: 'INVITED',
-      identitySyncState: 'PENDING',
-      invitationDeliveryState: 'NOT_SENT',
-      memberships: [],
-      roleIds: [],
-    });
-    if (created.outcome !== 'created') throw new Error('seed user');
+    const created = {
+      user: { id: await seedInvitedUser(postgres, `${randomUUID()}@example.invalid`) },
+    };
     const subject = randomUUID();
     await createIamTransactionRunner(database, { auditRecorderFor: createAuditRecorder }).run(
       ({ users }) =>

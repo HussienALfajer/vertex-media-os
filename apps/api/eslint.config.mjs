@@ -116,11 +116,11 @@ export default [
     },
   },
   {
-    // The two bootstrap entries (the HTTP server and the IAM reference-synchronization command)
+    // The entries (the HTTP server and the IAM reference-synchronization and bootstrap commands)
     // are the only production bridges from raw environment variables into the validated
     // AppConfig object. Only the environment selectors are dropped here; the import and
     // raw-SQL selectors still apply.
-    files: ['src/main.ts', 'src/commands/iam-sync-reference.ts'],
+    files: ['src/main.ts', 'src/commands/iam-sync-reference.ts', 'src/commands/iam-bootstrap.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...restrictedImportSyntax, ...restrictedRawSqlSyntax],
     },

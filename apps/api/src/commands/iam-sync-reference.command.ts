@@ -34,10 +34,14 @@ export interface IamReferenceSyncOptions {
 }
 
 /** The command's structured logger: same format as the API's, with the safe `err` serializer. */
-export function createCommandLogger(config: AppConfig, destination?: DestinationStream): Logger {
+export function createCommandLogger(
+  config: AppConfig,
+  destination?: DestinationStream,
+  command = 'iam:sync-reference',
+): Logger {
   const options = {
     level: config.logging.level,
-    base: { command: 'iam:sync-reference' },
+    base: { command },
     serializers: { err: safeErrorSerializer },
   };
   return destination ? pino(options, destination) : pino(options);
