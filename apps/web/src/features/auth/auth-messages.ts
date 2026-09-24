@@ -23,7 +23,8 @@ const messages = {
     providerUnavailableTitle: 'خدمة الهوية غير متاحة',
     providerUnavailableDetail: 'تعذّر الوصول إلى خدمة الهوية. حاول مرة أخرى بعد قليل.',
     rateLimitedTitle: 'محاولات تسجيل دخول كثيرة',
-    rateLimitedDetail: 'وصلت محاولات تسجيل الدخول من هذا الجهاز أو الشبكة إلى الحد المسموح. انتظر دقيقة ثم حاول مرة أخرى.',
+    rateLimitedDetail:
+      'وصلت محاولات تسجيل الدخول من هذا الجهاز أو الشبكة إلى الحد المسموح. انتظر دقيقة ثم حاول مرة أخرى.',
     loadingSession: 'جارٍ التحقق من الجلسة…',
     unavailableTitle: 'تعذّر التحقق من الجلسة',
     unavailableDetail: 'تعذّر الوصول إلى Vertex OS. تحقّق من الاتصال ثم أعد المحاولة.',

@@ -138,7 +138,10 @@ export interface SessionStore {
    * before `purgeBefore`. Each statement repeats its predicate outside the batch subquery, so a row
    * that a concurrent statement changed is re-checked after the lock wait (CP1-22).
    */
-  housekeep(change: { readonly now: Date; readonly purgeBefore: Date }): Promise<HousekeepingResult>;
+  housekeep(change: {
+    readonly now: Date;
+    readonly purgeBefore: Date;
+  }): Promise<HousekeepingResult>;
 }
 
 /** What one housekeeping run removed. */
@@ -481,7 +484,8 @@ export function createSessionStore(
         traceId: attribution.traceId,
         change: { after: outcome === 'no-match' ? { matched: 'none' } : { failure: outcome } },
       });
-      if (!entry.ok) throw new Error(`Session store built an invalid audit entry (${entry.reason}).`);
+      if (!entry.ok)
+        throw new Error(`Session store built an invalid audit entry (${entry.reason}).`);
       await options.auditRecorderFor(database).append(entry.value);
     },
   };

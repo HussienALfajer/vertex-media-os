@@ -619,8 +619,9 @@ describe('credential policy', () => {
 
     const user = await enrolledUser('delete-otp');
     const otp = async () =>
-      (await json<{ id: string; type: string }[]>(keycloak.admin(`/users/${user.id}/credentials`)))
-        .filter((credential) => credential.type === 'otp');
+      (
+        await json<{ id: string; type: string }[]>(keycloak.admin(`/users/${user.id}/credentials`))
+      ).filter((credential) => credential.type === 'otp');
     const [credential] = await otp();
     if (!credential) throw new Error('the enrolment stored no OTP credential');
 
@@ -652,10 +653,15 @@ describe('credential policy', () => {
       } else {
         const form = firstForm(page.html);
         if (!form) break;
-        page = await open(user.browser, new URL(form.action, keycloak.baseUrl).href, keycloak.baseUrl, {
-          method: 'POST',
-          body: new URLSearchParams({ ...form.hidden, accept: '' }),
-        });
+        page = await open(
+          user.browser,
+          new URL(form.action, keycloak.baseUrl).href,
+          keycloak.baseUrl,
+          {
+            method: 'POST',
+            body: new URLSearchParams({ ...form.hidden, accept: '' }),
+          },
+        );
       }
     }
     expect(await otp()).toEqual([credential]);

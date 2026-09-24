@@ -201,7 +201,11 @@ describe('sign-in rate limit (IAM-R09 D-03, D-04)', () => {
   const from = (forwardedFor: string) => ({ 'x-forwarded-for': forwardedFor });
 
   it('counts login and callback per client address and refuses beyond the limit', async () => {
-    const login = await app.inject({ method: 'GET', url: '/api/auth/login', headers: from('10.0.0.1') });
+    const login = await app.inject({
+      method: 'GET',
+      url: '/api/auth/login',
+      headers: from('10.0.0.1'),
+    });
     expect(login.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
     const callback = await app.inject({
       method: 'GET',
@@ -223,7 +227,11 @@ describe('sign-in rate limit (IAM-R09 D-03, D-04)', () => {
     expect(limited).toHaveLength(1);
     expect(limited[0]).toContain('"bucket":"sign-in"');
 
-    const other = await app.inject({ method: 'GET', url: '/api/auth/login', headers: from('10.0.0.2') });
+    const other = await app.inject({
+      method: 'GET',
+      url: '/api/auth/login',
+      headers: from('10.0.0.2'),
+    });
     expect(other.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
   });
 

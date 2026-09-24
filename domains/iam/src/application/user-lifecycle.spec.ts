@@ -178,7 +178,10 @@ describe('removing access (spec Section 31.1)', () => {
     // The denial committed, and Keycloak no longer authenticates the identity (IAM-R09 D-10).
     expect(iam.get()).toMatchObject({ accessState: 'SUSPENDED', identitySyncState: 'SYNCED' });
     expect(provider.mutatingCalls()).toEqual(['setEnabled:false', 'terminateSessions']);
-    expect(trail(iam)).toEqual(['iam.user.suspended:SUCCEEDED', 'iam.user.identity-reconciled:SUCCEEDED']);
+    expect(trail(iam)).toEqual([
+      'iam.user.suspended:SUCCEEDED',
+      'iam.user.identity-reconciled:SUCCEEDED',
+    ]);
   });
 
   it('refuses transitions outside the table without writing or revoking anything', async () => {

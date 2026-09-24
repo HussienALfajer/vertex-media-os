@@ -3,7 +3,7 @@ import { parseSystemProcess, parseTraceId, type AuditAttribution } from '@vertex
 import { createAuditRecorder } from '@vertex-os/audit-persistence';
 import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
 import { authPersistenceOf } from '@vertex-os/database/auth';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
 import type { OidcResult, RefreshedSession } from './oidc.js';
 import { csrfTokenFor, hashSecret, newSecret } from './secrets.js';
@@ -82,6 +82,22 @@ describe('application sessions against real PostgreSQL', () => {
     await postgres?.stop();
   });
 
+  // No Audit change or reason holds token material, sealed or not (CP1-25; R03F Done means 4).
+  afterEach(async () => {
+    const evidence = await postgres.sql(
+      "SELECT coalesce(change::text, '') || ' ' || coalesce(reason, '') FROM audit_record",
+    );
+    expect(evidence).not.toContain('sentinel-id-token');
+    expect(evidence).not.toContain('sentinel-refresh-token');
+    const sealed = await postgres.sql(
+      `SELECT coalesce(id_token_ciphertext, '') || ' ' || coalesce(refresh_token_ciphertext, '')
+       FROM auth_session`,
+    );
+    for (const ciphertext of sealed.split(/\s+/).filter((value) => value.length > 0)) {
+      expect(evidence).not.toContain(ciphertext);
+    }
+  });
+
   beforeEach(async () => {
     await postgres.sql('TRUNCATE auth_session, auth_login_attempt, audit_record');
     clock = new Date('2026-09-23T12:00:00.000Z');
@@ -106,6 +122,37 @@ describe('application sessions against real PostgreSQL', () => {
       refreshToken: REFRESH_TOKEN,
       attribution: attribution(),
     });
+  }
+
+  /**
+   * Runs `statements` in one transaction that holds its locks and resolves once it sleeps, so an
+   * operation started next provably meets the uncommitted write (CP1-09).
+   */
+  async function holdLocks(statements: string, seconds = 1.5): Promise<{ done: Promise<string> }> {
+    const marker = `hold_${randomUUID().replaceAll('-', '')}`;
+    const done = postgres.sql(
+      `BEGIN; ${statements}; SELECT pg_sleep(${seconds}) AS ${marker}; COMMIT;`,
+    );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const sleeping = await postgres.sql(
+        `SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%AS ${marker}%' AND wait_event = 'PgSleep'`,
+      );
+      if (sleeping === '1') return { done };
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('the lock-holding transaction never started sleeping');
+  }
+
+  /** Waits until at least `count` statements wait on a lock. */
+  async function waitingOnLocks(count: number): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const waiting = Number(
+        await postgres.sql("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"),
+      );
+      if (waiting >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('no statement waited on the held lock');
   }
 
   async function auditActions(): Promise<string[]> {
@@ -645,22 +692,32 @@ describe('application sessions against real PostgreSQL', () => {
     expect(await authenticate(secret)).toMatchObject({ outcome: 'valid' });
   });
 
-  it('revokes once under concurrent revocations and re-validations, and stays revoked', async () => {
+  it('revokes once when revocations and a re-validation meet an uncommitted revocation', async () => {
     const { secret, session } = await establish();
     advance(2 * MINUTE);
-    const results = await Promise.all([
-      sessions.revoke(session, 'LOGOUT', attribution()),
-      authenticate(secret),
+    // A revocation has written but not committed; the competitors wait on its row lock and then
+    // re-check "still live" on the committed row (CP1-09).
+    const hold = await holdLocks(
+      `UPDATE auth_session SET revoked_at = now(), revocation_reason = 'LOGOUT',
+         id_token_ciphertext = NULL, id_token_key_version = NULL,
+         refresh_token_ciphertext = NULL, refresh_token_key_version = NULL
+       WHERE id = '${session.id}' AND revoked_at IS NULL`,
+    );
+    const competing = Promise.all([
       sessions.revoke(session, 'LOGOUT', attribution()),
       sessions.revokeUserSessions(session.userId, 'ACCESS_REVOKED', attribution()),
       authenticate(secret),
     ]);
-    const revocations = [results[0], results[2], results[3] === 1];
-    expect(revocations.filter(Boolean)).toHaveLength(1);
+    await waitingOnLocks(3);
+    await hold.done;
+    const [revoked, revokedForUser, lookup] = await competing;
+
+    expect([revoked, revokedForUser]).toEqual([false, 0]);
+    // The re-validation lost its claim to the revocation: it neither refreshed nor wrote tokens.
+    expect(lookup).toMatchObject({ outcome: 'valid', revalidation: 'not-due' });
+    expect(refreshes).toEqual([]);
     expect(await authenticate(secret)).toEqual({ outcome: 'invalid' });
-    expect(
-      (await auditActions()).filter((action) => action.startsWith('iam.session.revoked')),
-    ).toHaveLength(1);
+    expect(await auditActions()).toEqual(['iam.session.established:SUCCEEDED']);
     expect((await row(session.id)).refreshTokenCiphertext).toBeNull();
   });
 
@@ -678,16 +735,24 @@ describe('application sessions against real PostgreSQL', () => {
   describe('login attempts', () => {
     const secrets = { state: 'state-1', nonce: 'nonce-1', codeVerifier: 'verifier-1' };
 
-    it('are consumed exactly once, even by concurrent callbacks', async () => {
+    it('are consumed exactly once, even by callbacks that meet an uncommitted consumption', async () => {
       const handle = await sessions.startLogin(secrets);
-      const results = await Promise.all(
-        Array.from({ length: 8 }, () => sessions.finishLogin(handle)),
+      const hold = await holdLocks(
+        `DELETE FROM auth_login_attempt WHERE handle_hash = '${hashSecret(handle)}'`,
       );
-      expect(results.filter((result) => result.outcome === 'found')).toEqual([
-        { outcome: 'found', ...secrets },
+      const competing = Promise.all(Array.from({ length: 3 }, () => sessions.finishLogin(handle)));
+      await waitingOnLocks(3);
+      await hold.done;
+
+      // A read-then-delete would have found the row still committed; the one statement waits.
+      expect(await competing).toEqual([
+        { outcome: 'missing' },
+        { outcome: 'missing' },
+        { outcome: 'missing' },
       ]);
-      expect(results.filter((result) => result.outcome === 'missing')).toHaveLength(7);
       expect(await auth().authLoginAttempt.count()).toBe(0);
+      const again = await sessions.startLogin(secrets);
+      expect(await sessions.finishLogin(again)).toEqual({ outcome: 'found', ...secrets });
     });
 
     it('expire, are removed when used late, and expired ones are deleted by housekeeping', async () => {
@@ -725,20 +790,6 @@ describe('application sessions against real PostgreSQL', () => {
           '${label}-' || i, ts - interval '10 minutes', ts - interval '10 minutes', ts,
           ts + interval '1 hour', 'sealed-id', 1, 'sealed-refresh', 1
         FROM generate_series(1, ${count}) AS i, (SELECT '${idleAt.toISOString()}'::timestamptz AS ts) AS t`);
-    }
-
-    /** Runs `statements` in one transaction that holds its locks and resolves once it sleeps. */
-    async function holdLocks(statements: string, seconds = 1.5): Promise<{ done: Promise<string> }> {
-      const marker = `hold_${randomUUID().replaceAll('-', '')}`;
-      const done = postgres.sql(`BEGIN; ${statements}; SELECT pg_sleep(${seconds}) AS ${marker}; COMMIT;`);
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const sleeping = await postgres.sql(
-          `SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%AS ${marker}%' AND wait_event = 'PgSleep'`,
-        );
-        if (sleeping === '1') return { done };
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      throw new Error('the lock-holding transaction never started sleeping');
     }
 
     it('purges only the rows whose idle deadline is older than the retention period', async () => {
@@ -817,7 +868,9 @@ describe('application sessions against real PostgreSQL', () => {
           AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL) LIMIT 200`,
         `SELECT id FROM auth_session WHERE idle_expires_at <= ${at} LIMIT 200`,
       ]) {
-        expect(await postgres.sql(`EXPLAIN ${statement}`)).toContain('auth_session_idle_expires_at_idx');
+        expect(await postgres.sql(`EXPLAIN ${statement}`)).toContain(
+          'auth_session_idle_expires_at_idx',
+        );
       }
     });
   });

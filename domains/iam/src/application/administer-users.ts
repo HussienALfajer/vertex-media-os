@@ -474,7 +474,9 @@ async function restrictUser(
     );
   } catch (revocationFailure) {
     // The revocation failure is the one reported; a reconciliation failure records its own state.
-    await reconcileIdentity(dependencies, request(userId.value, attribution)).catch(() => undefined);
+    await reconcileIdentity(dependencies, request(userId.value, attribution)).catch(
+      () => undefined,
+    );
     throw revocationFailure;
   }
   const identity = await reconcileIdentity(dependencies, request(userId.value, attribution));

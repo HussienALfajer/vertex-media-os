@@ -303,9 +303,13 @@ export class AuthController {
     if (!limited.allowed) {
       if (limited.first) logLimited(request, 'logout');
       void reply.header('retry-after', String(limited.retryAfterSeconds));
-      throw new HttpException('Too many logout requests; retry later.', HttpStatus.TOO_MANY_REQUESTS, {
-        errorCode: 'RATE_LIMITED',
-      });
+      throw new HttpException(
+        'Too many logout requests; retry later.',
+        HttpStatus.TOO_MANY_REQUESTS,
+        {
+          errorCode: 'RATE_LIMITED',
+        },
+      );
     }
     const { session, user } = await requireSession(this.runtime, request, reply);
     const idToken = this.runtime.sessions.idTokenOf(session);

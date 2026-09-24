@@ -6,7 +6,7 @@ import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
 import { authPersistenceOf } from '@vertex-os/database/auth';
 import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 import type { LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   TEST_AUTH_ENVIRONMENT,
   testAuthConfig,
@@ -88,6 +88,20 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
     for (const secret of handled) expect(output).not.toContain(secret);
     // Whatever the list above misses, no JWT-shaped value reaches a log line (CP1-23).
     expect(output).not.toMatch(JWT);
+  });
+
+  // Before the next test truncates it: no Audit change or reason written by this test holds a
+  // token, code, verifier or secret the suite handled (CP1-25).
+  afterEach(async () => {
+    const evidence = await postgres.sql(
+      "SELECT coalesce(change::text, '') || ' ' || coalesce(reason, '') FROM audit_record",
+    );
+    for (const secret of [...secrets, ...provider.issued, ...provider.verifiers].filter(
+      (value) => value.length >= 8,
+    )) {
+      expect(evidence).not.toContain(secret);
+    }
+    expect(evidence).not.toMatch(JWT);
   });
 
   beforeEach(async () => {
@@ -743,7 +757,9 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       }
       expect(await backchannelEvidence()).toHaveLength(1);
       const own = lines.slice(start);
-      expect(own.filter((line) => line.includes('"auth":"backchannel-logout-rejected"'))).toHaveLength(3);
+      expect(
+        own.filter((line) => line.includes('"auth":"backchannel-logout-rejected"')),
+      ).toHaveLength(3);
       expect(own.filter((line) => line.includes('"auth":"evidence-limited"'))).toHaveLength(1);
     });
   });

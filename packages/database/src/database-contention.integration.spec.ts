@@ -24,7 +24,8 @@ describe('database contention classification against real PostgreSQL', () => {
     waiter = createDatabaseClient({ connectionString: postgres.url, statementTimeoutMs: 400 });
     await iamPersistenceOf(holder).$executeRaw`
       INSERT INTO iam_permission (code, owning_module, name, description, state, sensitivity)
-      VALUES ('iam.users.read', 'iam', 'Read users', 'Synthetic permission.', 'ACTIVE', 'STANDARD')`;
+      VALUES ('iam.users.read', 'iam', 'Read users', 'Synthetic permission.', 'ACTIVE', 'STANDARD'),
+        ('iam.users.create', 'iam', 'Create users', 'Synthetic permission.', 'ACTIVE', 'STANDARD')`;
   }, 180_000);
 
   afterAll(async () => {
@@ -72,6 +73,146 @@ describe('database contention classification against real PostgreSQL', () => {
     ).catch((error: unknown) => error);
     expect(describeDatabaseError(failure)).toMatchObject({ prismaCode: 'P2028' });
 
+    expect(isDatabaseContention(failure)).toBe(true);
+  });
+
+  /** Holds a row lock on `code` in a transaction of `client` until `release` is called. */
+  async function holdRow(client: DatabaseClient, code: string) {
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let locked: () => void = () => undefined;
+    const isLocked = new Promise<void>((resolve) => (locked = resolve));
+    const holding = runInTransaction(
+      client,
+      async (transaction) => {
+        await iamPersistenceOf(transaction).$queryRaw`
+          SELECT code FROM iam_permission WHERE code = ${code} FOR UPDATE`;
+        locked();
+        await released;
+      },
+      { timeoutMs: 10_000 },
+    );
+    await isLocked;
+    return { release, holding };
+  }
+
+  it('classifies a refused lock (55P03) as contention (IAM-R07 T-8)', async () => {
+    const hold = await holdRow(holder, 'iam.users.read');
+    const failure = await runInTransaction(waiter, async (transaction) => {
+      await iamPersistenceOf(transaction).$queryRaw`
+        SELECT code FROM iam_permission WHERE code = 'iam.users.read' FOR UPDATE NOWAIT`;
+    }).catch((error: unknown) => error);
+    hold.release();
+    await hold.holding;
+
+    expect(describeDatabaseError(failure)).toMatchObject({ sqlState: '55P03' });
+    expect(isDatabaseContention(failure)).toBe(true);
+  });
+
+  it('classifies a deadlock victim as contention (IAM-R07 T-8)', async () => {
+    // The statement bound outlasts PostgreSQL's deadlock detection (deadlock_timeout, 1 s).
+    const first = createDatabaseClient({
+      connectionString: postgres.url,
+      statementTimeoutMs: 5_000,
+    });
+    const second = createDatabaseClient({
+      connectionString: postgres.url,
+      statementTimeoutMs: 5_000,
+    });
+    try {
+      let firstLocked: () => void = () => undefined;
+      const firstHolds = new Promise<void>((resolve) => (firstLocked = resolve));
+      let secondLocked: () => void = () => undefined;
+      const secondHolds = new Promise<void>((resolve) => (secondLocked = resolve));
+      const lockBoth = (
+        client: DatabaseClient,
+        own: string,
+        other: string,
+        held: () => void,
+        otherHeld: Promise<void>,
+      ) =>
+        runInTransaction(
+          client,
+          async (transaction) => {
+            const scoped = iamPersistenceOf(transaction);
+            await scoped.$queryRaw`SELECT code FROM iam_permission WHERE code = ${own} FOR UPDATE`;
+            held();
+            await otherHeld;
+            await scoped.$queryRaw`SELECT code FROM iam_permission WHERE code = ${other} FOR UPDATE`;
+          },
+          { timeoutMs: 10_000 },
+        ).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      // Opposite lock orders: PostgreSQL's deadlock detector aborts one of the two.
+      const outcomes = await Promise.all([
+        lockBoth(first, 'iam.users.read', 'iam.users.create', firstLocked, secondHolds),
+        lockBoth(second, 'iam.users.create', 'iam.users.read', secondLocked, firstHolds),
+      ]);
+      const failures = outcomes.filter((outcome) => outcome !== undefined);
+      expect(failures).toHaveLength(1);
+      const [failure] = failures;
+      // A raw statement reports the SQLSTATE under P2010.
+      expect(describeDatabaseError(failure)).toMatchObject({ sqlState: '40P01' });
+      expect(isDatabaseContention(failure)).toBe(true);
+    } finally {
+      await first.disconnect();
+      await second.disconnect();
+    }
+  });
+
+  /**
+   * Runs `write` in a REPEATABLE READ transaction whose snapshot predates another transaction's
+   * change to the row it then writes, and returns the failure.
+   */
+  async function staleWrite(
+    write: (scoped: ReturnType<typeof iamPersistenceOf>) => Promise<unknown>,
+  ): Promise<unknown> {
+    let read: () => void = () => undefined;
+    const hasRead = new Promise<void>((resolve) => (read = resolve));
+    let changed: () => void = () => undefined;
+    const hasChanged = new Promise<void>((resolve) => (changed = resolve));
+    const repeatable = runInTransaction(
+      waiter,
+      async (transaction) => {
+        const scoped = iamPersistenceOf(transaction);
+        await scoped.$executeRaw`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+        await scoped.$queryRaw`SELECT name FROM iam_permission WHERE code = 'iam.users.create'`;
+        read();
+        await hasChanged;
+        await write(scoped);
+      },
+      { timeoutMs: 10_000 },
+    ).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await hasRead;
+    await iamPersistenceOf(holder).$executeRaw`
+      UPDATE iam_permission SET name = name || '.' WHERE code = 'iam.users.create'`;
+    changed();
+    return repeatable;
+  }
+
+  it('classifies a write conflict of a typed query (P2034) as contention (IAM-R07 T-8)', async () => {
+    const failure = await staleWrite((scoped) =>
+      scoped.iamPermission.update({
+        where: { code: 'iam.users.create' },
+        data: { name: 'Create users (typed)' },
+      }),
+    );
+    expect(describeDatabaseError(failure)).toMatchObject({ prismaCode: 'P2034' });
+    expect(isDatabaseContention(failure)).toBe(true);
+  });
+
+  it('classifies a serialization failure of a raw statement (40001) as contention (IAM-R07 T-8)', async () => {
+    const failure = await staleWrite((scoped) =>
+      Promise.resolve(
+        scoped.$executeRaw`UPDATE iam_permission SET name = 'Create users (raw)' WHERE code = 'iam.users.create'`,
+      ),
+    );
+    expect(describeDatabaseError(failure)).toMatchObject({ sqlState: '40001' });
     expect(isDatabaseContention(failure)).toBe(true);
   });
 
