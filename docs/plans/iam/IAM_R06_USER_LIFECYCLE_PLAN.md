@@ -146,6 +146,7 @@ User records target `iam.user`/user ID and carry before/after state fields, neve
 
 - `@vertex-os/iam:test`: transition table, reactivation target, grant ceiling, bootstrap classification; application tests with fakes for the orderings of D-07 and D-08 (including compensation) and for session revocation.
 - `@vertex-os/iam-persistence:test:integration`: store behavior that the API suites do not reach; existing suites adjusted to D-04.
+- `@vertex-os/database:test:integration` and `@vertex-os/audit-persistence:test:integration`: the migration history and schema-wide assertions.
 - `@vertex-os/api:test:integration`: `user-administration.integration.spec.ts` with PostgreSQL and real Keycloak (creation, lifecycle journeys, Keycloak failure paths, concurrency for Done means 4 and 7); `administration.integration.spec.ts` grant-ceiling cases; the bootstrap command; `sessions.integration.spec.ts` constraint tests; the provisioning suite items.
 - `pnpm lint:boundaries`, `pnpm verify`, and the integration suites of `iam-persistence`, `audit-persistence` and `api`.
 - CI: `verify:full` and `deps:audit` on the pull request.
@@ -157,6 +158,7 @@ User records target `iam.user`/user ID and carry before/after state fields, neve
 - **Session test arrangement.** One session test expired a session by setting its idle deadline equal to its creation time, a row no application path can produce; `auth_session_lifetime_ck` refuses it, so the test now expires the session one millisecond after creation.
 - **Review fixes.** Reference synchronization locks the system role row right after its advisory lock (DC-1, a deadlock the reviewer reproduced with the statements of `createUser`, `replaceRolePermissions` and synchronization); the `revoked_at >= created_at` check was dropped (DC-2); a reactivation whose final commit throws reconciles before failing (DC-6); the revoke-sessions action always leaves one `iam.user.sessions-revoked` record (SEC-4); one `iam.user.created` builder for creation and bootstrap, one manifest list for both commands, `holdsRole` folded into `RoleStore.hasAssignment` (AB-2 to AB-5).
 - **Concurrency tests hold the contested rows.** The last-System-Administrator tests hold both target user rows in a sleeping transaction; with the System Administrator row lock removed from the adapter they fail, with it they pass (DC-3).
+- **Suites of the database package.** The first CI run failed: the `@vertex-os/database` suites pin the migration list, and the Audit constraint suite asserted that the schema has no function at all. The migration lists now include the new migration, the upgrade test also carries existing sessions through it, and the Audit assertion now proves that no function can reach `audit_record` while allowing the session trigger's function. The implementer had not run these two suites locally before the first push.
 - **Trigger message.** The revocation trigger's message starts with its name, because `psql` does not print the constraint field of a raised exception.
 
 ## 9. Checklist

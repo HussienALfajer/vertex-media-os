@@ -246,8 +246,11 @@ describe('named audit_record constraints', () => {
     const triggers = await postgres.client.$queryRaw<Array<{ count: number }>>`
       SELECT count(*)::int AS count FROM pg_trigger WHERE tgrelid = 'audit_record'::regclass`;
     expect(triggers).toEqual([{ count: 0 }]);
+    // No function can reach the Audit table. The schema's one function is the auth session
+    // trigger that keeps a revocation final (IAM-R06 D-19); it never touches audit_record.
     const functions = await postgres.client.$queryRaw<Array<{ count: number }>>`
-      SELECT count(*)::int AS count FROM pg_proc WHERE pronamespace = 'public'::regnamespace`;
+      SELECT count(*)::int AS count FROM pg_proc WHERE pronamespace = 'public'::regnamespace
+        AND (prosrc ILIKE '%audit%' OR proname NOT IN ('auth_session_revocation_is_final'))`;
     expect(functions).toEqual([{ count: 0 }]);
     const enums = await postgres.client.$queryRaw<Array<{ type: string; labels: string[] }>>`
       SELECT t.typname::text AS type, array_agg(e.enumlabel::text ORDER BY e.enumsortorder) AS labels
