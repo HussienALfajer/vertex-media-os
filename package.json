@@ -19,7 +19,7 @@
     "typecheck": "nx run-many -t typecheck",
     "test": "nx run-many -t test",
     "test:integration": "nx run-many -t test:integration",
-    "test:e2e": "nx run @vertex-os/web-e2e:e2e",
+    "test:e2e": "nx run @vertex-os/web-e2e:e2e && nx run @vertex-os/web-e2e:e2e-iam",
     "env:setup": "node scripts/setup-env.mjs",
     "infra:up": "docker compose --env-file .env -f infra/compose.yaml up -d --wait",
     "infra:down": "docker compose --env-file .env.example -f infra/compose.yaml down",

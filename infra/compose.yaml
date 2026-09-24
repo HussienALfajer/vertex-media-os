@@ -34,7 +34,7 @@ services:
   # never re-imported afterwards: apply realm changes with `pnpm infra:reset`.
   keycloak:
     # Tag and digest pinned; apps/api/test-support/keycloak.ts uses the same reference (a unit
-    # test fails if they differ).
+    # test fails if they differ), and the IAM browser journeys read it from here.
     image: quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c
     command: ['start-dev', '--import-realm']
     env_file:
@@ -85,7 +85,8 @@ services:
   # Local mail sink for invitation and password-reset email (IAM-R02 OD-1). It accepts any SMTP
   # credentials and delivers nothing onward; messages live in memory until the container stops.
   mailpit:
-    # Tag and digest pinned; apps/api/test-support/keycloak.ts uses the same reference.
+    # Tag and digest pinned; apps/api/test-support/keycloak.ts uses the same reference, and the
+    # IAM browser journeys read it from here.
     image: axllent/mailpit:v1.31.2@sha256:74d609a42ec279aa63c6b4622a6fa9b5408d1ad5b1d76a1c4be40a265ce0863d
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: 'true'

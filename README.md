@@ -15,8 +15,8 @@ Every API route requires that session unless it is one of the five public routes
 callback, back-channel logout), and a route can require an IAM permission code, checked against the
 user's current roles, permissions and departments on every request.
 IAM identity provisioning (reconciling users with Keycloak and sending invitations, in
-`domains/iam`, through the Keycloak Admin adapter `domains/iam-keycloak`) exists as application
-capabilities; no endpoint or command calls it yet.
+`domains/iam`, through the Keycloak Admin adapter `domains/iam-keycloak`) runs behind the IAM
+administration API, the web app's administration screens and `pnpm iam:bootstrap`.
 The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
 [engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
@@ -168,20 +168,20 @@ is reported as 1.
 
 ## Verification
 
-| Command                 | Runs                                                                              |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                |
-| `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                  |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V106, C1–C14)                   |
-| `pnpm typecheck`        | TypeScript for every project                                                      |
-| `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest       |
-| `pnpm build`            | Production builds of every project with a build target                            |
-| `pnpm test:integration` | Tests against real, ephemeral PostgreSQL and Keycloak (Testcontainers; Docker)    |
-| `pnpm test:e2e`         | Playwright: production smoke, design-system lab in 3 engines, visual baselines    |
-| `pnpm verify`           | Fast gate: format check → lint → lint:boundaries → typecheck → test → build       |
-| `pnpm verify:full`      | `verify` + Prisma validate/generate + integration tests + end-to-end tests        |
-| `pnpm deps:audit`       | Dependency vulnerability audit (reviewed exceptions are in `pnpm-workspace.yaml`) |
-| `pnpm openapi:generate` | Writes the OpenAPI document to `apps/api/generated/openapi.json` (ignored)        |
+| Command                 | Runs                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                                                                         |
+| `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                                                                           |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V135, C1–C18)                                                                            |
+| `pnpm typecheck`        | TypeScript for every project                                                                                                               |
+| `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest                                                                |
+| `pnpm build`            | Production builds of every project with a build target                                                                                     |
+| `pnpm test:integration` | Tests against real, ephemeral PostgreSQL and Keycloak (Testcontainers; Docker)                                                             |
+| `pnpm test:e2e`         | Playwright: production smoke, design-system lab in 3 engines, visual baselines, then the IAM journeys against real Keycloak and PostgreSQL |
+| `pnpm verify`           | Fast gate: format check → lint → lint:boundaries → typecheck → test → build                                                                |
+| `pnpm verify:full`      | `verify` + Prisma validate/generate + integration tests + end-to-end tests                                                                 |
+| `pnpm deps:audit`       | Dependency vulnerability audit (reviewed exceptions are in `pnpm-workspace.yaml`)                                                          |
+| `pnpm openapi:generate` | Writes the OpenAPI document to `apps/api/generated/openapi.json` (ignored)                                                                 |
 
 Single project targets run with `pnpm nx run <project>:<target>`, for example
 `pnpm nx run @vertex-os/api:test`.
@@ -195,6 +195,14 @@ changed file under `apps/web-e2e/src/visual/__screenshots__/` before committing;
 baselines. Design tokens are edited in `packages/ui/src/tokens/tokens.json` and regenerated with
 `pnpm nx run @vertex-os/ui:tokens` (a stale generated file fails `pnpm test`).
 
+The IAM journeys (`pnpm nx run @vertex-os/web-e2e:e2e-iam`, `apps/web-e2e/playwright.iam.config.mts`)
+run against a real stack that their global setup starts and stops with Docker: PostgreSQL with every
+migration, Mailpit and the pinned Keycloak with the committed realm, then the operator commands
+(`iam-sync-reference`, `iam-bootstrap`), the built API server entry (:3110) and the production web
+build (:4320). The API and the operator commands read no `.env`; the values the stack sets win over
+the `.env` fallbacks of the Prisma CLI and the Vite preview. Every journey runs in Chromium; Firefox also proves the cookies,
+rotation and sign-out, and WebKit that sign-in over plain HTTP fails closed (see Current limitations).
+
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same commands,
 `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit`, for every pull request
 to `main` and every push to `main`. It needs no secrets. CI retries a failed Playwright test once
@@ -207,7 +215,7 @@ screenshots and report are kept as a run artifact for 7 days.
 ```text
 apps/api          NestJS on Fastify: configuration, health, browser sign-in (src/auth), IAM HTTP (src/iam), errors, logging, OpenAPI
 apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and the /dev/ui lab
-apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab and visual baselines
+apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab, visual baselines and IAM journeys
 domains/iam       @vertex-os/iam: backend IAM domain core and private persistence contract
 domains/iam-persistence @vertex-os/iam-persistence: IAM-owned Prisma adapters and transaction runner
 domains/iam-keycloak @vertex-os/iam-keycloak: IAM-owned Keycloak Admin REST adapter (provisioning)
@@ -271,7 +279,11 @@ settings of `.env` (`KEYCLOAK_ISSUER_URL`, `KEYCLOAK_PROVISIONER_CLIENT_ID`,
 
 ## Current limitations
 
-- There is no IAM user interface yet; the administration is reachable only through the API.
+- Local sign-in works in Chromium and Firefox only. Playwright's WebKit (on Windows and Linux; Safari is
+  expected to behave alike) keeps no `Secure` cookie for
+  `http://127.0.0.1`, so the `__Host-vertex-*` cookies never return and sign-in ends with
+  `AUTH_LOGIN_FAILED`. The deployment must serve the web app over HTTPS, where the cookies are valid;
+  WebKit over that origin is verified with the production deployment design.
 - MOD-AUDIT appends immutable records for every IAM change and refusal, but has no read path.
   The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
