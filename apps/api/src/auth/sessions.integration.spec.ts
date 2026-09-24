@@ -160,65 +160,147 @@ describe('application sessions against real PostgreSQL', () => {
     expect(await auth().authSession.count()).toBe(0);
   });
 
-  it('refuses raw secrets, half revocations and tokens on revoked rows', async () => {
-    const base = {
-      userId: userId(),
-      csrfTokenHash: hashSecret(newSecret()),
-      createdAt: clock,
-      lastSeenAt: clock,
-      idleExpiresAt: new Date(clock.getTime() + MINUTE),
-      absoluteExpiresAt: new Date(clock.getTime() + 2 * MINUTE),
-    };
-    await expect(
-      auth().authSession.create({ data: { ...base, tokenHash: `${newSecret()}==` } }),
-    ).rejects.toThrow();
-    await expect(
-      auth().authSession.create({
-        data: { ...base, tokenHash: hashSecret(newSecret()), revokedAt: clock },
-      }),
-    ).rejects.toThrow();
-    await expect(
-      auth().authSession.create({
-        data: {
-          ...base,
-          tokenHash: hashSecret(newSecret()),
-          revokedAt: clock,
-          revocationReason: 'LOGOUT',
-          idTokenCiphertext: 'x',
-          idTokenKeyVersion: 1,
-        },
-      }),
-    ).rejects.toThrow();
-    await expect(
-      auth().authSession.create({
-        data: {
-          ...base,
-          tokenHash: hashSecret(newSecret()),
-          idleExpiresAt: new Date(clock.getTime() + 3 * MINUTE),
-        },
-      }),
-    ).rejects.toThrow();
+  describe('database constraints (IAM-CP1 CP1-06, CP1-07)', () => {
+    const hash = () => hashSecret(newSecret());
+    /** A valid session row as SQL values, with `overrides` replacing single columns. */
+    function sessionInsert(overrides: Record<string, string> = {}): string {
+      const columns: Record<string, string> = {
+        token_hash: `'${hash()}'`,
+        csrf_token_hash: `'${hash()}'`,
+        user_id: `'${randomUUID()}'`,
+        created_at: `'2026-09-23T12:00:00Z'`,
+        last_seen_at: `'2026-09-23T12:00:00Z'`,
+        idle_expires_at: `'2026-09-23T12:30:00Z'`,
+        absolute_expires_at: `'2026-09-23T22:00:00Z'`,
+        ...overrides,
+      };
+      return `INSERT INTO auth_session (${Object.keys(columns).join(', ')})
+        VALUES (${Object.values(columns).join(', ')}) RETURNING id`;
+    }
+    function attemptInsert(overrides: Record<string, string> = {}): string {
+      const columns: Record<string, string> = {
+        handle_hash: `'${hash()}'`,
+        state: `'state-value'`,
+        nonce: `'nonce-value'`,
+        code_verifier: `'verifier-value'`,
+        created_at: `'2026-09-23T12:00:00Z'`,
+        expires_at: `'2026-09-23T12:10:00Z'`,
+        ...overrides,
+      };
+      return `INSERT INTO auth_login_attempt (${Object.keys(columns).join(', ')})
+        VALUES (${Object.values(columns).join(', ')})`;
+    }
+    const revoked = { revoked_at: `'2026-09-23T12:05:00Z'`, revocation_reason: `'LOGOUT'` };
 
-    // The refresh token (IAM-R03F D-06): only with its key version, never on a revoked row.
-    const { session } = await establish();
-    await expect(
-      postgres.sql(
-        `UPDATE auth_session SET refresh_token_key_version = NULL WHERE id = '${session.id}'`,
-      ),
-    ).rejects.toThrow(/auth_session_refresh_token_ck/);
-    await expect(
-      postgres.sql(
-        `UPDATE auth_session SET refresh_token_key_version = 0 WHERE id = '${session.id}'`,
-      ),
-    ).rejects.toThrow(/auth_session_refresh_token_ck/);
-    await expect(
-      postgres.sql(
-        `UPDATE auth_session SET revoked_at = created_at, revocation_reason = 'LOGOUT',
-           id_token_ciphertext = NULL, id_token_key_version = NULL WHERE id = '${session.id}'`,
-      ),
-    ).rejects.toThrow(/auth_session_refresh_token_ck/);
+    it('accepts the valid rows the cases below start from', async () => {
+      await expect(postgres.sql(sessionInsert())).resolves.toMatch(/^[0-9a-f-]{36}/);
+      await expect(postgres.sql(sessionInsert(revoked))).resolves.toMatch(/^[0-9a-f-]{36}/);
+      await expect(postgres.sql(attemptInsert())).resolves.toContain('INSERT 0 1');
+    });
+
+    const sessionCases: [string, Record<string, string>][] = [
+      // A raw secret with padding, or anything not shaped like a SHA-256 digest.
+      ['auth_session_token_hash_ck', { token_hash: `'${newSecret()}=='` }],
+      ['auth_session_csrf_token_hash_ck', { csrf_token_hash: `'not-a-digest'` }],
+      ['auth_session_expiry_ck', { idle_expires_at: `'2026-09-23T23:00:00Z'` }],
+      ['auth_session_revocation_ck', { revoked_at: `'2026-09-23T12:05:00Z'` }],
+      ['auth_session_revocation_ck', { revocation_reason: `'LOGOUT'` }],
+      ['auth_session_id_token_ck', { id_token_ciphertext: `'sealed'` }],
+      ['auth_session_id_token_ck', { id_token_ciphertext: `'sealed'`, id_token_key_version: '0' }],
+      [
+        'auth_session_id_token_ck',
+        { ...revoked, id_token_ciphertext: `'sealed'`, id_token_key_version: '1' },
+      ],
+      ['auth_session_refresh_token_ck', { refresh_token_key_version: '1' }],
+      [
+        'auth_session_refresh_token_ck',
+        { refresh_token_ciphertext: `'sealed'`, refresh_token_key_version: '0' },
+      ],
+      ['auth_session_idp_session_id_ck', { idp_session_id: `''` }],
+      [
+        'auth_session_lifetime_ck',
+        {
+          last_seen_at: `'2026-09-23T12:00:00Z'`,
+          idle_expires_at: `'2026-09-23T12:00:00Z'`,
+          absolute_expires_at: `'2026-09-23T12:00:00Z'`,
+        },
+      ],
+      [
+        'auth_session_revoked_at_ck',
+        { revoked_at: `'2026-09-23T11:59:00Z'`, revocation_reason: `'LOGOUT'` },
+      ],
+      [
+        'auth_session_token_ciphertext_ck',
+        { id_token_ciphertext: `''`, id_token_key_version: '1' },
+      ],
+      [
+        'auth_session_token_ciphertext_ck',
+        { refresh_token_ciphertext: `''`, refresh_token_key_version: '1' },
+      ],
+    ];
+    for (const [constraint, overrides] of sessionCases) {
+      it(`refuses a session row that violates ${constraint} (${Object.keys(overrides).join(', ')})`, async () => {
+        await expect(postgres.sql(sessionInsert(overrides))).rejects.toThrow(
+          new RegExp(`violates check constraint "${constraint}"`),
+        );
+      });
+    }
+
+    const attemptCases: [string, Record<string, string>][] = [
+      ['auth_login_attempt_handle_hash_ck', { handle_hash: `'${newSecret()}=='` }],
+      ['auth_login_attempt_expiry_ck', { expires_at: `'2026-09-23T12:00:00Z'` }],
+      ['auth_login_attempt_secrets_ck', { state: `''` }],
+      ['auth_login_attempt_secrets_ck', { nonce: `''` }],
+      ['auth_login_attempt_secrets_ck', { code_verifier: `''` }],
+    ];
+    for (const [constraint, overrides] of attemptCases) {
+      it(`refuses a login attempt that violates ${constraint} (${Object.keys(overrides).join(', ')})`, async () => {
+        await expect(postgres.sql(attemptInsert(overrides))).rejects.toThrow(
+          new RegExp(`violates check constraint "${constraint}"`),
+        );
+      });
+    }
+
+    it('refuses duplicate session and login-attempt handles by their unique keys', async () => {
+      const tokenHash = hash();
+      await postgres.sql(sessionInsert({ token_hash: `'${tokenHash}'` }));
+      await expect(postgres.sql(sessionInsert({ token_hash: `'${tokenHash}'` }))).rejects.toThrow(
+        /auth_session_token_hash_key/,
+      );
+      const handle = hash();
+      await postgres.sql(attemptInsert({ handle_hash: `'${handle}'` }));
+      await expect(postgres.sql(attemptInsert({ handle_hash: `'${handle}'` }))).rejects.toThrow(
+        /auth_login_attempt_handle_hash_key/,
+      );
+    });
+
+    it('keeps a revocation final: never cleared, re-dated or re-reasoned (auth_session_revocation_final)', async () => {
+      const id = (await postgres.sql(sessionInsert(revoked))).split('\n')[0] ?? '';
+      for (const change of [
+        'revoked_at = NULL, revocation_reason = NULL',
+        `revoked_at = revoked_at + interval '1 minute'`,
+        `revocation_reason = 'BACKCHANNEL_LOGOUT'`,
+      ]) {
+        await expect(
+          postgres.sql(`UPDATE auth_session SET ${change} WHERE id = '${id}'`),
+        ).rejects.toThrow(/auth_session_revocation_final/);
+      }
+      expect(
+        await postgres.sql(
+          `SELECT revoked_at = '2026-09-23T12:05:00Z' AND revocation_reason = 'LOGOUT'
+             FROM auth_session WHERE id = '${id}'`,
+        ),
+      ).toBe('t');
+      // Revoking a live session is an ordinary update.
+      const live = (await postgres.sql(sessionInsert())).split('\n')[0] ?? '';
+      await expect(
+        postgres.sql(
+          `UPDATE auth_session SET revoked_at = '2026-09-23T12:06:00Z',
+             revocation_reason = 'USER_SUSPENDED' WHERE id = '${live}'`,
+        ),
+      ).resolves.toContain('UPDATE 1');
+    });
   });
-
   describe('re-validation against the identity provider (IAM-R03F)', () => {
     it('slides the idle deadline after each refresh, never past the absolute deadline', async () => {
       const { secret } = await establish();
@@ -501,9 +583,11 @@ describe('application sessions against real PostgreSQL', () => {
     const expired = await establish(alice, 'kc-a3');
     await auth().authSession.update({
       where: { id: expired.session.id },
-      // Its idle deadline is now: expired, so revocation leaves it alone.
-      data: { idleExpiresAt: clock },
+      // Its idle deadline passes a millisecond after creation (a session always lives for a
+      // positive time, auth_session_lifetime_ck): expired, so revocation leaves it alone.
+      data: { idleExpiresAt: new Date(clock.getTime() + 1) },
     });
+    advance(1);
     await postgres.sql('TRUNCATE audit_record');
 
     await expect(

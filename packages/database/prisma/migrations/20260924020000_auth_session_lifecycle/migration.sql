@@ -36,7 +36,7 @@ CREATE FUNCTION "auth_session_revocation_is_final"() RETURNS trigger
 BEGIN
   IF OLD.revoked_at IS NOT NULL AND (NEW.revoked_at IS DISTINCT FROM OLD.revoked_at
       OR NEW.revocation_reason IS DISTINCT FROM OLD.revocation_reason) THEN
-    RAISE EXCEPTION 'a revoked session stays revoked'
+    RAISE EXCEPTION 'auth_session_revocation_final: a revoked session stays revoked'
       USING ERRCODE = 'check_violation', CONSTRAINT = 'auth_session_revocation_final';
   END IF;
   RETURN NEW;
