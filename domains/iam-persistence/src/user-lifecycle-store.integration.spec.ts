@@ -314,4 +314,56 @@ describe('UserLifecycleStore against real PostgreSQL', () => {
         .holdsSystemAdministratorRole,
     ).toBe(true);
   });
+
+  it('reads the grant of a user: ACTIVE codes of ACTIVE roles only, and the system role', async () => {
+    const systemRoleId = await systemRole();
+    const permission = (code: string, state: 'ACTIVE' | 'DEPRECATED') =>
+      postgres.client.iamPermission.create({
+        data: {
+          code,
+          owningModule: 'iam',
+          name: code,
+          description: code,
+          state,
+          sensitivity: 'STANDARD',
+        },
+      });
+    await permission('iam.users.read', 'ACTIVE');
+    await permission('iam.users.create', 'DEPRECATED');
+    await permission('iam.roles.read', 'ACTIVE');
+    const role = async (code: string, state: 'ACTIVE' | 'INACTIVE', codes: string[]) => {
+      const created = await postgres.client.iamRole.create({
+        data: { code, name: code, state, isSystem: false },
+        select: { id: true },
+      });
+      for (const permissionCode of codes) {
+        await postgres.client.iamRolePermission.create({
+          data: { roleId: created.id, permissionCode },
+        });
+      }
+      return created.id;
+    };
+    const active = await role('active-role', 'ACTIVE', ['iam.users.read', 'iam.users.create']);
+    const inactive = await role('inactive-role', 'INACTIVE', ['iam.roles.read']);
+    const user = await seedInvitedUser(postgres.client, 'grant@example.invalid');
+    const other = await seedInvitedUser(postgres.client, 'other@example.invalid');
+    for (const roleId of [active, inactive]) {
+      await postgres.client.iamUserRoleAssignment.create({ data: { userId: user.id, roleId } });
+    }
+    await postgres.client.iamUserRoleAssignment.create({
+      data: { userId: other.id, roleId: systemRoleId },
+    });
+
+    const read = await runner.run(async ({ roles }) => ({
+      user: await roles.readUserGrant(user.id),
+      other: await roles.readUserGrant(other.id),
+    }));
+
+    // DEPRECATED codes and INACTIVE roles hand nothing back (spec Section 23.1).
+    expect(read.user).toEqual({
+      holdsSystemAdministratorRole: false,
+      activePermissionCodes: ['iam.users.read'],
+    });
+    expect(read.other).toEqual({ holdsSystemAdministratorRole: true, activePermissionCodes: [] });
+  });
 });

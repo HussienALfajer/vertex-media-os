@@ -226,7 +226,10 @@ describe('reactivation (spec Sections 10.7, 31.2)', () => {
     });
     expect(provider.mutatingCalls()).toEqual(['setEnabled:true']);
     // PENDING first, the target state only in the final commit.
-    expect(iam.transactions).toEqual(['lock-user+read-grant+sync:PENDING', 'reactivate:ACTIVE']);
+    expect(iam.transactions).toEqual([
+      'lock-user+read-grant+sync:PENDING',
+      'lock-user+read-grant+reactivate:ACTIVE',
+    ]);
     expect(trail(iam)).toEqual([
       'iam.user.reactivation-started:SUCCEEDED',
       'iam.user.reactivated:SUCCEEDED',
@@ -485,7 +488,40 @@ describe('grant ceiling for reactivation (spec Section 23.1; IAM-R07 D-11)', () 
     expect(
       await reactivateUser(dependencies, { userId, expectedVersion: 4 }, attribution()),
     ).toEqual({ outcome: 'version-conflict' });
-    expect(iam.audit).toEqual([]);
+    const terminated = active({ accessState: 'TERMINATED' });
+    terminated.iam.grants.set(USER_ID, {
+      holdsSystemAdministratorRole: true,
+      activePermissionCodes: [],
+    });
+    expect(
+      await reactivateUser(terminated.dependencies, { userId, expectedVersion: 5 }, attribution()),
+    ).toEqual({ outcome: 'invalid-access-transition' });
+    expect([...iam.audit, ...terminated.iam.audit]).toEqual([]);
+  });
+
+  it('refuses at the final commit when the target gained a grant during the Keycloak call', async () => {
+    const { iam, provider, dependencies, identity } = suspendedTarget();
+    actorHolds(iam, [MANAGE]);
+    // Another administrator assigns the target a role while Keycloak enables the identity.
+    provider.onNext('setEnabled', () =>
+      iam.grants.set(USER_ID, {
+        holdsSystemAdministratorRole: false,
+        activePermissionCodes: [READ],
+      }),
+    );
+
+    const result = await reactivateUser(
+      dependencies,
+      { userId, expectedVersion: 5 },
+      attribution(),
+    );
+
+    expect(result).toEqual({ outcome: 'grant-exceeds-actor' });
+    expect(iam.get()).toMatchObject({ accessState: 'SUSPENDED' });
+    // The identity enabled for the reactivation is disabled again.
+    expect(identity.enabled).toBe(false);
+    expect(trail(iam)).toContain('iam.user.reactivated:REFUSED');
+    expect(trail(iam)).not.toContain('iam.user.reactivated:SUCCEEDED');
   });
 });
 

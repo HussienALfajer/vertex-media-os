@@ -21,6 +21,7 @@ const stringLiteralImport = 'Write a dynamic import specifier as a string litera
 const commonJs = 'CommonJS require bypasses the import boundaries';
 const adaptersOnlyInRuntime = 'Only auth-runtime.ts';
 const iamHttpCapabilitiesOnly = 'IAM controllers use the bound capabilities';
+const iamHttpUserActorOnly = "session's USER actor";
 const approvedEntry = 'approved root entry points';
 
 // [id, project, code, rule, message fragment?, virtual file relative to the project?]
@@ -350,6 +351,52 @@ const violations = [
     iamHttpCapabilitiesOnly,
     'src/iam/http/x.ts',
   ]),
+  // IAM-R07 review AB-1: nor a composition root, the database client or the authentication runtime.
+  ...[
+    [
+      "import { createIamAdministration } from '../administration.js'; void createIamAdministration;",
+      'src/iam/http/x.ts',
+    ],
+    [
+      "import { DATABASE_CLIENT } from '../../database/database.module.js'; void DATABASE_CLIENT;",
+      'src/iam/http/x.ts',
+    ],
+    ["import '@vertex-os/database';", 'src/iam/http/x.ts'],
+    ["import '../../auth/auth-runtime.js';", 'src/iam/http/x.ts'],
+    ["import '../../administration.js';", 'src/iam/http/sub/x.ts'],
+  ].map(([code, file], index) => [
+    `V${115 + index}`,
+    'apps/api',
+    code,
+    importsRule,
+    iamHttpCapabilitiesOnly,
+    file,
+  ]),
+  [
+    'V120',
+    'apps/api',
+    "await import('../directory.js');",
+    syntaxRule,
+    iamHttpCapabilitiesOnly,
+    'src/iam/http/x.ts',
+  ],
+  // IAM-R07 review T-1: IAM routes never attribute a change to a system process (IAM-R06 SEC-1).
+  [
+    'V121',
+    'apps/api',
+    "const actor = { type: 'SYSTEM' }; void actor;",
+    syntaxRule,
+    iamHttpUserActorOnly,
+    'src/iam/http/x.ts',
+  ],
+  [
+    'V122',
+    'apps/api',
+    "import { systemAttribution } from '../../auth/request-session.js'; void systemAttribution;",
+    syntaxRule,
+    iamHttpUserActorOnly,
+    'src/iam/http/x.ts',
+  ],
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
@@ -415,6 +462,12 @@ const controls = [
   ['C13', 'apps/api', imports('@vertex-os/iam/composition'), 'src/commands/x.ts'],
   ['C14', 'domains/iam-persistence', imports('@vertex-os/iam/composition'), 'src/x.spec.ts'],
   ['C16', 'apps/api', imports('@vertex-os/iam', '@vertex-os/audit'), 'src/iam/http/x.ts'],
+  [
+    'C17',
+    'apps/api',
+    ["export type { IamAdministration } from '../administration.js';"],
+    'src/iam/http/capabilities.ts',
+  ],
   // The black-box end-to-end project resolves installed packages with createRequire.
   [
     'C8',

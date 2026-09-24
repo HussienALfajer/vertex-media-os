@@ -244,6 +244,9 @@ describe('protection of every IAM route', () => {
       const [method, path] = route.split(' ') as ['GET', string];
       const response = await call(admin, method, concrete(path), method === 'GET' ? undefined : {});
       expect([401, 403], route).not.toContain(response.statusCode);
+      expect(response.statusCode, route).toBeLessThan(500);
+      // IAM answers carry personal data; no cache may keep them, refusals included (D-06).
+      expect(response.headers['cache-control'], route).toBe('no-store');
     }
   });
 });
@@ -256,7 +259,7 @@ describe('GET /api/iam/me', () => {
   it('returns the profile, ACTIVE departments and effective codes, for any ACTIVE session', async () => {
     const primary = await department();
     const closed = await department('INACTIVE');
-    const reader = await actor(['iam.users.read']);
+    const reader = await actor(['iam.users.read', 'iam.departments.read']);
     await postgres.sql(
       `INSERT INTO iam_department_membership (user_id, department_id, is_primary)
          VALUES ('${reader.id}', '${primary}', true), ('${reader.id}', '${closed}', false)`,
@@ -272,7 +275,7 @@ describe('GET /api/iam/me', () => {
       departments: [
         { id: primary, code: expect.any(String), name: 'Synthetic department', isPrimary: true },
       ],
-      permissionCodes: ['iam.users.read'],
+      permissionCodes: ['iam.departments.read', 'iam.users.read'],
     });
     const nobody = await actor([]);
     expect((await call(nobody, 'GET', '/api/iam/me')).json()).toMatchObject({
@@ -710,6 +713,183 @@ describe('user lifecycle when Keycloak is unreachable', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
+// The remaining operations and refusals (spec Section 46.5 items 1, 4 and 5)
+// ---------------------------------------------------------------------------------------------
+
+describe('every operation and refusal', () => {
+  it('lists, renames, deactivates and activates roles, refusing a ceiling breach and unknown roles', async () => {
+    const admin = await administrator();
+    const code = `lister-${suffix()}`;
+    const created = await call(admin, 'POST', '/api/iam/roles', { code, name: 'Lister' });
+    const roleId = (created.json() as { id: string }).id;
+    await call(admin, 'PUT', `/api/iam/roles/${roleId}/permissions`, {
+      expectedVersion: 1,
+      permissionCodes: ['iam.sessions.revoke'],
+    });
+
+    const listed = await call(admin, 'GET', '/api/iam/roles', undefined, {
+      query: `search=${code}&state=ACTIVE`,
+    });
+    expect([listed.statusCode, listed.json()]).toEqual([
+      200,
+      {
+        items: [
+          {
+            id: roleId,
+            code,
+            name: 'Lister',
+            description: null,
+            state: 'ACTIVE',
+            isSystem: false,
+            version: 2,
+          },
+        ],
+        page: 1,
+        pageSize: 25,
+        total: 1,
+      },
+    ]);
+    const renamed = await call(admin, 'PATCH', `/api/iam/roles/${roleId}`, {
+      expectedVersion: 2,
+      description: 'Lists things.',
+    });
+    expect([renamed.statusCode, renamed.json()]).toEqual([
+      200,
+      expect.objectContaining({ description: 'Lists things.', version: 3 }),
+    ]);
+    const deactivated = await call(admin, 'POST', `/api/iam/roles/${roleId}/deactivate`, {
+      expectedVersion: 3,
+      reason: 'Paused.',
+    });
+    expect([deactivated.statusCode, deactivated.json()]).toEqual([
+      200,
+      expect.objectContaining({ state: 'INACTIVE', version: 4 }),
+    ]);
+
+    // Activating a role that maps a permission the actor lacks is a grant (spec Section 23.1).
+    const manager = await actor(['iam.roles.manage']);
+    const refused = await call(manager, 'POST', `/api/iam/roles/${roleId}/activate`, {
+      expectedVersion: 4,
+    });
+    expect([refused.statusCode, problemOf(refused).code]).toEqual([403, 'IAM_GRANT_EXCEEDS_ACTOR']);
+    const activated = await call(admin, 'POST', `/api/iam/roles/${roleId}/activate`, {
+      expectedVersion: 4,
+    });
+    expect([activated.statusCode, activated.json()]).toEqual([
+      200,
+      expect.objectContaining({ state: 'ACTIVE', version: 5 }),
+    ]);
+
+    for (const [method, url] of [
+      ['GET', `/api/iam/roles/${randomUUID()}`],
+      ['POST', `/api/iam/users/${await activeUser()}/roles`],
+    ] as const) {
+      const missing = await call(
+        admin,
+        method,
+        url,
+        method === 'GET' ? undefined : { roleId: randomUUID() },
+      );
+      expect([missing.statusCode, problemOf(missing).code], url).toEqual([
+        404,
+        'IAM_ROLE_NOT_FOUND',
+      ]);
+    }
+  });
+
+  it('refuses inactive roles and departments, and permissions that are not assignable', async () => {
+    const admin = await administrator();
+    const user = await activeUser();
+    const inactiveRole = await role([], 'INACTIVE');
+    const inactiveDepartment = await department('INACTIVE');
+    const deprecated = 'iam.legacy.read';
+    await postgres.sql(
+      `INSERT INTO iam_permission (code, owning_module, name, description, state, sensitivity)
+         VALUES ('${deprecated}', 'iam', 'Legacy', 'Legacy', 'DEPRECATED', 'STANDARD')`,
+    );
+
+    const answers = [
+      await call(admin, 'POST', `/api/iam/users/${user}/roles`, { roleId: inactiveRole }),
+      await call(admin, 'POST', `/api/iam/users/${user}/departments`, {
+        departmentId: inactiveDepartment,
+        isPrimary: false,
+      }),
+      await call(admin, 'POST', '/api/iam/users', {
+        email: `x-${suffix()}@example.test`,
+        displayName: 'X',
+        roleIds: [inactiveRole],
+      }),
+      await call(admin, 'POST', '/api/iam/users', {
+        email: `x-${suffix()}@example.test`,
+        displayName: 'X',
+        memberships: [{ departmentId: inactiveDepartment, isPrimary: true }],
+      }),
+      await call(admin, 'PUT', `/api/iam/roles/${await role([])}/permissions`, {
+        expectedVersion: 1,
+        permissionCodes: [deprecated],
+      }),
+    ];
+
+    expect(answers.map((answer) => [answer.statusCode, problemOf(answer).code])).toEqual([
+      [409, 'IAM_ROLE_INACTIVE'],
+      [409, 'IAM_DEPARTMENT_INACTIVE'],
+      [409, 'IAM_ROLE_INACTIVE'],
+      [409, 'IAM_DEPARTMENT_INACTIVE'],
+      [409, 'IAM_PERMISSION_NOT_ASSIGNABLE'],
+    ]);
+  });
+
+  it('pages the permission catalog by code with a state filter', async () => {
+    const reader = await actor(['iam.permissions.read']);
+    const active = Number(
+      await value(`SELECT count(*) FROM iam_permission WHERE state = 'ACTIVE'`),
+    );
+
+    const first = await call(reader, 'GET', '/api/iam/permissions', undefined, {
+      query: 'state=ACTIVE&pageSize=5',
+    });
+    const last = await call(reader, 'GET', '/api/iam/permissions', undefined, {
+      query: `state=ACTIVE&pageSize=5&page=${Math.ceil(active / 5)}`,
+    });
+
+    const page = first.json() as { items: { code: string }[]; total: number };
+    expect([first.statusCode, page.total, page.items.length]).toEqual([200, active, 5]);
+    expect(page.items.map((item) => item.code)).toEqual(
+      [...page.items.map((item) => item.code)].sort(),
+    );
+    expect(page.items[0]).toEqual({
+      code: expect.stringMatching(/^iam\./),
+      owningModule: 'iam',
+      name: expect.any(String),
+      description: expect.any(String),
+      state: 'ACTIVE',
+      sensitivity: expect.stringMatching(/^(STANDARD|SENSITIVE|PRIVILEGED)$/),
+    });
+    expect((last.json() as { items: unknown[] }).items).toHaveLength(
+      active - 5 * (Math.ceil(active / 5) - 1),
+    );
+  });
+
+  it('disables a user and revokes a live session, whose next request is refused', async () => {
+    const admin = await administrator();
+    for (const operation of ['disable', 'revoke-sessions'] as const) {
+      const target = await activeUser();
+      const asTarget: Actor = { id: target, secret: await sessionFor(target) };
+      expect((await call(asTarget, 'GET', '/api/iam/me')).statusCode).toBe(200);
+
+      const answer = await call(admin, 'POST', `/api/iam/users/${target}/${operation}`, {});
+
+      expect(answer.statusCode, operation).toBe(200);
+      expect(answer.json(), operation).toMatchObject({ sessionsRevoked: 1 });
+      expect((await call(asTarget, 'GET', '/api/iam/me')).statusCode, operation).toBe(401);
+      expect(
+        await value(`SELECT revocation_reason FROM auth_session WHERE user_id = '${target}'`),
+      ).toBe(operation === 'disable' ? 'USER_DISABLED' : 'ADMINISTRATOR_REVOKED');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
 // Accountability and contention (IAM-R07 D-07, D-15)
 // ---------------------------------------------------------------------------------------------
 
@@ -717,13 +897,105 @@ describe('accountability and contention', () => {
   it('attributes every record written by a session user request to that user (SEC-1)', async () => {
     const admin = await administrator();
     const user = await activeUser();
-    await call(admin, 'PATCH', `/api/iam/users/${user}`, {
-      expectedVersion: 1,
-      displayName: 'Bea',
-    });
-    await call(admin, 'POST', `/api/iam/users/${user}/suspend`, { reason: 'Leave.' });
-    await call(admin, 'POST', '/api/iam/departments', { code: `a-${suffix()}`, name: 'A' });
-    await call(admin, 'POST', `/api/iam/users/${user}/roles`, { roleId: await role([]) });
+    const custom = await role([]);
+    const dept = await department();
+    let requests = 0;
+    for (const [status, request] of [
+      [
+        200,
+        () =>
+          call(admin, 'PATCH', `/api/iam/users/${user}`, {
+            expectedVersion: 1,
+            displayName: 'Bea',
+          }),
+      ],
+      [
+        201,
+        () =>
+          call(admin, 'POST', `/api/iam/users/${user}/departments`, {
+            departmentId: dept,
+            isPrimary: true,
+          }),
+      ],
+      [
+        200,
+        () =>
+          call(admin, 'PATCH', `/api/iam/users/${user}/departments/${dept}`, { isPrimary: false }),
+      ],
+      [201, () => call(admin, 'POST', `/api/iam/users/${user}/roles`, { roleId: custom })],
+      [204, () => call(admin, 'DELETE', `/api/iam/users/${user}/roles/${custom}`)],
+      [
+        200,
+        () =>
+          call(admin, 'PUT', `/api/iam/roles/${custom}/permissions`, {
+            expectedVersion: 1,
+            permissionCodes: ['iam.users.read'],
+          }),
+      ],
+      [
+        200,
+        () =>
+          call(admin, 'POST', `/api/iam/roles/${custom}/deactivate`, {
+            expectedVersion: 2,
+            reason: 'Unused.',
+          }),
+      ],
+      [200, () => call(admin, 'POST', `/api/iam/roles/${custom}/activate`, { expectedVersion: 3 })],
+      [
+        200,
+        () =>
+          call(admin, 'PATCH', `/api/iam/roles/${custom}`, { expectedVersion: 4, name: 'Renamed' }),
+      ],
+      [201, () => call(admin, 'POST', '/api/iam/roles', { code: `sec-${suffix()}`, name: 'R' })],
+      [
+        201,
+        () => call(admin, 'POST', '/api/iam/departments', { code: `a-${suffix()}`, name: 'A' }),
+      ],
+      [
+        200,
+        () =>
+          call(admin, 'POST', `/api/iam/departments/${dept}/deactivate`, { expectedVersion: 1 }),
+      ],
+      [
+        200,
+        () => call(admin, 'POST', `/api/iam/departments/${dept}/activate`, { expectedVersion: 2 }),
+      ],
+      [
+        200,
+        () =>
+          call(admin, 'PATCH', `/api/iam/departments/${dept}`, { expectedVersion: 3, name: 'B' }),
+      ],
+      [200, () => call(admin, 'DELETE', `/api/iam/users/${user}/departments/${dept}`)],
+      [
+        201,
+        () =>
+          call(admin, 'POST', '/api/iam/users', {
+            email: `sec-${suffix()}@example.test`,
+            displayName: 'New',
+          }),
+      ],
+      [
+        200,
+        () => call(admin, 'POST', `/api/iam/users/${user}/revoke-sessions`, { reason: 'Check.' }),
+      ],
+      [200, () => call(admin, 'POST', `/api/iam/users/${user}/suspend`, { reason: 'Leave.' })],
+      [
+        503,
+        async () =>
+          call(admin, 'POST', `/api/iam/users/${user}/reactivate`, {
+            expectedVersion: Number(
+              await value(`SELECT version FROM iam_application_user WHERE id = '${user}'`),
+            ),
+          }),
+      ],
+      [503, () => call(admin, 'POST', `/api/iam/users/${user}/sync-identity`)],
+      [200, () => call(admin, 'POST', `/api/iam/users/${user}/disable`)],
+      [200, () => call(admin, 'POST', `/api/iam/users/${user}/terminate`)],
+    ] as const) {
+      const response = await request();
+      expect(response.statusCode, response.body).toBe(status);
+      requests += 1;
+    }
 
     const traces = (unsafeRequests.get(admin.id) ?? []).map((id) => `'${id}'`).join(', ');
     const actors = await rows(
@@ -731,9 +1003,14 @@ describe('accountability and contention', () => {
          FROM audit_record WHERE trace_id IN (${traces})`,
     );
     expect(actors).toEqual([`USER|${admin.id}`]);
+    // Every one of those requests left evidence under its own trace.
     expect(
-      Number(await value(`SELECT count(*) FROM audit_record WHERE trace_id IN (${traces})`)),
-    ).toBeGreaterThanOrEqual(4);
+      Number(
+        await value(
+          `SELECT count(DISTINCT trace_id) FROM audit_record WHERE trace_id IN (${traces})`,
+        ),
+      ),
+    ).toBe(requests);
   });
 
   it('answers a lock wait beyond the statement bound with 503 SERVICE_BUSY', async () => {
@@ -750,6 +1027,7 @@ describe('accountability and contention', () => {
            AND wait_event = 'PgSleep'`,
       );
       if (sleeping === '1') break;
+      if (attempt === 99) throw new Error('the lock-holding transaction never started sleeping');
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
 

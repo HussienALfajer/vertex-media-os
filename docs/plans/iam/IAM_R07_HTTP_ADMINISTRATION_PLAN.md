@@ -1,6 +1,6 @@
 # IAM-R07 — IAM/Auth HTTP Administration Surface and OpenAPI
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** IAM-MP-11  
 **Risk tier:** A (reviewers: security; architecture and boundaries; tests and verification)  
 **Branch:** `iam/r07-http-administration`  
@@ -79,7 +79,7 @@ Carried-forward items and their resolution:
 - **D-08 Reasons.** An optional `reason` (Audit's rule: trimmed, 1–500 code points, no control characters) on suspend, disable, terminate, reactivate, revoke-sessions, role assignment, role deactivation and mapping replacement; never required (spec Section 53). `DELETE` routes take no body and no reason.
 - **D-09 Session revocation binding (AB-1).** The authentication module exports a second capability, `USER_SESSION_REVOCATION`, bound to `AuthRuntime.sessions.revokeUserSessions`; `IamModule` injects it into `createIamUserAdministration`. `AuthRuntime` stays private. The bootstrap command keeps the session store.
 - **D-10 Provisioning configuration in the HTTP runtime.** `createApp` takes the `IdentityProvisioningConfig`; `main.ts` loads it; OpenAPI generation uses placeholders that are never contacted. `CreateAppOptions.identityFetch` replaces the Keycloak adapter's `fetch` for tests, like `oidcFetch`.
-- **D-11 Grant ceiling for reactivation (SEC-2, spec Section 23.1).** Reactivation's step-2 transaction locks the target's user row, then decides under that lock: not found, invalid transition, version, then the ceiling. For a USER actor who is not an ACTIVE System Administrator, a target holding the system role is refused, and so is a target whose ACTIVE roles map an ACTIVE permission the actor does not hold effectively (`exceedsGrantCeiling` with the target's grant). The target's assignments are stable under its row lock, because every assignment change takes that lock (R05 D-05). A refusal writes only a REFUSED `iam.user.reactivated` record and returns `grant-exceeds-actor`; no Keycloak call precedes it. `RoleStore` gains `readUserGrant(userId)`: whether the user holds the system role and the ACTIVE codes of its ACTIVE roles.
+- **D-11 Grant ceiling for reactivation (SEC-2, spec Section 23.1).** Reactivation's step-2 transaction locks the target's user row, then decides under that lock: not found, invalid transition, version, then the ceiling. The final commit that grants access locks the row again and re-evaluates the ceiling, because the target's roles may change while Keycloak is called; a refusal there disables the identity again through reconciliation (review SA-1). For a USER actor who is not an ACTIVE System Administrator, a target holding the system role is refused, and so is a target whose ACTIVE roles map an ACTIVE permission the actor does not hold effectively (`exceedsGrantCeiling` with the target's grant). The target's assignments are stable under its row lock, because every assignment change takes that lock (R05 D-05). A refusal writes only a REFUSED `iam.user.reactivated` record and returns `grant-exceeds-actor`; no Keycloak call precedes it. `RoleStore` gains `readUserGrant(userId)`: whether the user holds the system role and the ACTIVE codes of its ACTIVE roles.
 - **D-12 `GET /api/iam/me`.** Any ACTIVE session, no permission. The authorization context from `CurrentActor` is the authority for the permission codes, the ACTIVE departments and the primary; the directory adds the profile and department names. Response: `user { id, email, displayName }`, `departments [{ id, code, name, isPrimary }]` (ACTIVE only), `permissionCodes` (sorted). No role names (spec Section 41).
 - **D-13 Statuses.** Creation `201`; actions and updates `200` with the resulting view or result; `DELETE /users/{userId}/roles/{roleId}` `204`; `DELETE /users/{userId}/departments/{departmentId}` `200` with the resulting primary (its optional `replacementPrimaryDepartmentId` is a query parameter). Membership and assignment results return what the use case reports, not a re-read of the user.
 - **D-14 CP1-18.** The back-channel logout operation documents its `application/x-www-form-urlencoded` body (`logout_token`, required string) and its `400` body `{ "error": "invalid_request" }`. Behavior unchanged.
@@ -160,7 +160,9 @@ No owner decisions. The reactivation ceiling was decided by the owner (2026-09-2
 ### 8.1 Deviations and discoveries
 
 - **Prisma `contains` passes LIKE wildcards through.** A search for `100%` also matched `1000`. The directory adapter escapes `\`, `%` and `_`; the reader test pins literal matching of all three.
-- **Equal server and driver timeouts raced.** With `statement_timeout` and the driver's `query_timeout` both at 5 s, a probe of six lock waits at the default bounds ended five times with SQLSTATE 57014 and once with a bare driver error ("Query read timeout") that no classifier can recognize; the API contention test failed once with `500` for that reason. The driver bound is now the statement bound plus 1 s (D-15). At short bounds (400 ms) the race did not reproduce even with the margin removed (12 of 12 attempts ended in 57014), so no test discriminates the margin; the API contention test at the default bounds exercises it.
+- **Equal server and driver timeouts raced.** With `statement_timeout` and the driver's `query_timeout` equal, a probe of six lock waits at the package default (5 s) ended five times with SQLSTATE 57014 and once with a bare driver error ("Query read timeout") that no classifier can recognize; the API contention test (API bound 1 s) failed once with `500` for that reason. The driver bound is now the statement bound plus 1 s (D-15). At 400 ms the race did not reproduce even with the margin removed (12 of 12 attempts ended in 57014), so no test discriminates the margin; the API contention test exercises it at the API's bounds.
+- **API statement bound revisited.** `apps/api/src/database/database.module.ts` asked to revisit its 1 s bound when searches arrive. The directory scans small tables one bounded page at a time (spec Section 51), so it stays; a search that exceeds it answers `503 SERVICE_BUSY` (review AB-3).
+- **Review fixes** (Section 10): the final-commit ceiling check (SA-1); a lint rule and probes that forbid SYSTEM attribution, composition roots, the database client and the authentication runtime in `src/iam/http` (T-1, AB-1); the SEC-1 test over every mutating route with status checks (T-1); tests for every remaining operation and the refusal codes `IAM_ROLE_NOT_FOUND`, `IAM_ROLE_INACTIVE`, `IAM_DEPARTMENT_INACTIVE`, `IAM_PERMISSION_NOT_ASSIGNABLE` (T-2); the documented success status pinned to the runtime one (T-5); `no-store` and no 5xx on every route (T-6, T-7); revoke-sessions and disable ending a live session (SA-3, T-9); `readUserGrant` filters (T-4); a discriminating `_` search case (T-3); identifier and search parameters documented from the validating schemas (AB-2); one declaration for a route's permission and documentation (AB-6).
 - **Removing the primary membership without a replacement is allowed.** R05's `decideMembershipRemoval` leaves the user without a primary unless a replacement is named; `IAM_PRIMARY_DEPARTMENT_CONFLICT` answers a replacement that is not another membership (spec Section 22: the backend never guesses). The first version of the HTTP test assumed otherwise and was corrected.
 - **`createApp` takes the provisioning configuration** (D-10), so every caller changed; tests use `test-support/provisioning-config.ts`. The route inventory of spec Section 25 lives in `test-support/iam-routes.ts`, shared by the contract and integration suites.
 - **Test fixtures.** An ACTIVE user needs a bound, synchronized identity (`iam_application_user_active_ck`); the HTTP fixtures bind one under the unreachable test issuer, so revoke-sessions answers `providerSessions: "FAILED"` there and `"TERMINATED"` in the Keycloak suite.
@@ -175,10 +177,20 @@ No owner decisions. The reactivation ceiling was decided by the owner (2026-09-2
 - [x] M6 Department, membership, role, assignment and permission routes
 - [x] M7 OpenAPI pins, CP1-18, `docs/ENGINEERING.md` Sections 6 and 11, README
 - [x] M8 HTTP integration suites
-- [ ] M9 `pnpm verify` and integration suites green
-- [ ] M10 In-run review (three reviewers); findings resolved
-- [ ] M11 Master Plan ledger, hand-off, pull request, CI green
+- [x] M9 `pnpm verify` and integration suites green
+- [x] M10 In-run review (three reviewers); findings resolved
+- [x] M11 Master Plan ledger, hand-off, pull request, CI green
 
 ## 10. Hand-off
 
-(Written at the end of the run.)
+**In-run review.** Three fresh-context reviewers checked `main...HEAD`: security; architecture and boundaries; tests and verification. The implementer checked the evidence of each finding before accepting it.
+
+- **Blocking, fixed:** T-1 (SEC-1 attribution proven for 4 of 24 mutating routes; create user and role activation, both grant paths, unproven) and T-2 (several operations and four refusal codes without evidence). Fixes in Section 8.1.
+- **Fixed in the run:** SA-1 (major in effect: the reactivation ceiling was not re-evaluated when access is granted), SA-3, T-3 to T-7, T-9, T-10, AB-1, AB-2, AB-4, AB-5, AB-6.
+- **Recorded, not changed:** SA-4 (no reason on role removal; carried to IAM-MP-13), SA-2 and T-8 (carried to IAM-MP-15), AB-3 (decided, Section 8.1), AB-7 (the `/me` projection stays in its controller, D-12), T-11 (the revocation binding cannot be told apart from the store by behavior; the wiring is the evidence).
+
+**Carried forward** (attached to the Master Plan stages):
+
+- **IAM-MP-12 to IAM-MP-14:** the contracts to consume (`/me`, `Iam*` components, problem codes, page contract).
+- **IAM-MP-13:** a reason for removing a role, including the System Administrator role (SA-4).
+- **IAM-MP-15:** SA-2 (JSON parser errors spelled `BAD_REQUEST`), T-8 (untested contention codes), client-supplied trace IDs, `no-store` on guard refusals.

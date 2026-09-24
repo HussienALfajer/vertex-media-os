@@ -61,9 +61,10 @@ describe('IAM HTTP contract', () => {
     ).toEqual(Object.keys(IAM_ROUTES).sort());
   });
 
-  it('declares on every IAM handler exactly the permission of its route', () => {
+  it('declares on every IAM handler exactly the permission and the success status of its route', () => {
     const reflector = new Reflector();
     const declared: Record<string, string | null> = {};
+    const answered: Record<string, number> = {};
     for (const module of app.get(ModulesContainer).values()) {
       for (const wrapper of module.controllers.values()) {
         const controller = wrapper.metatype as { prototype: object } | undefined;
@@ -82,10 +83,21 @@ describe('IAM HTTP contract', () => {
               .replace(/\/$/, '');
           declared[`${verb} ${full}`] =
             reflector.get<string | undefined>('vertex:required-permission', handler) ?? null;
+          answered[`${verb} ${full}`] =
+            (Reflect.getMetadata('__httpCode__', handler) as number | undefined) ??
+            (verb === 'POST' ? 201 : 200);
         }
       }
     }
     expect(declared).toEqual(IAM_ROUTES);
+    // The documented success status is the one the route answers (review T-5).
+    const documented = Object.fromEntries(
+      iamOperations().map(({ route, operation }) => [
+        route,
+        Number(Object.keys(operation.responses).find((status) => status.startsWith('2'))),
+      ]),
+    );
+    expect(documented).toEqual(answered);
   });
 
   it('describes the session, the CSRF header, the body and every problem of each operation', () => {

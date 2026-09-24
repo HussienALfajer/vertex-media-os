@@ -4,8 +4,8 @@ import { z } from 'zod';
 const named = new Map<string, SchemaObject>();
 
 /**
- * The OpenAPI 3.0 form of a Zod schema. Routes validate with the same schema that documents them,
- * so the document cannot drift from what the route accepts or returns (IAM-R07 D-17).
+ * The OpenAPI 3.0 form of a Zod schema. A body or response is documented from the same schema
+ * that validates or types it, so the two cannot drift (IAM-R07 D-17).
  */
 export function openApiSchema(schema: z.ZodType, io: 'input' | 'output' = 'output'): SchemaObject {
   const { $schema: _dialect, ...json } = z.toJSONSchema(schema, {

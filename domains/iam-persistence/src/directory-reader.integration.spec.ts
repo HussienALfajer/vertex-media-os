@@ -149,7 +149,8 @@ describe('IamDirectoryReader against real PostgreSQL', () => {
     const percent = await user('percent@example.test', 'Growth 100% Team');
     const underscore = await user('under_score@example.test', 'Plain');
     await user('other@example.test', 'Growth 1000 Team');
-    await user('xyz@example.test', 'Underscore free');
+    // Unescaped, `R_S` would also match the `rbs` of this name.
+    await user('xyz@example.test', 'Orbs Team');
     const backslash = await user('slash@example.test', 'Back\\slash');
 
     expect((await users({ search: '100%' as SearchText })).items.map((item) => item.id)).toEqual([

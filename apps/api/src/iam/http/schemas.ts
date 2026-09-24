@@ -103,10 +103,12 @@ const Digits = z
   .string()
   .regex(/^[0-9]{1,9}$/)
   .transform(Number);
+/** A coarse cap on search text before IAM trims it and applies its 1–100 character rule. */
+export const SEARCH_MAX_LENGTH = 400;
 const PageQuery = {
   page: Digits.optional(),
   pageSize: Digits.optional(),
-  search: z.string().max(400).optional(),
+  search: z.string().min(1).max(SEARCH_MAX_LENGTH).optional(),
 };
 
 export const UserListQuery = z.strictObject({

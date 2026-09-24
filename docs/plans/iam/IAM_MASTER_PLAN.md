@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R07` (IAM-MP-11) with `/stage IAM-R07`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
+**Next step:** run `IAM-R08` (IAM-MP-12, IAM-MP-13, IAM-MP-14) with `/stage IAM-R08`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 ---
@@ -1240,7 +1240,7 @@ Implement the highest-risk IAM administrative workflows as application services 
 
 ## IAM-MP-11 — IAM/Auth HTTP Administration Surface & OpenAPI
 
-**Status:** READY (run `IAM-R07`)  
+**Status:** COMPLETE (run `IAM-R07`, plan `IAM_R07_HTTP_ADMINISTRATION_PLAN.md`)  
 **Parent specification area:** IAM-5, Sections 24–27, 40–42  
 **Depends on:** IAM-MP-10 COMPLETE
 
@@ -1324,7 +1324,7 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 
 ## IAM-MP-12 — Frontend Authentication & Session Experience
 
-**Status:** PLANNED  
+**Status:** READY (run `IAM-R08`)  
 **Parent specification area:** IAM-6, Sections 40–41  
 **Depends on:** IAM-MP-11 COMPLETE
 
@@ -1358,6 +1358,10 @@ Integrate the real web application shell with backend-owned authentication/sessi
 
 - **CP1-17:** back-channel logout through the local Compose Keycloak and a running API (a real login, then a Keycloak-side logout) was never probed end to end; only the Linux CI path is proven.
 
+### Carried forward from run IAM-R07 (`IAM_R07_HTTP_ADMINISTRATION_PLAN.md`)
+
+- **Contracts to consume (IAM-MP-12 to IAM-MP-14):** `GET /api/iam/me` for the profile, ACTIVE departments and effective permission codes (navigation is UX only); the named `Iam*` OpenAPI components for client typing; the problem codes of R07 D-05, `fields` on `400 VALIDATION_FAILED`, `503 SERVICE_BUSY` with `Retry-After`, and `409 IAM_VERSION_CONFLICT` / `IAM_OPERATION_SUPERSEDED` for stale writes; the page contract `page`, `pageSize` (at most 100), `search` (`docs/ENGINEERING.md` Section 11).
+
 ### Exit criteria
 
 - browser code stores no OIDC token or raw application session identifier;
@@ -1379,7 +1383,7 @@ Integrate the real web application shell with backend-owned authentication/sessi
 
 ## IAM-MP-13 — Frontend User, Access & Provisioning Administration
 
-**Status:** PLANNED  
+**Status:** READY (run `IAM-R08`)  
 **Parent specification area:** IAM-6, Sections 40, 42, 52–54  
 **Depends on:** IAM-MP-12 COMPLETE
 
@@ -1406,6 +1410,10 @@ Deliver the primary IAM administrator workflows for users and access state using
 - authenticated frontend foundation is accepted;
 - user/admin HTTP contracts are stable.
 
+### Carried forward from run IAM-R07 (`IAM_R07_HTTP_ADMINISTRATION_PLAN.md`)
+
+- **Reason for removing a role (review SA-4):** `DELETE /api/iam/users/{userId}/roles/{roleId}` takes no body and no reason (R07 D-08), also when it removes the System Administrator role, which spec Sections 52–53 list as a high-risk change for which the API SHOULD accept a reason. If the confirmation UI asks for one, the run adds a way to carry it (for example an optional body or a `reason` query parameter kept out of logs) or records why not.
+
 ### Exit criteria
 
 - no password, MFA-secret, recovery-token, or IdP-token UI exists in Vertex;
@@ -1428,7 +1436,7 @@ Deliver the primary IAM administrator workflows for users and access state using
 
 ## IAM-MP-14 — Frontend Departments, Roles & Permissions Administration
 
-**Status:** PLANNED  
+**Status:** READY (run `IAM-R08`)  
 **Parent specification area:** IAM-6, Sections 40, 52  
 **Depends on:** IAM-MP-13 COMPLETE
 
@@ -1533,6 +1541,13 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 - **SEC-5:** the grant ceiling counts only ACTIVE mappings; a DEPRECATED permission that reference synchronization makes ACTIVE again widens roles assigned under the ceiling (needs a code release).
 - **SEC-6:** if session revocation throws after a committed restriction, reconciliation is skipped and the user stays `PENDING` (access stays denied); decide whether the use case should still reconcile.
 - **DC-4:** `readActorAuthority` reads the actor's facts and System Administrator holding in two statements; one statement would give one snapshot.
+
+### Carried forward from run IAM-R07 (`IAM_R07_HTTP_ADMINISTRATION_PLAN.md`)
+
+- **SA-2:** a body that is not valid JSON (with `content-type: application/json`) is refused by Fastify's parser before the session check, as `400 BAD_REQUEST` instead of `VALIDATION_FAILED`; map the parser's errors to the stable code (no value is echoed).
+- **T-8:** `isDatabaseContention` is proven for SQLSTATE 57014 and Prisma P2028 only; 55P03, 40P01, 40001 and P2034 are classified but untested.
+- **Trace IDs:** a well-formed client `X-Request-Id` becomes the Audit `trace_id` (pre-existing); a client can make its records share a trace ID with others. `actor_user_id` is unaffected.
+- **No-store on refusals:** guard refusals (401, 403) of IAM routes do not carry `Cache-Control: no-store`; their Problem Details hold no personal data.
 
 ### Exit criteria
 
@@ -1684,6 +1699,8 @@ Run `IAM-R05` delivered IAM-MP-08 and IAM-MP-09 (plan `IAM_R05_PRIVILEGE_ADMINIS
 
 Run `IAM-R06` delivered IAM-MP-10 (plan `IAM_R06_USER_LIFECYCLE_PLAN.md`). It is `COMPLETE` once its pull request is merged. User creation with memberships and roles, display-name update, suspension, disablement, termination, backend-derived reactivation, sync-identity, resend-invitation and the administrator's revoke-sessions action are application use cases behind `@vertex-os/iam/composition`, bound in `apps/api/src/iam/user-administration.ts` and not yet mounted in HTTP (R06 D-01). Access removal commits the denial with `PENDING` under the System Administrator and user row locks, then revokes every application session, then reconciles the identity; reactivation grants access only in a version-checked final commit after Keycloak is ready, and reconciles at once when that commit loses (D-06 to D-08). The grant ceiling decided by the owner (spec Section 23.1) is enforced in role assignment, role activation, mapping replacement and user creation (D-12). `pnpm iam:bootstrap` creates, resumes or recovers the first System Administrator from committed state in one transaction serialized by the reference-synchronization lock and the System Administrator row, and refuses unless reference data is synchronized (D-15, D-16). A migration adds four session revocation reasons, the `auth_session` checks of CP1-06 and a trigger that keeps a revocation final. It closed the IAM-02 bootstrap item, the R02 and R03 items, CP1-06, CP1-07, CP1-13, CP1-26 and the R05 items attached to IAM-MP-10. Review SEC-2 raised an owner decision (a grant ceiling for reactivation, decided on 2026-09-24: option 1), attached to IAM-MP-11; its other carried-forward items are attached to IAM-MP-11 and IAM-MP-15.
 
+Run `IAM-R07` delivered IAM-MP-11 (plan `IAM_R07_HTTP_ADMINISTRATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. `/api/iam` exposes spec Section 25: the current user, the user directory and lifecycle, memberships, role assignments, departments, roles and mappings, and the permission catalog, in `apps/api/src/iam/http` over the bound capabilities of `IamModule` (R07 D-01). Every route declares its specification permission; request bodies and queries are strict Zod schemas that also generate the OpenAPI components; every refusal maps through one table to a stable code; every change is attributed to the session's USER actor, which lint and a test over every mutating route enforce (D-04 to D-07). A read-only directory adds bounded, literally searched pages (D-02, D-03). Reactivation checks the grant ceiling under the target's row lock before Keycloak is called and again in its final commit (D-11, review SA-1). The authentication module exports the session revocation bound to `AuthRuntime.sessions` (D-09); lock-wait and transaction timeouts answer `503 SERVICE_BUSY`, and the driver's query timeout now trails the statement timeout (D-15). It closed the R02, R04, R05 and R06 items attached to IAM-MP-11, the owner decisions S-1 and SEC-2 over HTTP, and CP1-18. Its carried-forward items are attached to IAM-MP-12, IAM-MP-13 and IAM-MP-15.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
@@ -1717,10 +1734,10 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | COMPLETE | R04 merged (satisfied) |
 | IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | COMPLETE | R05 merged (satisfied) |
 | `IAM-CP2` Deep audit: authorization and administration core | — | DEFERRED into `IAM-FINAL` | owner decision 2026-09-24 |
-| IAM-MP-11 HTTP Administration Surface | R07 | READY | R06 merged (satisfied) |
-| IAM-MP-12 Frontend Authentication & Session UX | R08 | PLANNED | R07 merged |
-| IAM-MP-13 Frontend User & Access Admin | R08 | PLANNED | R07 merged |
-| IAM-MP-14 Frontend Department/Role/Permission Admin | R08 | PLANNED | R07 merged |
+| IAM-MP-11 HTTP Administration Surface | R07 | COMPLETE | R06 merged (satisfied) |
+| IAM-MP-12 Frontend Authentication & Session UX | R08 | READY | R07 merged (satisfied) |
+| IAM-MP-13 Frontend User & Access Admin | R08 | READY | R07 merged (satisfied) |
+| IAM-MP-14 Frontend Department/Role/Permission Admin | R08 | READY | R07 merged (satisfied) |
 | IAM-MP-15 E2E & Hardening | R09 | PLANNED | R08 merged |
 | `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09 merged |
 
@@ -2009,15 +2026,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-10 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, and IAM-MP-10 through run `IAM-R06`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-11 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, and IAM-MP-11 through run `IAM-R07`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The next step is run `IAM-R07` (IAM-MP-11). Start it in a new Claude Code session:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The next step is run `IAM-R08` (IAM-MP-12, IAM-MP-13, IAM-MP-14; Tier B, session effort `medium`). Start it in a new Claude Code session:
 
 ```text
-/stage IAM-R07
+/stage IAM-R08
 ```
 
-Its planner reads the IAM-MP-11 section, including the grant ceiling for reactivation that the owner decided on 2026-09-24 (IAM-R06 review SEC-2).
+Its planner reads the three stage sections, including the IAM-R07 contracts carried forward to IAM-MP-12 and the reason question carried forward to IAM-MP-13, and splits the run if the frontend diff would not be reviewable in one pass (Section 8.3).
 
 Do **not** plan later runs in detail now.
 

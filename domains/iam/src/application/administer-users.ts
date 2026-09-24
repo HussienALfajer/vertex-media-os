@@ -31,6 +31,7 @@ import {
   resendInvitation,
   type InvitationDispatchResult,
 } from './invitation-dispatch.js';
+import type { RoleStore } from './ports/role-store.js';
 import type { SessionRevocation, SessionRevocationReason } from './ports/session-revocation.js';
 import { provisionIdentity } from './provision-identity.js';
 import {
@@ -477,6 +478,38 @@ async function restrictUser(
   };
 }
 
+/**
+ * The grant ceiling for reactivation (spec Section 23.1; IAM-R07 D-11), evaluated under the
+ * target's row lock, which every assignment change also takes. A refusal leaves only a REFUSED
+ * record.
+ */
+async function reactivationExceedsActor(
+  roles: RoleStore,
+  audit: AuditRecorder,
+  attribution: AuditAttribution,
+  userId: UserId,
+  target: 'ACTIVE' | 'INVITED',
+): Promise<boolean> {
+  const grant = await roles.readUserGrant(userId);
+  const exceeds = await grantExceedsActor(
+    roles,
+    attribution,
+    grant.holdsSystemAdministratorRole
+      ? { kind: 'system-role' }
+      : { kind: 'permissions', codes: grant.activePermissionCodes },
+  );
+  if (exceeds) {
+    await recordGrantRefusal(
+      audit,
+      attribution,
+      'iam.user.reactivated',
+      { type: 'iam.user', id: userId },
+      { target },
+    );
+  }
+  return exceeds;
+}
+
 /** Temporary administrative suspension (spec Section 10.3). */
 export function suspendUser(
   dependencies: UserAdministrationDependencies,
@@ -529,24 +562,7 @@ export async function reactivateUser(
     if (locked === undefined) return { outcome: 'user-not-found' as const };
     const decision = decideReactivation(locked, expectedVersion);
     if (decision.kind === 'refuse') return { outcome: decision.reason };
-    // The target's assignments are stable under its row lock: every assignment change takes it.
-    const grant = await roles.readUserGrant(locked.id);
-    if (
-      await grantExceedsActor(
-        roles,
-        attribution,
-        grant.holdsSystemAdministratorRole
-          ? { kind: 'system-role' }
-          : { kind: 'permissions', codes: grant.activePermissionCodes },
-      )
-    ) {
-      await recordGrantRefusal(
-        audit,
-        attribution,
-        'iam.user.reactivated',
-        { type: 'iam.user', id: locked.id },
-        { target: decision.target },
-      );
+    if (await reactivationExceedsActor(roles, audit, attribution, locked.id, decision.target)) {
       return { outcome: 'grant-exceeds-actor' as const };
     }
     const written = await users.recordIdentitySync({
@@ -589,7 +605,16 @@ export async function reactivateUser(
   // Step 4: the final commit, conditional on the version the identity step left. If it fails
   // outright (for example a lost connection), the identity may be enabled while the user is still
   // denied: reconcile against the committed state before failing (IAM-R06 review DC-6).
-  const finalCommit = dependencies.runner.run(async ({ lifecycle, audit }) => {
+  const finalCommit = dependencies.runner.run(async ({ lifecycle, roles, audit }) => {
+    // The ceiling again, under the row lock of the commit that grants access: the target's roles,
+    // their mappings and states may have changed while Keycloak was called (review SA-1).
+    const locked = await lifecycle.lockUser(committed.id);
+    if (
+      locked?.version === identity.user.version &&
+      (await reactivationExceedsActor(roles, audit, attribution, locked.id, target))
+    ) {
+      return { outcome: 'grant-exceeds-actor' as const };
+    }
     const written = await lifecycle.completeReactivation({
       id: committed.id,
       expectedVersion: identity.user.version,
@@ -610,7 +635,9 @@ export async function reactivateUser(
   if (completed.outcome !== 'updated') {
     // Step 6: the identity may be enabled while IAM still denies access; reconcile at once.
     await reconcileIdentity(dependencies, provisioning);
-    return { outcome: 'superseded' };
+    return {
+      outcome: completed.outcome === 'grant-exceeds-actor' ? completed.outcome : 'superseded',
+    };
   }
 
   // A user returned to INVITED receives the first dispatch if none was ever attempted.

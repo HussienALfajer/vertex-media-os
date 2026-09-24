@@ -136,7 +136,9 @@ export function isOutcome<Result extends { readonly outcome: string }, Outcome e
   return (outcomes as readonly string[]).includes(result.outcome);
 }
 
-/** Throws the answer to a refusal. */
+/** Throws the answer to a refusal; a refusal that can be `code-taken` must name its entity. */
+export function refuse(refusal: Exclude<Refusal, { readonly outcome: 'code-taken' }>): never;
+export function refuse(refusal: Refusal, entity: keyof typeof codeTaken): never;
 export function refuse(refusal: Refusal, entity?: keyof typeof codeTaken): never {
   throw refusalProblem(refusal, entity);
 }

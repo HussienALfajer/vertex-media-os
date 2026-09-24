@@ -15,7 +15,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { departmentStates } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CURRENT_ACTOR, RequirePermission, type CurrentActor } from '../../auth/access.guard.js';
+import { CURRENT_ACTOR, type CurrentActor } from '../../auth/access.guard.js';
 import {
   IAM_ADMINISTRATION,
   IAM_DIRECTORY,
@@ -50,7 +50,6 @@ export class DepartmentsController {
   ) {}
 
   @Get()
-  @RequirePermission(READ)
   @PageQueries({ state: { enum: departmentStates } })
   @IamRoute({
     permission: READ,
@@ -64,7 +63,6 @@ export class DepartmentsController {
   }
 
   @Post()
-  @RequirePermission(MANAGE)
   @IamRoute({
     permission: MANAGE,
     unsafe: true,
@@ -85,7 +83,6 @@ export class DepartmentsController {
   }
 
   @Get(':departmentId')
-  @RequirePermission(READ)
   @IamRoute({
     permission: READ,
     unsafe: false,
@@ -102,7 +99,6 @@ export class DepartmentsController {
   }
 
   @Patch(':departmentId')
-  @RequirePermission(MANAGE)
   @IamRoute({
     permission: MANAGE,
     unsafe: true,
@@ -130,7 +126,6 @@ export class DepartmentsController {
 
   @Post(':departmentId/activate')
   @HttpCode(200)
-  @RequirePermission(MANAGE)
   @IamRoute(stateDocs('ACTIVE'))
   activate(
     @Param('departmentId') departmentId: string,
@@ -143,7 +138,6 @@ export class DepartmentsController {
 
   @Post(':departmentId/deactivate')
   @HttpCode(200)
-  @RequirePermission(MANAGE)
   @IamRoute(stateDocs('INACTIVE'))
   deactivate(
     @Param('departmentId') departmentId: string,

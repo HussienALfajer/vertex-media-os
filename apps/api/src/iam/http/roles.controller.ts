@@ -16,7 +16,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { permissionStates, roleStates } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CURRENT_ACTOR, RequirePermission, type CurrentActor } from '../../auth/access.guard.js';
+import { CURRENT_ACTOR, type CurrentActor } from '../../auth/access.guard.js';
 import {
   IAM_ADMINISTRATION,
   IAM_DIRECTORY,
@@ -59,7 +59,6 @@ export class RolesController {
   ) {}
 
   @Get()
-  @RequirePermission(READ)
   @PageQueries({ state: { enum: roleStates } })
   @IamRoute({
     permission: READ,
@@ -73,7 +72,6 @@ export class RolesController {
   }
 
   @Post()
-  @RequirePermission(MANAGE)
   @IamRoute({
     permission: MANAGE,
     unsafe: true,
@@ -98,7 +96,6 @@ export class RolesController {
   }
 
   @Get(':roleId')
-  @RequirePermission(READ)
   @IamRoute({
     permission: READ,
     unsafe: false,
@@ -117,7 +114,6 @@ export class RolesController {
   }
 
   @Patch(':roleId')
-  @RequirePermission(MANAGE)
   @IamRoute({
     permission: MANAGE,
     unsafe: true,
@@ -142,7 +138,6 @@ export class RolesController {
 
   @Post(':roleId/activate')
   @HttpCode(200)
-  @RequirePermission(MANAGE)
   @IamRoute({
     permission: MANAGE,
     unsafe: true,
@@ -170,7 +165,6 @@ export class RolesController {
 
   @Post(':roleId/deactivate')
   @HttpCode(200)
-  @RequirePermission(MANAGE)
   @IamRoute({
     permission: MANAGE,
     unsafe: true,
@@ -197,7 +191,6 @@ export class RolesController {
   }
 
   @Put(':roleId/permissions')
-  @RequirePermission(MANAGE)
   @IamRoute({
     permission: MANAGE,
     unsafe: true,
@@ -245,7 +238,6 @@ export class PermissionsController {
   constructor(@Inject(IAM_DIRECTORY) private readonly directory: IamDirectory) {}
 
   @Get()
-  @RequirePermission(permission(IAM_PERMISSIONS.permissionsRead))
   @PageQueries({ state: { enum: permissionStates } })
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.permissionsRead),

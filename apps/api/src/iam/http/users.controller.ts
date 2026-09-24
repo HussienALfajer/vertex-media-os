@@ -15,7 +15,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { userAccessStates } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CURRENT_ACTOR, RequirePermission, type CurrentActor } from '../../auth/access.guard.js';
+import { CURRENT_ACTOR, type CurrentActor } from '../../auth/access.guard.js';
 import {
   IAM_DIRECTORY,
   IAM_USER_ADMINISTRATION,
@@ -64,7 +64,6 @@ export class UsersController {
   ) {}
 
   @Get()
-  @RequirePermission(permission(IAM_PERMISSIONS.usersRead))
   @PageQueries({
     accessState: { enum: userAccessStates },
     departmentId: { uuid: true },
@@ -82,7 +81,6 @@ export class UsersController {
   }
 
   @Post()
-  @RequirePermission(permission(IAM_PERMISSIONS.usersCreate))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersCreate),
     unsafe: true,
@@ -112,7 +110,6 @@ export class UsersController {
   }
 
   @Get(':userId')
-  @RequirePermission(permission(IAM_PERMISSIONS.usersRead))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersRead),
     unsafe: false,
@@ -131,7 +128,6 @@ export class UsersController {
   }
 
   @Patch(':userId')
-  @RequirePermission(permission(IAM_PERMISSIONS.usersUpdate))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersUpdate),
     unsafe: true,
@@ -156,7 +152,6 @@ export class UsersController {
 
   @Post(':userId/suspend')
   @HttpCode(200)
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageAccess))
   @IamRoute(restrictionDocs('Suspended'))
   suspend(
     @Param('userId') userId: string,
@@ -169,7 +164,6 @@ export class UsersController {
 
   @Post(':userId/disable')
   @HttpCode(200)
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageAccess))
   @IamRoute(restrictionDocs('Disabled'))
   disable(
     @Param('userId') userId: string,
@@ -182,7 +176,6 @@ export class UsersController {
 
   @Post(':userId/terminate')
   @HttpCode(200)
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageAccess))
   @IamRoute(restrictionDocs('Terminated'))
   terminate(
     @Param('userId') userId: string,
@@ -210,7 +203,6 @@ export class UsersController {
 
   @Post(':userId/reactivate')
   @HttpCode(200)
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageAccess))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersManageAccess),
     unsafe: true,
@@ -247,7 +239,6 @@ export class UsersController {
 
   @Post(':userId/resend-invitation')
   @HttpCode(200)
-  @RequirePermission(permission(IAM_PERMISSIONS.usersCreate))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersCreate),
     unsafe: true,
@@ -274,15 +265,11 @@ export class UsersController {
     const attribution = await actorAttribution(this.actors, request, reply);
     const result = await this.users.resendInvitation({ userId: id }, attribution);
     if (!isOutcome(result, 'sent', 'no-action-required')) refuse(result);
-    return {
-      user: toUser(result.user),
-      invitation: result.outcome === 'sent' ? 'SENT' : 'NO_ACTION_REQUIRED',
-    };
+    return { user: toUser(result.user), invitation: toInvitation({ outcome: result.outcome }) };
   }
 
   @Post(':userId/sync-identity')
   @HttpCode(200)
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageAccess))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersManageAccess),
     unsafe: true,
@@ -314,7 +301,6 @@ export class UsersController {
 
   @Post(':userId/revoke-sessions')
   @HttpCode(200)
-  @RequirePermission(permission(IAM_PERMISSIONS.sessionsRevoke))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.sessionsRevoke),
     unsafe: true,

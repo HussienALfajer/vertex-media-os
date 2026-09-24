@@ -9,8 +9,14 @@ import {
   type ReferenceObject,
 } from '@nestjs/swagger';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE, MAX_PAGE_SIZE, type PermissionCode } from '@vertex-os/iam';
+import { RequirePermission } from '../../auth/access.guard.js';
 import { PROBLEM_CONTENT_TYPE } from '../../http/problem-details.js';
 import { ProblemDetailsSchema } from '../../openapi/problem-details.schema.js';
+import { openApiSchema } from '../../openapi/schemas.js';
+import { Id, SEARCH_MAX_LENGTH } from './schemas.js';
+
+/** Identifiers as the routes validate them (lower-case UUIDs), not merely `format: uuid`. */
+const idSchema = openApiSchema(Id);
 
 /** The IAM permission each route requires (spec Section 19); one spelling for routes and tests. */
 export const IAM_PERMISSIONS = {
@@ -53,8 +59,9 @@ export interface IamRouteDocs {
 }
 
 /**
- * The OpenAPI description of one IAM route: session cookie, CSRF header on unsafe methods, body,
- * success response and every problem response, each as Problem Details (IAM-R07 D-17).
+ * One IAM route's required permission and its OpenAPI description, from one declaration: the
+ * `@RequirePermission` the access guard checks, the session cookie, the CSRF header on unsafe
+ * methods, body, success response and every problem response as Problem Details (IAM-R07 D-17).
  */
 export function IamRoute(docs: IamRouteDocs): MethodDecorator {
   const errors = docs.errors ?? {};
@@ -65,6 +72,7 @@ export function IamRoute(docs: IamRouteDocs): MethodDecorator {
     errors[403],
   ].filter((code): code is string => code !== undefined);
   const decorators = [
+    ...(docs.permission === undefined ? [] : [RequirePermission(docs.permission)]),
     ApiCookieAuth('session'),
     ...(docs.unsafe
       ? [
@@ -75,9 +83,7 @@ export function IamRoute(docs: IamRouteDocs): MethodDecorator {
           }),
         ]
       : []),
-    ...(docs.params ?? []).map((name) =>
-      ApiParam({ name, schema: { type: 'string', format: 'uuid' } }),
-    ),
+    ...(docs.params ?? []).map((name) => ApiParam({ name, schema: idSchema })),
     ...(docs.body === undefined
       ? []
       : [ApiBody({ schema: docs.body, required: docs.bodyRequired ?? true })]),
@@ -125,8 +131,8 @@ const pageQueries = [
   ApiQuery({
     name: 'search',
     required: false,
-    description: 'Literal, case-insensitive substring; 1–100 characters.',
-    schema: { type: 'string', maxLength: 100 },
+    description: 'Literal, case-insensitive substring; 1–100 characters after trimming.',
+    schema: { type: 'string', minLength: 1, maxLength: SEARCH_MAX_LENGTH },
   }),
 ];
 
@@ -141,9 +147,7 @@ export function PageQueries(
         name,
         required: false,
         schema:
-          filter.uuid === true
-            ? { type: 'string', format: 'uuid' }
-            : { type: 'string', enum: [...(filter.enum ?? [])] },
+          filter.uuid === true ? idSchema : { type: 'string', enum: [...(filter.enum ?? [])] },
       }),
     ),
   );

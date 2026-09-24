@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CURRENT_ACTOR, RequirePermission, type CurrentActor } from '../../auth/access.guard.js';
+import { CURRENT_ACTOR, type CurrentActor } from '../../auth/access.guard.js';
 import { IAM_ADMINISTRATION, type IamAdministration } from './capabilities.js';
 import { IAM_PERMISSIONS, IamRoute, permission } from './docs.js';
 import { isOutcome, refuse } from './iam-problems.js';
@@ -45,7 +45,6 @@ export class UserGrantsController {
   ) {}
 
   @Post('departments')
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageDepartments))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersManageDepartments),
     unsafe: true,
@@ -80,7 +79,6 @@ export class UserGrantsController {
   }
 
   @Patch('departments/:departmentId')
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageDepartments))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersManageDepartments),
     unsafe: true,
@@ -118,7 +116,6 @@ export class UserGrantsController {
   }
 
   @Delete('departments/:departmentId')
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageDepartments))
   @ApiQuery({
     name: 'replacementPrimaryDepartmentId',
     required: false,
@@ -161,7 +158,6 @@ export class UserGrantsController {
   }
 
   @Post('roles')
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageRoles))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersManageRoles),
     unsafe: true,
@@ -193,7 +189,6 @@ export class UserGrantsController {
 
   @Delete('roles/:roleId')
   @HttpCode(204)
-  @RequirePermission(permission(IAM_PERMISSIONS.usersManageRoles))
   @IamRoute({
     permission: permission(IAM_PERMISSIONS.usersManageRoles),
     unsafe: true,
