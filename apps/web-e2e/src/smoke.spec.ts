@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('the web shell loads in Arabic and observes the live API through its own origin', async ({
+test('the web shell loads in Arabic, offers sign-in and observes the live API through its own origin', async ({
   page,
 }) => {
   const pageErrors: Error[] = [];
@@ -8,12 +8,21 @@ test('the web shell loads in Arabic and observes the live API through its own or
   const liveness = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/health/live',
   );
+  const session = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/auth/session',
+  );
 
   await page.goto('/');
 
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-  await expect(page.getByRole('heading', { level: 1, name: 'Vertex OS' })).toBeVisible();
+  // No session cookie: the API answers 401 and the app shows the signed-out entry.
+  expect((await session).status()).toBe(401);
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'تسجيل الدخول إلى Vertex OS' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'تسجيل الدخول' })).toBeVisible();
+  await expect(page.locator('input')).toHaveCount(0);
   const livenessResponse = await liveness;
   expect(livenessResponse.status()).toBe(200);
   // The browser calls the web origin's /api path (Vite proxy), not a cross-origin API URL.
@@ -24,13 +33,27 @@ test('the web shell loads in Arabic and observes the live API through its own or
   expect(pageErrors).toEqual([]);
 });
 
-test('the same liveness journey works in English', async ({ page }) => {
+test('the same journey works in English', async ({ page }) => {
   await page.addInitScript(() =>
     localStorage.setItem('vertex.ui.preferences', JSON.stringify({ version: 1, language: 'en' })),
   );
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.getByRole('heading', { level: 1, name: 'Sign in to Vertex OS' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'System status' }).getByRole('status')).toHaveText(
     'API connection available',
   );
+});
+
+test('a sign-in that cannot reach the identity provider returns to the app with an explanation', async ({
+  page,
+}) => {
+  await page.goto('/');
+  // The test API's issuer is never reachable, so the backend flow answers IDENTITY_PROVIDER_UNAVAILABLE.
+  await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
+
+  await expect(page.getByText('خدمة الهوية غير متاحة')).toBeVisible();
+  await expect(page).toHaveURL((url) => url.pathname === '/' && url.search === '');
+  // The browser holds no readable credential: the API's cookies are HttpOnly.
+  expect(await page.evaluate(() => document.cookie)).toBe('');
 });

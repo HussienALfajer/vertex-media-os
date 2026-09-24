@@ -107,10 +107,10 @@ Only those of the Run Contract. A needed API or UI-package change would be a sco
 ## 9. Checklist
 
 - [x] M1 Plan committed; Master Plan split recorded
-- [ ] M2 HTTP client, CSRF holder, error types, tests
-- [ ] M3 Auth state: bootstrap query, clearing, query-cache handlers, tests
-- [ ] M4 Routes, gate, signed-out page, account area, navigation filter, messages, tests
-- [ ] M5 Storage lint; smoke journeys
+- [x] M2 HTTP client, CSRF holder, error types, tests
+- [x] M3 Auth state: bootstrap query, clearing, query-cache handlers, tests
+- [x] M4 Routes, gate, signed-out page, account area, navigation filter, messages, tests
+- [x] M5 Storage lint; smoke journeys
 - [ ] M6 `pnpm verify`, `pnpm test:e2e`
 - [ ] M7 In-run review and fixes
 - [ ] M8 Master Plan ledger, hand-off, pull request, CI
