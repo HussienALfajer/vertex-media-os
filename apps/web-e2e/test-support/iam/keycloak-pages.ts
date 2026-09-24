@@ -92,3 +92,12 @@ export async function signIn(page: Page, email: string, device: Authenticator): 
     .waitFor();
   if (await login.isVisible()) await passKeycloakSignIn(page, email, device);
 }
+
+/** Submits only Keycloak's password form, for an identity that must not get further. */
+export async function submitKeycloakPassword(page: Page, email: string): Promise<void> {
+  const login = page.locator(LOGIN_FORM);
+  await login.waitFor();
+  await login.locator('input[name="username"]').fill(email);
+  await login.locator('input[name="password"]').fill(TEST_PASSWORD);
+  await login.locator('[type="submit"]').first().click();
+}

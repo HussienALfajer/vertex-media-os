@@ -65,7 +65,8 @@ export async function webContext(
  */
 export async function scriptVisibleSecrets(context: BrowserContext): Promise<string[]> {
   const page = await context.newPage();
-  await page.goto(`${WEB_ORIGIN}/api/health/live`);
+  // The app itself: Firefox shows a JSON response in a viewer that never finishes loading.
+  await page.goto(`${WEB_ORIGIN}/`);
   const readable = await page.evaluate(() => {
     const storage = (area: Storage) =>
       Array.from({ length: area.length }, (_, index) => area.getItem(area.key(index) ?? '') ?? '');

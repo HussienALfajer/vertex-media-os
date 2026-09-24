@@ -1,5 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 /**
  * What the IAM stack's global setup (`stack.setup.ts`) hands to the test workers through
@@ -149,3 +150,28 @@ export const JWT = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\./;
 /** Response fields that would carry identity-provider tokens. */
 export const TOKEN_FIELD =
   /"(access_token|id_token|refresh_token|idToken|accessToken|refreshToken)"/;
+
+/**
+ * Runs the built `iam-bootstrap` operator command against the stack and returns its exit code
+ * (D-15). Only the stack's command environment and what a process needs to start are passed.
+ */
+export function runBootstrap(stack: IamStack, args: readonly string[]): number {
+  const apiRoot = fileURLToPath(new URL('../../../api/', import.meta.url));
+  const result = spawnSync(
+    process.execPath,
+    ['--enable-source-maps', 'dist/commands/iam-bootstrap.js', ...args],
+    {
+      cwd: apiRoot,
+      env: {
+        ...(process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] }),
+        ...(process.env['SystemRoot'] === undefined
+          ? {}
+          : { SystemRoot: process.env['SystemRoot'] }),
+        ...stack.commandEnv,
+      },
+      encoding: 'utf8',
+    },
+  );
+  if (result.status === null) throw result.error ?? new Error('iam-bootstrap did not exit');
+  return result.status;
+}
