@@ -517,6 +517,96 @@ describe('access lifecycle', () => {
 // Last ACTIVE System Administrator under access reduction (spec Section 20; IAM-R06 D-06)
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// Grant ceiling for reactivation (spec Section 23.1; IAM-R07 D-11)
+// ---------------------------------------------------------------------------------------------
+
+describe('grant ceiling for reactivation', () => {
+  /** A custom role mapping exactly `codes`, created by the system process. */
+  async function roleWith(codes: string[]): Promise<string> {
+    const created = await roles.createRole(
+      { code: `r-${randomBytes(3).toString('hex')}`, name: 'Ceiling' },
+      system(),
+    );
+    if (created.outcome !== 'created') throw new Error('seed role');
+    const mapped = await roles.replaceRolePermissions(
+      { roleId: created.role.id, expectedVersion: 1, permissionCodes: codes },
+      system(),
+    );
+    if (mapped.outcome !== 'updated') throw new Error(`seed mapping: ${mapped.outcome}`);
+    return created.role.id;
+  }
+
+  /** An ACTIVE user with the given roles, then suspended by the system process. */
+  async function suspendedHolder(label: string, roleIds: string[]): Promise<string> {
+    const id = await activeUser(label, roleIds);
+    expect((await users.suspendUser({ userId: id }, system())).outcome).toBe('restricted');
+    return id;
+  }
+
+  async function reactivateAs(actor: string, target: string) {
+    return users.reactivateUser(
+      { userId: target, expectedVersion: await versionOf(target) },
+      as(actor),
+    );
+  }
+
+  it('refuses a non-administrator reactivating a System Administrator, before Keycloak', async () => {
+    const manager = await activeUser('ceiling-manager', [
+      await roleWith(['iam.users.manage-access', 'iam.users.read']),
+    ]);
+    await activeUser('ceiling-other-admin', [await systemRoleId()]);
+    const target = await suspendedHolder('ceiling-admin', [await systemRoleId()]);
+    const before = await row(target);
+    const version = await versionOf(target);
+
+    expect(await reactivateAs(manager, target)).toEqual({ outcome: 'grant-exceeds-actor' });
+
+    expect(await row(target)).toBe(before);
+    expect(await versionOf(target)).toBe(version);
+    expect(await identityEnabled(await subjectOf(target))).toBe(false);
+    expect(
+      await value(
+        `SELECT result || '|' || actor_user_id FROM audit_record
+           WHERE target_id = '${target}' AND action = 'iam.user.reactivated'`,
+      ),
+    ).toBe(`REFUSED|${manager}`);
+  });
+
+  it('refuses a holder of a role that grants a permission the actor lacks', async () => {
+    const manager = await activeUser('ceiling-manager', [
+      await roleWith(['iam.users.manage-access']),
+    ]);
+    const target = await suspendedHolder('ceiling-holder', [await roleWith(['iam.roles.manage'])]);
+
+    expect(await reactivateAs(manager, target)).toEqual({ outcome: 'grant-exceeds-actor' });
+    expect((await row(target)).startsWith('SUSPENDED|')).toBe(true);
+  });
+
+  it('reactivates a user whose roles are within the permissions of the actor', async () => {
+    const manager = await activeUser('ceiling-manager', [
+      await roleWith(['iam.users.manage-access', 'iam.users.read']),
+    ]);
+    const target = await suspendedHolder('ceiling-reader', [await roleWith(['iam.users.read'])]);
+
+    expect(await reactivateAs(manager, target)).toMatchObject({
+      outcome: 'reactivated',
+      target: 'ACTIVE',
+    });
+    expect(await identityEnabled(await subjectOf(target))).toBe(true);
+  });
+
+  it('does not limit an ACTIVE System Administrator', async () => {
+    const administrator = await activeUser('ceiling-actor-admin', [await systemRoleId()]);
+    const target = await suspendedHolder('ceiling-admin-target', [await systemRoleId()]);
+
+    expect(await reactivateAs(administrator, target)).toMatchObject({
+      outcome: 'reactivated',
+      target: 'ACTIVE',
+    });
+  });
+});
+
 describe('last ACTIVE System Administrator', () => {
   beforeEach(async () => {
     // Only this suite's administrators count.

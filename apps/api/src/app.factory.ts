@@ -3,10 +3,10 @@ import { UnsupportedMediaTypeException } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { FastifyLoggerOptions } from 'fastify';
-import { AppModule } from './app.module.js';
-import type { AuthRuntimeOptions } from './auth/auth-runtime.js';
+import { AppModule, type AppModuleOptions } from './app.module.js';
 import { type AppConfig } from './config/app-config.js';
 import type { AuthConfig } from './config/auth-config.js';
+import type { IdentityProvisioningConfig } from './config/identity-provisioning-config.js';
 import { ProblemDetailsFilter } from './http/problem-details.js';
 import { REQUEST_ID_HEADER, resolveRequestId } from './http/request-id.js';
 import { PinoLoggerService } from './logging/pino-logger.service.js';
@@ -24,7 +24,7 @@ const BODY_LIMIT_BYTES = 1_048_576;
 const FORM_BODY_ROUTE = `/${API_PREFIX}/auth/backchannel-logout`;
 const FORM_BODY_LIMIT_BYTES = 32_768;
 
-export interface CreateAppOptions extends AuthRuntimeOptions {
+export interface CreateAppOptions extends AppModuleOptions {
   /** Destination of the JSON log records; standard output when omitted. Tests inspect logs through it. */
   readonly logStream?: NonNullable<FastifyLoggerOptions['stream']>;
 }
@@ -37,9 +37,10 @@ export interface CreateAppOptions extends AuthRuntimeOptions {
 export async function createApp(
   config: AppConfig,
   auth: AuthConfig,
+  provisioning: IdentityProvisioningConfig,
   options: CreateAppOptions = {},
 ): Promise<NestFastifyApplication> {
-  const { logStream, ...authOptions } = options;
+  const { logStream, ...moduleOptions } = options;
   const adapter = new FastifyAdapter({
     logger: {
       level: config.logging.level,
@@ -72,7 +73,7 @@ export async function createApp(
   );
 
   const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule.forRoot(config, auth, authOptions),
+    AppModule.forRoot(config, auth, provisioning, moduleOptions),
     adapter,
     {
       logger: new PinoLoggerService(fastify.log),

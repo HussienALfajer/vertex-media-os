@@ -1,0 +1,52 @@
+const P = {
+  usersRead: 'iam.users.read',
+  usersCreate: 'iam.users.create',
+  usersUpdate: 'iam.users.update',
+  manageAccess: 'iam.users.manage-access',
+  manageRoles: 'iam.users.manage-roles',
+  manageDepartments: 'iam.users.manage-departments',
+  rolesRead: 'iam.roles.read',
+  rolesManage: 'iam.roles.manage',
+  permissionsRead: 'iam.permissions.read',
+  departmentsRead: 'iam.departments.read',
+  departmentsManage: 'iam.departments.manage',
+  sessionsRevoke: 'iam.sessions.revoke',
+} as const;
+
+/**
+ * Spec Sections 25.2 to 25.8 and the permission of each route (IAM-R07 plan Section 5.1); `null`
+ * for a route open to any ACTIVE session.
+ */
+export const IAM_ROUTES: Readonly<Record<string, string | null>> = {
+  'GET /api/iam/me': null,
+  'GET /api/iam/users': P.usersRead,
+  'POST /api/iam/users': P.usersCreate,
+  'GET /api/iam/users/{userId}': P.usersRead,
+  'PATCH /api/iam/users/{userId}': P.usersUpdate,
+  'POST /api/iam/users/{userId}/suspend': P.manageAccess,
+  'POST /api/iam/users/{userId}/disable': P.manageAccess,
+  'POST /api/iam/users/{userId}/reactivate': P.manageAccess,
+  'POST /api/iam/users/{userId}/terminate': P.manageAccess,
+  'POST /api/iam/users/{userId}/resend-invitation': P.usersCreate,
+  'POST /api/iam/users/{userId}/sync-identity': P.manageAccess,
+  'POST /api/iam/users/{userId}/revoke-sessions': P.sessionsRevoke,
+  'POST /api/iam/users/{userId}/departments': P.manageDepartments,
+  'PATCH /api/iam/users/{userId}/departments/{departmentId}': P.manageDepartments,
+  'DELETE /api/iam/users/{userId}/departments/{departmentId}': P.manageDepartments,
+  'POST /api/iam/users/{userId}/roles': P.manageRoles,
+  'DELETE /api/iam/users/{userId}/roles/{roleId}': P.manageRoles,
+  'GET /api/iam/departments': P.departmentsRead,
+  'POST /api/iam/departments': P.departmentsManage,
+  'GET /api/iam/departments/{departmentId}': P.departmentsRead,
+  'PATCH /api/iam/departments/{departmentId}': P.departmentsManage,
+  'POST /api/iam/departments/{departmentId}/activate': P.departmentsManage,
+  'POST /api/iam/departments/{departmentId}/deactivate': P.departmentsManage,
+  'GET /api/iam/roles': P.rolesRead,
+  'POST /api/iam/roles': P.rolesManage,
+  'GET /api/iam/roles/{roleId}': P.rolesRead,
+  'PATCH /api/iam/roles/{roleId}': P.rolesManage,
+  'POST /api/iam/roles/{roleId}/activate': P.rolesManage,
+  'POST /api/iam/roles/{roleId}/deactivate': P.rolesManage,
+  'PUT /api/iam/roles/{roleId}/permissions': P.rolesManage,
+  'GET /api/iam/permissions': P.permissionsRead,
+};

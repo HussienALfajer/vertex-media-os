@@ -21,6 +21,7 @@ import {
   createCommandLogger,
   runIamReferenceSync,
 } from './iam-sync-reference.command.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 const runFile = promisify(execFile);
 const apiRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -221,7 +222,9 @@ describe('pnpm iam:sync-reference against real PostgreSQL', () => {
     const commandLog = capture();
     createCommandLogger(config, commandLog.destination).error({ err: error }, 'probe');
     const apiLog = capture();
-    const app = await createApp(config, testAuthConfig(), { logStream: apiLog.destination });
+    const app = await createApp(config, testAuthConfig(), testProvisioningConfig(), {
+      logStream: apiLog.destination,
+    });
     try {
       app.getHttpAdapter().getInstance().log.error({ err: error }, 'probe');
     } finally {

@@ -12,5 +12,11 @@ export const ProblemDetailsSchema: SchemaObject = {
     instance: { type: 'string', example: '/api/health/ready' },
     code: { type: 'string', example: 'NOT_READY' },
     traceId: { type: 'string', example: '7f0c5d8e-2f4b-4b8e-9a51-2c7d1e0b6a3f' },
+    fields: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'With `VALIDATION_FAILED`: the names of the invalid request fields.',
+      example: ['displayName'],
+    },
   },
 };

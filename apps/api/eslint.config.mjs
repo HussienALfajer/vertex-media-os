@@ -22,6 +22,9 @@ const compositionPatterns = restrictedImportPatterns.map((pattern) =>
     : pattern,
 );
 
+const IAM_HTTP_CAPABILITIES_ONLY =
+  'IAM controllers use the bound capabilities of src/iam; only its composition roots import adapters.';
+
 const ADAPTERS_ONLY_IN_RUNTIME =
   'Only auth-runtime.ts composes adapters; use the bound capabilities of AuthRuntime.';
 
@@ -37,6 +40,55 @@ const adapterImportSyntax = [
     `TSImportType[source.value='${name}']`,
   ])
   .map((selector) => ({ selector, message: ADAPTERS_ONLY_IN_RUNTIME }));
+
+const iamHttpPatterns = [
+  ...restrictedImportPatterns,
+  {
+    group: [
+      '@vertex-os/iam-persistence',
+      '@vertex-os/audit-persistence',
+      '@vertex-os/iam-keycloak',
+    ],
+    message: IAM_HTTP_CAPABILITIES_ONLY,
+  },
+];
+
+// The composition roots beside src/iam/http, the database client and the authentication runtime.
+const IAM_COMPOSITION_ROOTS = ['administration', 'user-administration', 'directory', 'iam.module'];
+const iamHttpCompositionPatterns = [
+  {
+    regex: String.raw`(^|/)\.\./(${IAM_COMPOSITION_ROOTS.join('|').replaceAll('.', String.raw`\.`)})\.js$`,
+    message: IAM_HTTP_CAPABILITIES_ONLY,
+  },
+  {
+    regex: String.raw`(^|/)(database/database\.module|auth/auth-runtime)\.js$|^@vertex-os/database$`,
+    message: IAM_HTTP_CAPABILITIES_ONLY,
+  },
+];
+
+const IAM_HTTP_USER_ACTOR_ONLY =
+  "IAM routes attribute changes to the session's USER actor, never to a system process.";
+
+const iamHttpSyntax = [
+  ...restrictedImportSyntax,
+  ...restrictedEnvSyntax,
+  ...restrictedRawSqlSyntax,
+  ...adapterImportSyntax.map((rule) => ({ ...rule, message: IAM_HTTP_CAPABILITIES_ONLY })),
+  { selector: "Literal[value='SYSTEM']", message: IAM_HTTP_USER_ACTOR_ONLY },
+  { selector: "TemplateElement[value.raw='SYSTEM']", message: IAM_HTTP_USER_ACTOR_ONLY },
+  { selector: "Identifier[name='systemAttribution']", message: IAM_HTTP_USER_ACTOR_ONLY },
+  { selector: "Literal[value='systemAttribution']", message: IAM_HTTP_USER_ACTOR_ONLY },
+];
+
+const iamHttpCompositionSyntax = [
+  '../administration.js',
+  '../user-administration.js',
+  '../directory.js',
+  '../iam.module.js',
+].flatMap((source) => [
+  { selector: `ImportExpression[source.value='${source}']`, message: IAM_HTTP_CAPABILITIES_ONLY },
+  { selector: `TSImportType[source.value='${source}']`, message: IAM_HTTP_CAPABILITIES_ONLY },
+]);
 
 export default [
   ...baseConfig,
@@ -113,6 +165,35 @@ export default [
         'error',
         { paths: restrictedImportPaths, patterns: compositionPatterns },
       ],
+    },
+  },
+  {
+    // IAM's inbound transport sees only the bound capabilities (IAM-R07 D-01): neither the private
+    // composition entry, an adapter, a composition root, the database client nor the
+    // authentication runtime, statically or dynamically; and it never acts as a system process,
+    // which the grant ceiling would exempt (IAM-R06 review SEC-1). Tests seed data through them.
+    files: ['src/iam/http/**/*.ts'],
+    ignores: ['src/iam/http/**/*.spec.ts', 'src/iam/http/capabilities.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedImportPaths,
+          patterns: [...iamHttpPatterns, ...iamHttpCompositionPatterns],
+        },
+      ],
+      'no-restricted-syntax': ['error', ...iamHttpSyntax, ...iamHttpCompositionSyntax],
+    },
+  },
+  {
+    // The capability tokens re-export the capability types of the composition roots.
+    files: ['src/iam/http/capabilities.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: restrictedImportPaths, patterns: iamHttpPatterns },
+      ],
+      'no-restricted-syntax': ['error', ...iamHttpSyntax],
     },
   },
   {

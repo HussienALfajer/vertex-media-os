@@ -24,7 +24,7 @@ interface DepartmentRow {
   readonly version: number;
 }
 
-const departmentSelect = {
+export const departmentSelect = {
   id: true,
   code: true,
   name: true,
@@ -33,7 +33,7 @@ const departmentSelect = {
   version: true,
 } as const;
 
-function mapDepartment(row: DepartmentRow): DepartmentView {
+export function mapDepartment(row: DepartmentRow): DepartmentView {
   return Object.freeze({
     id: row.id as DepartmentId,
     code: row.code as DepartmentCode,

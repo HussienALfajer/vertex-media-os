@@ -2,6 +2,7 @@ export {
   createDatabaseClient,
   DatabaseUnavailableError,
   describeDatabaseError,
+  isDatabaseContention,
 } from './database-client.js';
 export type {
   DatabaseClient,

@@ -32,7 +32,7 @@ interface RoleRow {
   readonly version: number;
 }
 
-const roleSelect = {
+export const roleSelect = {
   id: true,
   code: true,
   name: true,
@@ -42,7 +42,7 @@ const roleSelect = {
   version: true,
 } as const;
 
-function mapRole(row: RoleRow): RoleView {
+export function mapRole(row: RoleRow): RoleView {
   return Object.freeze({
     id: row.id as RoleId,
     code: row.code as RoleCode,
@@ -214,6 +214,28 @@ export function createRoleStore(client: IamPersistenceClient): RoleStore {
         }),
       ];
       return { facts, holdsSystemAdministratorRole: holding > 0 };
+    },
+
+    async readUserGrant(userId) {
+      const holding = await client.iamUserRoleAssignment.count({
+        where: { userId, role: { code: SYSTEM_ADMINISTRATOR_ROLE_CODE } },
+      });
+      const rows = await client.iamRolePermission.findMany({
+        where: {
+          role: {
+            state: roleStateToDatabase.ACTIVE,
+            userAssignments: { some: { userId } },
+          },
+          permission: { state: permissionStateToDatabase.ACTIVE },
+        },
+        select: { permissionCode: true },
+        distinct: ['permissionCode'],
+        orderBy: { permissionCode: 'asc' },
+      });
+      return {
+        holdsSystemAdministratorRole: holding > 0,
+        activePermissionCodes: rows.map((row) => row.permissionCode as PermissionCode),
+      };
     },
   };
 }

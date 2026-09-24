@@ -13,8 +13,8 @@ export interface DatabaseClientOptions {
    * Upper bound for a single statement, enforced where the work happens rather than by a caller
    * that merely stops waiting: PostgreSQL cancels a statement that runs longer
    * (`statement_timeout`), and the driver abandons a statement the server does not answer at all
-   * and discards its connection (`query_timeout`), so a timed-out statement never keeps a
-   * connection busy.
+   * and discards its connection (`query_timeout`, a margin later), so a timed-out statement never
+   * keeps a connection busy.
    */
   readonly statementTimeoutMs?: number;
 }
@@ -78,6 +78,12 @@ export interface TransactionOptions {
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_STATEMENT_TIMEOUT_MS = 5_000;
+/**
+ * How much later the driver gives up than the server (IAM-R07 D-15). With equal bounds the two
+ * timers race, and a lock wait ended by the driver surfaces as a bare driver error instead of the
+ * server's SQLSTATE 57014, which callers classify as contention.
+ */
+const QUERY_TIMEOUT_MARGIN_MS = 1_000;
 // Prisma's own interactive-transaction defaults, stated so they are reviewed choices.
 const DEFAULT_TRANSACTION_TIMEOUT_MS = 5_000;
 const DEFAULT_TRANSACTION_MAX_WAIT_MS = 2_000;
@@ -92,7 +98,7 @@ export function createDatabaseClient(options: DatabaseClientOptions): DatabaseCl
     connectionString: options.connectionString,
     connectionTimeoutMillis: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
     statement_timeout: statementTimeoutMs,
-    query_timeout: statementTimeoutMs,
+    query_timeout: statementTimeoutMs + QUERY_TIMEOUT_MARGIN_MS,
   });
   const prisma = new PrismaClient({ adapter });
 
@@ -272,6 +278,28 @@ export function describeDatabaseError(error: unknown): DatabaseErrorDescription 
     return { errorClass: 'PrismaClientRustPanicError' };
   }
   return undefined;
+}
+
+/**
+ * SQLSTATEs of competing work (IAM-R07 D-15): a statement cancelled by `statement_timeout`, which
+ * is how a lock wait ends here (57014), a lock that is not available (55P03), a deadlock (40P01)
+ * and a serialization failure (40001).
+ */
+const CONTENTION_SQLSTATES = new Set(['57014', '55P03', '40P01', '40001']);
+/** Prisma's interactive-transaction timeout or start failure (P2028) and write conflict (P2034). */
+const CONTENTION_PRISMA_CODES = new Set(['P2028', 'P2034']);
+
+/**
+ * Whether a database error means the work lost to competing work or ran out of its time bound,
+ * so the same request may succeed when retried. Decided from the allowlisted description only.
+ */
+export function isDatabaseContention(error: unknown): boolean {
+  const description = describeDatabaseError(error);
+  if (description === undefined) return false;
+  return (
+    (description.sqlState !== undefined && CONTENTION_SQLSTATES.has(description.sqlState)) ||
+    (description.prismaCode !== undefined && CONTENTION_PRISMA_CODES.has(description.prismaCode))
+  );
 }
 
 /**

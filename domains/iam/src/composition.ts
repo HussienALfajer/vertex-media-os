@@ -69,3 +69,13 @@ export type {
   SessionRevocation,
   SessionRevocationReason,
 } from './application/ports/session-revocation.js';
+export {
+  getDepartment,
+  getRole,
+  getUser,
+  listDepartments,
+  listPermissions,
+  listRoles,
+  listUsers,
+  type DirectoryDependencies,
+} from './application/directory.js';

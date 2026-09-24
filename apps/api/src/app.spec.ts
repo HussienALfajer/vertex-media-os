@@ -4,6 +4,7 @@ import { createApp } from './app.factory.js';
 import { testAuthConfig } from '../test-support/auth-config.js';
 import { loadAppConfig } from './config/app-config.js';
 import { createOpenApiDocument } from './openapi/openapi.js';
+import { testProvisioningConfig } from '../test-support/provisioning-config.js';
 
 // TCP port 1 never hosts PostgreSQL: these tests prove the API behaves correctly without a database.
 const UNREACHABLE_DATABASE_URL = 'postgresql://vertex:fake-test-password@127.0.0.1:1/vertex_os';
@@ -17,6 +18,7 @@ async function startApp(environment: Record<string, string> = {}): Promise<NestF
       ...environment,
     }),
     testAuthConfig(),
+    testProvisioningConfig(),
   );
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
@@ -174,6 +176,7 @@ describe('readiness failure logging', () => {
     const app = await createApp(
       loadAppConfig({ NODE_ENV: 'test', LOG_LEVEL: 'warn', DATABASE_URL: SENTINEL_DATABASE_URL }),
       testAuthConfig(),
+      testProvisioningConfig(),
       { logStream: { write: (line) => lines.push(line) } },
     );
     try {

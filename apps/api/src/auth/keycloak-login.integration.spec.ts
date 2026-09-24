@@ -27,6 +27,7 @@ import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { loadIdentityProvisioningConfig } from '../config/identity-provisioning-config.js';
 import { createIdentityProvisioning } from '../iam/identity-provisioning.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 /**
  * The browser sign-in lifecycle against the pinned Keycloak with the committed realm (IAM-R03 Done
@@ -80,6 +81,7 @@ beforeAll(async () => {
       KEYCLOAK_WEB_REDIRECT_URI: keycloak.uris.redirect,
       KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI: keycloak.uris.postLogoutRedirect,
     }),
+    testProvisioningConfig(),
     { logStream: { write: (line: string) => logLines.push(line) } },
   );
   await app.listen({ host: '127.0.0.1', port });

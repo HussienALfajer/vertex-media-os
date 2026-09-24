@@ -10,6 +10,7 @@ import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { loadIdentityProvisioningConfig } from '../config/identity-provisioning-config.js';
 import { createIdentityProvisioning } from '../iam/identity-provisioning.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 /**
  * IAM-CP1 CP1-01 against the pinned Keycloak (IAM-R03F D-10): Keycloak-side logout, recovery and
@@ -80,6 +81,7 @@ beforeAll(async () => {
       KEYCLOAK_WEB_REDIRECT_URI: keycloak.uris.redirect,
       KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI: keycloak.uris.postLogoutRedirect,
     }),
+    testProvisioningConfig(),
     {
       logStream: { write: (line: string) => logLines.push(line) },
       now: () => new Date(Date.now() + clockOffset),

@@ -64,4 +64,14 @@ export interface RoleStore {
     readonly facts: AuthorizationFacts | undefined;
     readonly holdsSystemAdministratorRole: boolean;
   }>;
+  /**
+   * What restoring a user's access would hand back (spec Section 23.1; IAM-R07 D-11): whether the
+   * user holds the System Administrator role, and the ACTIVE permission codes mapped to the user's
+   * ACTIVE roles, sorted. Stable while the user's row is locked, because every assignment change
+   * takes that lock.
+   */
+  readUserGrant(userId: UserId): Promise<{
+    readonly holdsSystemAdministratorRole: boolean;
+    readonly activePermissionCodes: readonly PermissionCode[];
+  }>;
 }

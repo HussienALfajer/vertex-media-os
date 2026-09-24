@@ -31,6 +31,7 @@ import {
   resendInvitation,
   type InvitationDispatchResult,
 } from './invitation-dispatch.js';
+import type { RoleStore } from './ports/role-store.js';
 import type { SessionRevocation, SessionRevocationReason } from './ports/session-revocation.js';
 import { provisionIdentity } from './provision-identity.js';
 import {
@@ -131,7 +132,11 @@ export type ReactivateUserResult =
   | { readonly outcome: 'identity-failed'; readonly failure: IdentityFailure }
   | {
       readonly outcome:
-        'user-not-found' | 'version-conflict' | 'invalid-access-transition' | 'superseded';
+        | 'user-not-found'
+        | 'version-conflict'
+        | 'invalid-access-transition'
+        | 'grant-exceeds-actor'
+        | 'superseded';
     }
   | Invalid<'userId' | 'expectedVersion'>;
 
@@ -473,6 +478,38 @@ async function restrictUser(
   };
 }
 
+/**
+ * The grant ceiling for reactivation (spec Section 23.1; IAM-R07 D-11), evaluated under the
+ * target's row lock, which every assignment change also takes. A refusal leaves only a REFUSED
+ * record.
+ */
+async function reactivationExceedsActor(
+  roles: RoleStore,
+  audit: AuditRecorder,
+  attribution: AuditAttribution,
+  userId: UserId,
+  target: 'ACTIVE' | 'INVITED',
+): Promise<boolean> {
+  const grant = await roles.readUserGrant(userId);
+  const exceeds = await grantExceedsActor(
+    roles,
+    attribution,
+    grant.holdsSystemAdministratorRole
+      ? { kind: 'system-role' }
+      : { kind: 'permissions', codes: grant.activePermissionCodes },
+  );
+  if (exceeds) {
+    await recordGrantRefusal(
+      audit,
+      attribution,
+      'iam.user.reactivated',
+      { type: 'iam.user', id: userId },
+      { target },
+    );
+  }
+  return exceeds;
+}
+
 /** Temporary administrative suspension (spec Section 10.3). */
 export function suspendUser(
   dependencies: UserAdministrationDependencies,
@@ -517,43 +554,46 @@ export async function reactivateUser(
   if (expectedVersion === undefined) return { outcome: 'invalid', field: 'expectedVersion' };
   const provisioning = request(userId.value, attribution);
 
-  // Step 1: validate and derive the target from the state the caller saw.
-  const committed = await dependencies.users.findById(userId.value);
-  if (!committed) return { outcome: 'user-not-found' };
-  const decision = decideReactivation(committed, expectedVersion);
-  if (decision.kind === 'refuse') return { outcome: decision.reason };
-  const { target } = decision;
-
-  // Step 2: PENDING, version-checked, so no competing change can slip in unnoticed.
-  const pending = await dependencies.runner.run(async ({ users, audit }) => {
+  // Steps 1 and 2 under the target's row lock: validate against the state the caller saw, derive
+  // the target, apply the grant ceiling (IAM-R07 D-11), then PENDING, version-checked, so no
+  // competing change can slip in unnoticed and no Keycloak call precedes a refusal.
+  const pending = await dependencies.runner.run(async ({ lifecycle, roles, users, audit }) => {
+    const locked = await lifecycle.lockUser(userId.value);
+    if (locked === undefined) return { outcome: 'user-not-found' as const };
+    const decision = decideReactivation(locked, expectedVersion);
+    if (decision.kind === 'refuse') return { outcome: decision.reason };
+    if (await reactivationExceedsActor(roles, audit, attribution, locked.id, decision.target)) {
+      return { outcome: 'grant-exceeds-actor' as const };
+    }
     const written = await users.recordIdentitySync({
-      id: committed.id,
+      id: locked.id,
       expectedVersion,
       state: 'PENDING',
     });
-    if (written.outcome === 'updated') {
-      await appendUserAudit(
-        audit,
-        attribution,
-        written.user,
-        'iam.user.reactivation-started',
-        'SUCCEEDED',
-        {
-          before: {
-            accessState: committed.accessState,
-            identitySyncState: committed.identitySyncState,
-          },
-          after: { identitySyncState: 'PENDING', target },
-        },
-      );
-    }
-    return written;
+    // The row is locked at `expectedVersion`, so the conditional write cannot miss.
+    if (written.outcome !== 'updated') throw new Error('A locked user changed underneath.');
+    await appendUserAudit(
+      audit,
+      attribution,
+      written.user,
+      'iam.user.reactivation-started',
+      'SUCCEEDED',
+      {
+        before: { accessState: locked.accessState, identitySyncState: locked.identitySyncState },
+        after: { identitySyncState: 'PENDING', target: decision.target },
+      },
+    );
+    return { outcome: 'pending' as const, committed: locked, target: decision.target, written };
   });
-  if (pending.outcome === 'not-found') return { outcome: 'user-not-found' };
-  if (pending.outcome !== 'updated') return { outcome: 'version-conflict' };
+  if (pending.outcome !== 'pending') return { outcome: pending.outcome };
+  const { committed, target } = pending;
 
   // Step 3: Keycloak must satisfy the target's requirement before any access is granted.
-  const identity = await enableIdentityForReactivation(dependencies, provisioning, pending.user);
+  const identity = await enableIdentityForReactivation(
+    dependencies,
+    provisioning,
+    pending.written.user,
+  );
   if (identity.outcome === 'failed') {
     return { outcome: 'identity-failed', failure: identity.failure };
   }
@@ -565,7 +605,16 @@ export async function reactivateUser(
   // Step 4: the final commit, conditional on the version the identity step left. If it fails
   // outright (for example a lost connection), the identity may be enabled while the user is still
   // denied: reconcile against the committed state before failing (IAM-R06 review DC-6).
-  const finalCommit = dependencies.runner.run(async ({ lifecycle, audit }) => {
+  const finalCommit = dependencies.runner.run(async ({ lifecycle, roles, audit }) => {
+    // The ceiling again, under the row lock of the commit that grants access: the target's roles,
+    // their mappings and states may have changed while Keycloak was called (review SA-1).
+    const locked = await lifecycle.lockUser(committed.id);
+    if (
+      locked?.version === identity.user.version &&
+      (await reactivationExceedsActor(roles, audit, attribution, locked.id, target))
+    ) {
+      return { outcome: 'grant-exceeds-actor' as const };
+    }
     const written = await lifecycle.completeReactivation({
       id: committed.id,
       expectedVersion: identity.user.version,
@@ -586,7 +635,9 @@ export async function reactivateUser(
   if (completed.outcome !== 'updated') {
     // Step 6: the identity may be enabled while IAM still denies access; reconcile at once.
     await reconcileIdentity(dependencies, provisioning);
-    return { outcome: 'superseded' };
+    return {
+      outcome: completed.outcome === 'grant-exceeds-actor' ? completed.outcome : 'superseded',
+    };
   }
 
   // A user returned to INVITED receives the first dispatch if none was ever attempted.

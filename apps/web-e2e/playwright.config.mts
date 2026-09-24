@@ -130,6 +130,9 @@ export default defineConfig({
         KEYCLOAK_WEB_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/api/auth/callback`,
         KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/`,
         AUTH_TOKEN_ENCRYPTION_SECRET: 'e2e-not-used-token-encryption-secret',
+        // Required by IAM identity provisioning; no journey provisions, so none is contacted.
+        KEYCLOAK_PROVISIONER_CLIENT_ID: 'e2e-not-used-provisioner',
+        KEYCLOAK_PROVISIONER_CLIENT_SECRET: 'e2e-not-used-provisioner-secret',
       },
     },
     {

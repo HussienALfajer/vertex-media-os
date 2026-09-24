@@ -19,6 +19,7 @@ import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { LOGIN_COOKIE, SESSION_COOKIE } from './cookies.js';
 import { seedInvitedUser } from '../../test-support/iam-users.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 /**
  * The BFF endpoints end to end against real PostgreSQL, IAM and the Audit adapter, with a fake
@@ -47,6 +48,7 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
         KEYCLOAK_ISSUER_URL: FAKE_ISSUER,
         KEYCLOAK_WEB_CLIENT_SECRET: FAKE_CLIENT_SECRET,
       }),
+      testProvisioningConfig(),
       {
         logStream: { write: (line: string) => lines.push(line) },
         oidcFetch: provider.fetch,

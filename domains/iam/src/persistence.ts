@@ -42,3 +42,11 @@ export type { UserLifecycleStore } from './application/ports/user-lifecycle-stor
 export type { DepartmentView, MembershipFact } from './domain/organization.js';
 export type { RoleView } from './domain/roles.js';
 export type { FieldChanges } from './domain/versioned-change.js';
+export type { DirectoryWindow, IamDirectoryReader } from './application/ports/directory-reader.js';
+export type {
+  PermissionView,
+  SearchText,
+  UserDepartmentView,
+  UserRoleView,
+  UserSummary,
+} from './domain/directory.js';
