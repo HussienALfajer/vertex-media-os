@@ -59,6 +59,28 @@ describe('describeMutationFailure (IAM-R08B D-11)', () => {
     );
   });
 
+  it('explains the department, role and catalog refusals and reloads where the record changed (IAM-R08C D-11)', () => {
+    const expected: [string, string, boolean][] = [
+      ['IAM_DEPARTMENT_CODE_CONFLICT', 'problemDepartmentCodeTaken', false],
+      ['IAM_ROLE_CODE_CONFLICT', 'problemRoleCodeTaken', false],
+      ['IAM_SYSTEM_ROLE_PROTECTED', 'problemSystemRoleProtected', true],
+      ['IAM_UNKNOWN_PERMISSION', 'problemUnknownPermission', true],
+      ['IAM_PERMISSION_NOT_ASSIGNABLE', 'problemPermissionNotAssignable', true],
+    ];
+    for (const [code, message, reload] of expected) {
+      expect(describeMutationFailure(new ApiProblem(409, code), messages)).toMatchObject({
+        message,
+        reload,
+      });
+    }
+  });
+
+  it('names the record in view when a result is not confirmed', () => {
+    expect(
+      describeMutationFailure(new NetworkFailure('offline'), messages, 'roleUncertain'),
+    ).toMatchObject({ message: 'roleUncertain', reload: true });
+  });
+
   it('words the busy wait and the identity-service outcomes in both languages', () => {
     const ar = messagesFor('ar');
     const en = messagesFor('en');

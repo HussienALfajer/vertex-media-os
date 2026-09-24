@@ -108,8 +108,8 @@ Only those of the Run Contract. An API change found necessary is recorded; if it
 - [x] M4 Roles: list, create, detail, system-role presentation, edit, activate, deactivate, tests
 - [x] M5 Permission catalog and permission editor with review step, tests
 - [x] M6 Directory filters by department and role, tests
-- [ ] M7 Browser journey with axe (D-14)
-- [ ] M8 `pnpm verify`, `pnpm test:e2e`
+- [x] M7 Browser journey with axe (D-14)
+- [x] M8 `pnpm verify`, `pnpm test:e2e`
 - [ ] M9 In-run review and fixes
 - [ ] M10 Master Plan ledger, hand-off, pull request, CI
 

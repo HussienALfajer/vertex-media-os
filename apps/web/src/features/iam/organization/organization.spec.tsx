@@ -606,6 +606,206 @@ describe('the permission editor', () => {
   });
 });
 
+describe('refusals, reach and visibility (review T-1 to T-9)', () => {
+  const offline = () => Promise.reject(new TypeError('Failed to fetch'));
+
+  it('reports an unconfirmed edit as unconfirmed and reads the department again (D-16)', async () => {
+    let reads = 0;
+    fakeApi({
+      [departmentRoute]: () => {
+        reads += 1;
+        return json(200, department());
+      },
+      [`PATCH /api/iam/departments/${OPS}`]: offline,
+    });
+    renderAt(`/departments/${OPS}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعديل الاسم والوصف' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /الاسم/ }), {
+      target: { value: 'التشغيل' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
+    expect(await within(dialog).findByText(/حُمّلت حالة القسم الحالية/)).toBeTruthy();
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+  });
+
+  it('explains the system-role protection on a role edit and reads the role again', async () => {
+    let reads = 0;
+    fakeApi({
+      [roleRoute]: () => {
+        reads += 1;
+        return json(200, role());
+      },
+      [`PATCH /api/iam/roles/${EDITOR}`]: () => problem(409, 'IAM_SYSTEM_ROLE_PROTECTED'),
+    });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعديل الاسم والوصف' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /الاسم/ }), {
+      target: { value: 'محرر أول' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
+    expect(await within(dialog).findByText(/دور مسؤول النظام محمي/)).toBeTruthy();
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+  });
+
+  it('creates a role and opens it; a taken role code is shown on the code field', async () => {
+    let taken = true;
+    fakeApi({
+      'GET /api/iam/roles': () => json(200, page([])),
+      'POST /api/iam/roles': () =>
+        taken
+          ? problem(409, 'IAM_ROLE_CODE_CONFLICT')
+          : json(201, role({ permissionCodes: undefined })),
+      [roleRoute]: () => json(200, role({ permissionCodes: [] })),
+    });
+    const { router } = renderAt('/roles');
+    fireEvent.click(await screen.findByRole('button', { name: 'دور جديد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'دور جديد' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /الرمز/ }), {
+      target: { value: 'editor' },
+    });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /الاسم/ }), {
+      target: { value: 'محرر' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إنشاء الدور' }));
+    expect(await within(dialog).findByText('يوجد دور بهذا الرمز.')).toBeTruthy();
+
+    taken = false;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إنشاء الدور' }));
+    expect(await screen.findByText('أُنشئ الدور')).toBeTruthy();
+    expect(screen.getByText('لا يمنح الدور أي صلاحية حتى تُحدَّد صلاحياته.')).toBeTruthy();
+    expect(router.state.location.pathname).toBe(`/roles/${EDITOR}`);
+  });
+
+  it('names the role, its code and its reach on activation, as a grant rather than a danger (D-06)', async () => {
+    fakeApi({ [roleRoute]: () => json(200, role({ state: 'INACTIVE' })) });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تفعيل الدور' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'تفعيل الدور؟' });
+    expect(confirm.textContent).toContain('محرر');
+    expect(confirm.textContent).toContain('editor');
+    await waitFor(() =>
+      expect(confirm.textContent).toContain('عدد حاملي الدور بكل حالات الوصول: 7'),
+    );
+    expect(
+      within(confirm).getByRole('button', { name: 'تفعيل الدور' }).getAttribute('data-intent'),
+    ).not.toBe('danger');
+  });
+
+  it('warns only when a PRIVILEGED permission is added', async () => {
+    fakeApi({ [roleRoute]: () => json(200, role()) });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل الصلاحيات' }));
+    const editor = await screen.findByRole('dialog', { name: 'صلاحيات الدور «محرر»' });
+    fireEvent.click(within(editor).getByRole('checkbox', { name: /iam\.users\.create/ }));
+    fireEvent.click(within(editor).getByRole('button', { name: 'مراجعة التغييرات' }));
+    expect(await within(editor).findByRole('heading', { name: 'ستُضاف (1)' })).toBeTruthy();
+    expect(editor.textContent).not.toContain('تضيف صلاحية امتيازية');
+  });
+
+  it('keeps an edited permission set behind the unsaved-changes guard', async () => {
+    fakeApi({ [roleRoute]: () => json(200, role()) });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل الصلاحيات' }));
+    const editor = await screen.findByRole('dialog', { name: 'صلاحيات الدور «محرر»' });
+    fireEvent.click(within(editor).getByRole('checkbox', { name: /crm\.leads\.read/ }));
+    fireEvent.click(within(editor).getByRole('button', { name: 'إلغاء' }));
+    expect(await within(editor).findByRole('button', { name: /متابعة التحرير/ })).toBeTruthy();
+  });
+
+  it('says when the catalog has more entries than the editor lists', async () => {
+    fakeApi({
+      [roleRoute]: () => json(200, role()),
+      'GET /api/iam/permissions': () => json(200, page(CATALOG, 150)),
+    });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل الصلاحيات' }));
+    const editor = await screen.findByRole('dialog', { name: 'صلاحيات الدور «محرر»' });
+    expect(editor.textContent).toContain('تُعرض أول 100 من أصل 150.');
+  });
+
+  it('offers no department or role change without the manage permissions', async () => {
+    fakeApi(
+      {
+        [departmentRoute]: () => json(200, department()),
+        [roleRoute]: () => json(200, role()),
+      },
+      ['iam.departments.read', 'iam.roles.read', 'iam.permissions.read'],
+    );
+    renderAt(`/departments/${OPS}`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'العمليات' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'تعديل' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'إيقاف القسم' })).toBeNull();
+  });
+
+  it('offers no role change without iam.roles.manage', async () => {
+    fakeApi({ [roleRoute]: () => json(200, role()) }, ['iam.roles.read', 'iam.permissions.read']);
+    renderAt(`/roles/${EDITOR}`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'محرر' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'تعديل' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'تعديل الصلاحيات' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'إيقاف الدور' })).toBeNull();
+  });
+
+  it('labels the role kind in the list by the isSystem flag, not by the name', async () => {
+    fakeApi({
+      'GET /api/iam/roles': () =>
+        json(
+          200,
+          page([
+            role({ name: 'System Administrator', code: 'sysadmin-lookalike' }),
+            role({ id: 'other', name: 'مشرفو المنصة', code: 'platform', isSystem: true }),
+          ]),
+        ),
+    });
+    renderAt('/roles');
+    const table = await screen.findByRole('table', { name: 'قائمة الأدوار' });
+    await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(3));
+    const [, lookalike, system] = within(table).getAllByRole('row');
+    expect(lookalike?.textContent).toContain('دور مخصص');
+    expect(system?.textContent).toContain('دور النظام (محمي)');
+  });
+
+  it('reads the administrator’s own access again after a role change (D-13)', async () => {
+    let meReads = 0;
+    fakeApi({
+      'GET /api/iam/me': () => {
+        meReads += 1;
+        return json(200, { user: ADMIN, departments: [], permissionCodes: ALL_CODES });
+      },
+      [roleRoute]: () => json(200, role()),
+      [`POST /api/iam/roles/${EDITOR}/deactivate`]: () => json(200, role({ state: 'INACTIVE' })),
+    });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف الدور' }));
+    const confirm = await screen.findByRole('alertdialog');
+    const before = meReads;
+    fireEvent.click(within(confirm).getByRole('button', { name: 'إيقاف الدور' }));
+    expect(await screen.findByText('أُوقف الدور')).toBeTruthy();
+    await waitFor(() => expect(meReads).toBeGreaterThan(before));
+  });
+
+  it('reloads the role when a code is not registered', async () => {
+    let reads = 0;
+    fakeApi({
+      [roleRoute]: () => {
+        reads += 1;
+        return json(200, role());
+      },
+      [`PUT /api/iam/roles/${EDITOR}/permissions`]: () => problem(422, 'IAM_UNKNOWN_PERMISSION'),
+    });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل الصلاحيات' }));
+    const editor = await screen.findByRole('dialog', { name: 'صلاحيات الدور «محرر»' });
+    fireEvent.click(within(editor).getByRole('checkbox', { name: /crm\.leads\.read/ }));
+    fireEvent.click(within(editor).getByRole('button', { name: 'مراجعة التغييرات' }));
+    fireEvent.click(await within(editor).findByRole('button', { name: 'حفظ تغييرات الصلاحيات' }));
+    expect(await within(editor).findByText(/غير مسجّلة في الكتالوج/)).toBeTruthy();
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+  });
+});
+
 describe('the permission catalog', () => {
   it('is read-only and labels sensitivity and state separately', async () => {
     fakeApi({});

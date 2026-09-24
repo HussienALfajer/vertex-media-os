@@ -370,6 +370,7 @@ export function RoleDetailPage({ roleId, created }: { roleId: string; created: b
           save={(change) => updateRole(detail.id, change)}
           loadLatest={() => getRole(detail.id)}
           uncertain={copy.roleUncertain}
+          onReload={() => void refreshOrganization(client, 'roles')}
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);

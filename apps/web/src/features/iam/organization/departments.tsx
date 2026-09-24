@@ -361,6 +361,7 @@ export function DepartmentDetailPage({
           save={(change) => updateDepartment(detail.id, change)}
           loadLatest={() => getDepartment(detail.id)}
           uncertain={copy.departmentUncertain}
+          onReload={() => void refreshOrganization(client, 'departments')}
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);

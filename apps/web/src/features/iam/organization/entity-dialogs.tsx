@@ -202,6 +202,7 @@ export function EditEntityDialog({
   loadLatest: readLatest,
   onClose,
   onSaved,
+  onReload,
   uncertain,
 }: {
   record: Department;
@@ -209,6 +210,8 @@ export function EditEntityDialog({
   loadLatest: () => Promise<Department>;
   onClose: () => void;
   onSaved: () => void;
+  /** Reads the record again when the outcome is unknown or the record changed (D-16). */
+  onReload: () => void;
   /** The "result not confirmed" message naming this kind of record. */
   uncertain: string;
 }) {
@@ -232,6 +235,7 @@ export function EditEntityDialog({
         setConflict('stale');
         return;
       }
+      if (failure.described.reload) onReload();
       setErrors(failure.fields);
       setError(failure.message);
     },

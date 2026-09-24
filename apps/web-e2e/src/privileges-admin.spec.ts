@@ -169,11 +169,32 @@ test('the permission editor and its review are accessible in Arabic RTL', async 
   expect(pageErrors).toEqual([]);
 });
 
-test('the role list and the permission catalog are accessible in English LTR', async ({ page }) => {
+test('roles, the permission editor, departments and the catalog are accessible in English LTR', async ({
+  page,
+}) => {
+  const pageErrors: Error[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error));
   await page.addInitScript(() =>
     localStorage.setItem('vertex.ui.preferences', JSON.stringify({ version: 1, language: 'en' })),
   );
   await answerApi(page);
+
+  await page.goto(`/roles/${ROLE.id}`);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await page.getByRole('button', { name: 'Edit permissions' }).click();
+  const editor = page.getByRole('dialog', { name: 'Permissions of “محرر”' });
+  await editor.getByRole('checkbox', { name: /iam\.roles\.manage/ }).check();
+  await editor.getByRole('button', { name: 'Review changes' }).click();
+  await expect(editor.getByRole('heading', { name: 'Added (1)' })).toBeVisible();
+  await expectAccessible(page);
+
+  await page.goto(`/departments/${DEPARTMENT.id}`);
+  await page.getByRole('button', { name: 'Deactivate department' }).click();
+  await expect(page.getByRole('alertdialog', { name: 'Deactivate the department?' })).toContainText(
+    'Members in any access state: 4',
+  );
+  await expectAccessible(page);
+
   await page.goto('/roles');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('row').filter({ hasText: 'editor' })).toContainText('Custom role');
@@ -184,4 +205,5 @@ test('the role list and the permission catalog are accessible in English LTR', a
     'Privileged',
   );
   await expectAccessible(page);
+  expect(pageErrors).toEqual([]);
 });
