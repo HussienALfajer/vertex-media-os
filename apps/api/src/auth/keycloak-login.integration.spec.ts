@@ -183,6 +183,7 @@ describe('sign-in through the real Keycloak', () => {
     const user = await journey.invitedIdentity('replay');
     const browser = newBrowser();
     const login = await browser.api('/api/auth/login');
+    await journey.collectLoginAttempts();
     let page = await open(browser, login.headers.get('location') ?? '', keycloak.baseUrl);
     page = await submit(
       browser,
@@ -234,6 +235,7 @@ describe('logout through the real Keycloak', () => {
 
     // A later sign-in in the same browser needs the password and OTP again (no silent SSO).
     const login = await browser.api('/api/auth/login');
+    await journey.collectLoginAttempts();
     const page = await open(browser, login.headers.get('location') ?? '', keycloak.baseUrl);
     expect(hasForm(page, FORMS.login)).toBe(true);
   });

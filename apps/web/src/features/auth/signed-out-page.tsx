@@ -5,10 +5,14 @@ import { ApiStatus } from '../system-status/api-status';
 import { useAuthMessages, type AuthMessages } from './auth-messages';
 import type { SignedOutReason } from './auth-state';
 
-/** Failure codes the API's sign-in callback returns to the app as `/?authError=` (IAM-R03 D-23). */
+/**
+ * Failure codes the API's sign-in endpoints return to the app as `/?authError=` (IAM-R03 D-23,
+ * IAM-R09 D-03).
+ */
 export const SIGN_IN_FAILURES = [
   'AUTH_ACCESS_DENIED',
   'AUTH_LOGIN_FAILED',
+  'AUTH_RATE_LIMITED',
   'IDENTITY_PROVIDER_UNAVAILABLE',
 ] as const;
 export type SignInFailure = (typeof SIGN_IN_FAILURES)[number];
@@ -24,6 +28,7 @@ type Notice = { tone: Tone; title: keyof AuthMessages; detail: keyof AuthMessage
 const FAILURE_NOTICES: Record<SignInFailure, Notice> = {
   AUTH_ACCESS_DENIED: { tone: 'danger', title: 'accessDeniedTitle', detail: 'accessDeniedDetail' },
   AUTH_LOGIN_FAILED: { tone: 'danger', title: 'loginFailedTitle', detail: 'loginFailedDetail' },
+  AUTH_RATE_LIMITED: { tone: 'warning', title: 'rateLimitedTitle', detail: 'rateLimitedDetail' },
   IDENTITY_PROVIDER_UNAVAILABLE: {
     tone: 'warning',
     title: 'providerUnavailableTitle',

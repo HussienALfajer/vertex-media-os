@@ -74,6 +74,7 @@ describe('authorization context against PostgreSQL', () => {
       ciphers: createTokenCiphers(TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET),
       provider: { refreshSession: async () => ({ ok: false, failure: 'unavailable' }) },
       limits: config.session,
+      clientId: config.oidc.clientId,
     });
     const { secret } = await sessions.establish({
       userId: id,

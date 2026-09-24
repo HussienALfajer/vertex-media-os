@@ -137,6 +137,7 @@ async function sessionFor(userId: string): Promise<string> {
     ciphers: createTokenCiphers(TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET),
     provider: { refreshSession: async () => ({ ok: false, failure: 'unavailable' }) },
     limits: testAuthConfig().session,
+    clientId: 'vertex-web',
   });
   const { secret } = await sessions.establish({
     userId,

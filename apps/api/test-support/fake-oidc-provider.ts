@@ -65,6 +65,12 @@ export class FakeOidcProvider {
   refreshIdTokenForm: 'provider' | 'stranger' | 'malformed' = 'provider';
   /** How many refresh grants the provider answered successfully. */
   refreshed = 0;
+  /**
+   * Runs once before the next authorization-code grant is answered, after the code was accepted:
+   * lets a test act, for example deliver a back-channel logout, between the code exchange and the
+   * relying party's session insert (IAM-R09 D-08).
+   */
+  beforeCodeGrantAnswer: (() => Promise<void>) | undefined;
   private readonly codes = new Map<string, IssuedCode>();
   private readonly refreshTokens = new Map<string, RefreshGrant>();
 
@@ -155,7 +161,7 @@ export class FakeOidcProvider {
     signWith: 'provider' | 'stranger' = 'provider',
   ): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
-    return this.sign(
+    const token = await this.sign(
       compact({
         iss: this.issuer,
         aud: FAKE_CLIENT_ID,
@@ -169,6 +175,9 @@ export class FakeOidcProvider {
       }),
       signWith,
     );
+    // Forged ones included: none of them may reach a log line (CP1-23).
+    this.issued.push(token);
+    return token;
   }
 
   private endSession(init: RequestInit): Response {
@@ -228,6 +237,9 @@ export class FakeOidcProvider {
       }),
       issued.signWith,
     );
+    const hook = this.beforeCodeGrantAnswer;
+    this.beforeCodeGrantAnswer = undefined;
+    if (hook) await hook();
     return this.tokens(idToken, { subject: issued.subject, sessionId: issued.sessionId });
   }
 

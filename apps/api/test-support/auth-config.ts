@@ -13,6 +13,16 @@ export const TEST_AUTH_ENVIRONMENT = {
   AUTH_TOKEN_ENCRYPTION_SECRET: 'sentinel-token-encryption-secret-000000',
 } as const;
 
+/**
+ * Limits no suite reaches, for suites that sign in or are denied more often per minute than the
+ * defaults allow and do not test the limits themselves (IAM-R09 D-03, D-04).
+ */
+export const UNLIMITED_RATES = {
+  AUTH_RATE_LIMIT_SIGN_IN: '10000',
+  AUTH_RATE_LIMIT_LOGOUT: '10000',
+  AUTH_EVIDENCE_LIMIT: '10000',
+} as const;
+
 export function testAuthConfig(
   overrides: Readonly<Record<string, string | undefined>> = {},
 ): AuthConfig {

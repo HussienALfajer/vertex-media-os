@@ -5,6 +5,7 @@ import type { AuthConfig } from '../config/auth-config.js';
 import { createIamAuthorization, type IamAuthorization } from '../iam/authorization.js';
 import { createIamSignIn, type IamSignIn } from '../iam/sign-in.js';
 import { createOidcClient, type OidcClient } from './oidc.js';
+import { createRateLimiter, type RateLimiter } from './rate-limit.js';
 import { createSessionStore } from './session-store.js';
 import { createSessionService, type SessionService } from './sessions.js';
 import { createTokenCiphers } from './token-cipher.js';
@@ -18,6 +19,12 @@ export interface AuthRuntime {
   readonly iam: IamSignIn;
   /** IAM's authorization-context capabilities, bound (IAM-R04 D-11). */
   readonly authorization: IamAuthorization;
+  /** The per-window limits of IAM-R09 D-03 and D-04, one limiter per bucket. */
+  readonly limits: {
+    readonly signIn: RateLimiter;
+    readonly logout: RateLimiter;
+    readonly evidence: RateLimiter;
+  };
 }
 
 export interface AuthRuntimeOptions {
@@ -40,6 +47,13 @@ export function createAuthRuntime(
   options: AuthRuntimeOptions = {},
 ): AuthRuntime {
   const auditRecorderFor = options.auditRecorderFor ?? createAuditRecorder;
+  const clock = options.now;
+  const limiter = (limit: number) =>
+    createRateLimiter({
+      limit,
+      windowSeconds: config.rateLimits.windowSeconds,
+      ...(clock === undefined ? {} : { now: () => clock().getTime() }),
+    });
   const oidc = createOidcClient(
     config.oidc,
     options.oidcFetch === undefined ? {} : { fetch: options.oidcFetch },
@@ -51,10 +65,16 @@ export function createAuthRuntime(
       ciphers: createTokenCiphers(config.tokenEncryptionSecret),
       provider: oidc,
       limits: config.session,
+      clientId: config.oidc.clientId,
       ...(options.now === undefined ? {} : { now: options.now }),
     }),
     oidc,
     iam: createIamSignIn(database, { auditRecorderFor }),
     authorization: createIamAuthorization(database, { auditRecorderFor }),
+    limits: Object.freeze({
+      signIn: limiter(config.rateLimits.signIn),
+      logout: limiter(config.rateLimits.logout),
+      evidence: limiter(config.rateLimits.evidence),
+    }),
   });
 }

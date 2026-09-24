@@ -7,7 +7,11 @@ import { authPersistenceOf } from '@vertex-os/database/auth';
 import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { TEST_AUTH_ENVIRONMENT, testAuthConfig } from '../../test-support/auth-config.js';
+import {
+  TEST_AUTH_ENVIRONMENT,
+  testAuthConfig,
+  UNLIMITED_RATES,
+} from '../../test-support/auth-config.js';
 import {
   FAKE_CLIENT_SECRET,
   FAKE_ISSUER,
@@ -17,6 +21,7 @@ import {
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
 import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
+import { JWT } from '../../test-support/keycloak-journey.js';
 import { LOGIN_COOKIE, SESSION_COOKIE } from './cookies.js';
 import { seedInvitedUser } from '../../test-support/iam-users.js';
 import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
@@ -45,6 +50,7 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
     app = await createApp(
       loadAppConfig({ NODE_ENV: 'test', LOG_LEVEL: 'info', DATABASE_URL: postgres.url }),
       testAuthConfig({
+        ...UNLIMITED_RATES,
         KEYCLOAK_ISSUER_URL: FAKE_ISSUER,
         KEYCLOAK_WEB_CLIENT_SECRET: FAKE_CLIENT_SECRET,
       }),
@@ -80,6 +86,8 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
     expect(secrets.length).toBeGreaterThan(0);
     expect(provider.verifiers.length).toBeGreaterThan(0);
     for (const secret of handled) expect(output).not.toContain(secret);
+    // Whatever the list above misses, no JWT-shaped value reaches a log line (CP1-23).
+    expect(output).not.toMatch(JWT);
   });
 
   beforeEach(async () => {
@@ -172,6 +180,15 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
   async function audit(): Promise<string[]> {
     const output = await postgres.sql(
       "SELECT action || ':' || result FROM audit_record ORDER BY occurred_at, action",
+    );
+    return output === '' ? [] : output.split('\n');
+  }
+
+  /** The back-channel logout security events: result, target, actor and change. */
+  async function backchannelEvidence(): Promise<string[]> {
+    const output = await postgres.sql(
+      `SELECT result || '|' || target_type || '|' || target_id || '|' || actor_process || '|' || change::text
+       FROM audit_record WHERE action = 'iam.session.backchannel-logout' ORDER BY occurred_at`,
     );
     return output === '' ? [] : output.split('\n');
   }
@@ -554,6 +571,180 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       expect(
         await postgres.sql('SELECT count(*) FROM auth_session WHERE revoked_at IS NOT NULL'),
       ).toBe('0');
+      // Each refusal is a security event naming the client only (spec Section 33; CP1-14).
+      expect(await backchannelEvidence()).toEqual([
+        'REFUSED|iam.oidc-client|vertex-web|iam.backchannel-logout|{"after": {"failure": "rejected"}}',
+        'REFUSED|iam.oidc-client|vertex-web|iam.backchannel-logout|{"after": {"failure": "rejected"}}',
+        'REFUSED|iam.oidc-client|vertex-web|iam.backchannel-logout|{"after": {"failure": "rejected"}}',
+      ]);
+    });
+
+    it('records a valid logout token that matches no session, without identifiers', async () => {
+      const user = await seedUser('ACTIVE');
+      const token = await provider.logoutToken({ sid: 'kc-session-unknown', sub: user.subject });
+      expect((await post(`logout_token=${token}`)).statusCode).toBe(200);
+      expect(await backchannelEvidence()).toEqual([
+        'SUCCEEDED|iam.oidc-client|vertex-web|iam.backchannel-logout|{"after": {"matched": "none"}}',
+      ]);
+      const record = await postgres.sql(
+        "SELECT row_to_json(r)::text FROM audit_record r WHERE action = 'iam.session.backchannel-logout'",
+      );
+      for (const value of ['kc-session-unknown', user.subject, user.id, token]) {
+        expect(record).not.toContain(value);
+      }
+    });
+
+    it('never leaves a live session when the logout arrives between code exchange and session insert', async () => {
+      const user = await seedUser('ACTIVE');
+      // Keycloak ends the SSO session while the API is still exchanging the code (R03 D-3).
+      provider.beforeCodeGrantAnswer = async () => {
+        const token = await provider.logoutToken({ sid: 'kc-session-racing', sub: user.subject });
+        expect((await post(`logout_token=${token}`)).statusCode).toBe(200);
+      };
+      const { response, session } = await signIn({
+        subject: user.subject,
+        sessionId: 'kc-session-racing',
+      });
+      expect(response.headers['location']).toBe('/?authError=AUTH_LOGIN_FAILED');
+      expect(session).toBeUndefined();
+      expect(
+        await postgres.sql(
+          "SELECT revocation_reason || '|' || (id_token_ciphertext IS NULL) FROM auth_session",
+        ),
+      ).toBe('BACKCHANNEL_LOGOUT|true');
+      expect(
+        await postgres.sql(
+          "SELECT actor_process FROM audit_record WHERE action = 'iam.session.revoked'",
+        ),
+      ).toBe('iam.backchannel-logout');
+      // A later sign-in with another Keycloak session is not affected.
+      expect((await signIn({ subject: user.subject })).session).toBeDefined();
+    });
+  });
+
+  describe('rate and evidence limits (IAM-R09 D-03 to D-05)', () => {
+    let limited: NestFastifyApplication;
+
+    beforeAll(async () => {
+      limited = await createApp(
+        loadAppConfig({ NODE_ENV: 'test', LOG_LEVEL: 'info', DATABASE_URL: postgres.url }),
+        testAuthConfig({
+          KEYCLOAK_ISSUER_URL: FAKE_ISSUER,
+          KEYCLOAK_WEB_CLIENT_SECRET: FAKE_CLIENT_SECRET,
+          AUTH_RATE_LIMIT_SIGN_IN: '2',
+          AUTH_RATE_LIMIT_LOGOUT: '1',
+          AUTH_EVIDENCE_LIMIT: '1',
+        }),
+        testProvisioningConfig(),
+        {
+          logStream: { write: (line: string) => lines.push(line) },
+          oidcFetch: provider.fetch,
+        },
+      );
+      await limited.init();
+      await limited.getHttpAdapter().getInstance().ready();
+    });
+
+    afterAll(async () => {
+      await limited?.close();
+    });
+
+    const from = (address: string, extra: Record<string, string> = {}) => ({
+      'x-forwarded-for': address,
+      ...extra,
+    });
+
+    /** One sign-in from `address`: its login and callback use that address's whole budget. */
+    async function signInFrom(address: string, subject: string): Promise<string> {
+      const login = await limited.inject({
+        method: 'GET',
+        url: '/api/auth/login',
+        headers: from(address),
+      });
+      const handle = cookieOf(login, LOGIN_COOKIE);
+      if (handle) secrets.push(handle);
+      const callback = new URL(provider.authorize(String(login.headers['location']), { subject }));
+      const response = await limited.inject({
+        method: 'GET',
+        url: `${callback.pathname}${callback.search}`,
+        headers: from(address, { cookie: `${LOGIN_COOKIE}=${handle}` }),
+      });
+      const session = cookieOf(response, SESSION_COOKIE);
+      if (!session) throw new Error('sign-in failed');
+      secrets.push(session);
+      return session;
+    }
+
+    async function tokenOf(session: string): Promise<string> {
+      const response = await limited.inject({
+        method: 'GET',
+        url: '/api/auth/csrf',
+        headers: withSession(session),
+      });
+      const { token } = response.json() as { token: string };
+      secrets.push(token);
+      return token;
+    }
+
+    it('stores no login attempt for a refused login', async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const login = await limited.inject({
+          method: 'GET',
+          url: '/api/auth/login',
+          headers: from('198.51.100.10'),
+        });
+        const handle = cookieOf(login, LOGIN_COOKIE);
+        if (handle) secrets.push(handle);
+        expect(login.statusCode).toBe(attempt < 2 ? 302 : 303);
+      }
+      expect(await postgres.sql('SELECT count(*) FROM auth_login_attempt')).toBe('2');
+    });
+
+    it('refuses logout beyond the limit for an address with 429 and Retry-After', async () => {
+      const user = await seedUser('ACTIVE');
+      const first = await signInFrom('198.51.100.20', user.subject);
+      const second = await signInFrom('198.51.100.21', user.subject);
+      const logout = async (session: string) =>
+        limited.inject({
+          method: 'POST',
+          url: '/api/auth/logout',
+          headers: from('198.51.100.22', {
+            ...withSession(session),
+            'x-csrf-token': await tokenOf(session),
+          }),
+        });
+      expect((await logout(first)).statusCode).toBe(200);
+      const refused = await logout(second);
+      expect(refused.statusCode).toBe(429);
+      expect(refused.json()).toMatchObject({ code: 'RATE_LIMITED' });
+      expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0);
+      expect(refused.headers['cache-control']).toBe('no-store');
+      const still = await limited.inject({
+        method: 'GET',
+        url: '/api/auth/session',
+        headers: withSession(second),
+      });
+      expect(still.statusCode).toBe(200);
+    });
+
+    it('bounds the evidence of refused logout tokens per address, logging the suppression once', async () => {
+      const start = lines.length;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const token = await provider.logoutToken({}, 'stranger');
+        const response = await limited.inject({
+          method: 'POST',
+          url: '/api/auth/backchannel-logout',
+          headers: from('198.51.100.30', {
+            'content-type': 'application/x-www-form-urlencoded',
+          }),
+          payload: `logout_token=${token}`,
+        });
+        expect(response.statusCode).toBe(400);
+      }
+      expect(await backchannelEvidence()).toHaveLength(1);
+      const own = lines.slice(start);
+      expect(own.filter((line) => line.includes('"auth":"backchannel-logout-rejected"'))).toHaveLength(3);
+      expect(own.filter((line) => line.includes('"auth":"evidence-limited"'))).toHaveLength(1);
     });
   });
 

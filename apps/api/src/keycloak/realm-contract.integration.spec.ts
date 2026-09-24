@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   Browser,
+  findForm,
   FORMS,
   freshTotp,
   hasForm,
@@ -610,6 +611,56 @@ describe('credential policy', () => {
     });
   });
 
+  it('lets no user delete their own OTP credential (CP1-15)', async () => {
+    const action = await json<{ enabled: boolean }>(
+      keycloak.admin('/authentication/required-actions/delete_credential'),
+    );
+    expect(action.enabled).toBe(false);
+
+    const user = await enrolledUser('delete-otp');
+    const otp = async () =>
+      (await json<{ id: string; type: string }[]>(keycloak.admin(`/users/${user.id}/credentials`)))
+        .filter((credential) => credential.type === 'otp');
+    const [credential] = await otp();
+    if (!credential) throw new Error('the enrolment stored no OTP credential');
+
+    // The account console's route: an application-initiated action on the signed-in SSO session.
+    // Were the action available, Keycloak would ask to re-authenticate and to confirm; every page
+    // it shows is answered as the user would, so only a refusal keeps the credential.
+    let page = await open(
+      user.browser,
+      authorizationUrl({ kc_action: `delete_credential:${credential.id}` }),
+      keycloak.baseUrl,
+    );
+    for (let step = 0; step < 4 && page.status === 200; step += 1) {
+      if (hasForm(page, FORMS.login)) {
+        page = await submit(
+          user.browser,
+          page,
+          FORMS.login,
+          { username: user.email, password: TEST_PASSWORD },
+          keycloak.baseUrl,
+        );
+      } else if (hasForm(page, FORMS.otp)) {
+        page = await submit(
+          user.browser,
+          page,
+          FORMS.otp,
+          { otp: freshTotp(user.secret, user.used) },
+          keycloak.baseUrl,
+        );
+      } else {
+        const form = firstForm(page.html);
+        if (!form) break;
+        page = await open(user.browser, new URL(form.action, keycloak.baseUrl).href, keycloak.baseUrl, {
+          method: 'POST',
+          body: new URLSearchParams({ ...form.hidden, accept: '' }),
+        });
+      }
+    }
+    expect(await otp()).toEqual([credential]);
+  });
+
   it('requires TOTP enrolment before a sign-in can complete', async () => {
     const email = uniqueEmail('mfa');
     const user = await provisionUser(email);
@@ -823,12 +874,16 @@ describe('sessions, tokens and realm entry points', () => {
   });
 });
 
-/** A user with the test password and an enrolled TOTP, enrolled through the real sign-in flow. */
+/**
+ * A user with the test password and an enrolled TOTP, enrolled through the real sign-in flow; the
+ * browser keeps the Keycloak SSO session of that sign-in.
+ */
 async function enrolledUser(label: string): Promise<{
   email: string;
   id: string;
   secret: string;
   used: Set<string>;
+  browser: Browser;
 }> {
   const email = uniqueEmail(label);
   const user = await provisionUser(email);
@@ -853,7 +908,15 @@ async function enrolledUser(label: string): Promise<{
     keycloak.baseUrl,
   );
   expect(done.location?.startsWith(`${keycloak.uris.redirect}?`)).toBe(true);
-  return { email, id: user.id, secret, used };
+  return { email, id: user.id, secret, used, browser };
+}
+
+/** The action and hidden fields of the first form on a page, if any. */
+function firstForm(html: string): { action: string; hidden: Record<string, string> } | undefined {
+  const id = /<form[^>]*id="([^"]+)"/.exec(html)?.[1];
+  if (id !== undefined) return findForm(html, id);
+  const action = /<form[^>]*action="([^"]+)"/.exec(html)?.[1];
+  return action === undefined ? undefined : { action: action.replaceAll('&amp;', '&'), hidden: {} };
 }
 
 /** Requests a reset for `username` from the sign-in page; returns the emailed link, if any. */

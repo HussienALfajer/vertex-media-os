@@ -1,15 +1,16 @@
 import type { DatabaseClient } from '@vertex-os/database';
 import { iamPersistenceOf, type IamPersistenceClient } from '@vertex-os/database/iam';
-import type {
-  AuthorizationFacts,
-  AuthorizationReader,
-  DepartmentId,
-  DepartmentState,
-  PermissionCode,
-  PermissionState,
-  RoleState,
-  UserAccessState,
-  UserId,
+import {
+  SYSTEM_ADMINISTRATOR_ROLE_CODE,
+  type AuthorizationFacts,
+  type AuthorizationReader,
+  type DepartmentId,
+  type DepartmentState,
+  type PermissionCode,
+  type PermissionState,
+  type RoleState,
+  type UserAccessState,
+  type UserId,
 } from '@vertex-os/iam/persistence';
 
 /** The one row the statement returns; the enum columns arrive as their text labels. */
@@ -17,6 +18,7 @@ interface FactsRow {
   readonly accessState: string;
   readonly memberships: unknown;
   readonly grants: unknown;
+  readonly holdsSystemAdministratorRole: boolean;
 }
 
 const accessStates: Record<string, UserAccessState> = {
@@ -60,6 +62,20 @@ export async function readAuthorizationFacts(
   client: IamPersistenceClient,
   userId: UserId,
 ): Promise<AuthorizationFacts | undefined> {
+  return (await readActorFacts(client, userId)).facts;
+}
+
+/**
+ * The same statement, with whether the user holds the System Administrator role in any state: the
+ * grant ceiling's view of the actor, read as one snapshot (IAM-R06 DC-4; IAM-R09 D-11).
+ */
+export async function readActorFacts(
+  client: IamPersistenceClient,
+  userId: UserId,
+): Promise<{
+  readonly facts: AuthorizationFacts | undefined;
+  readonly holdsSystemAdministratorRole: boolean;
+}> {
   const rows = await client.$queryRaw<FactsRow[]>`
     SELECT
       u.access_state::text AS "accessState",
@@ -82,11 +98,24 @@ export async function readAuthorizationFacts(
         JOIN iam_role_permission rp ON rp.role_id = r.id
         JOIN iam_permission p ON p.code = rp.permission_code
         WHERE a.user_id = u.id
-      ), '[]'::json) AS "grants"
+      ), '[]'::json) AS "grants",
+      EXISTS (
+        SELECT 1
+        FROM iam_user_role_assignment a
+        JOIN iam_role r ON r.id = a.role_id
+        WHERE a.user_id = u.id AND r.code = ${SYSTEM_ADMINISTRATOR_ROLE_CODE}
+      ) AS "holdsSystemAdministratorRole"
     FROM iam_application_user u
     WHERE u.id = ${userId}::uuid`;
   const row = rows[0];
-  if (row === undefined) return undefined;
+  if (row === undefined) return { facts: undefined, holdsSystemAdministratorRole: false };
+  if (typeof row.holdsSystemAdministratorRole !== 'boolean') {
+    throw new Error('The authorization facts hold a malformed entry.');
+  }
+  return { facts: factsOf(row), holdsSystemAdministratorRole: row.holdsSystemAdministratorRole };
+}
+
+function factsOf(row: FactsRow): AuthorizationFacts {
   return {
     accessState: known(accessStates, row.accessState),
     memberships: list(row.memberships).map((item) => ({

@@ -42,6 +42,7 @@ model AuthSession {
 
   @@index([userId], map: "auth_session_user_id_idx")
   @@index([idpSessionId], map: "auth_session_idp_session_id_idx")
+  @@index([idleExpiresAt], map: "auth_session_idle_expires_at_idx")
   @@map("auth_session")
 }
 

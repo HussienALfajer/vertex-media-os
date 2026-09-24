@@ -463,12 +463,20 @@ async function restrictUser(
   if (committed.outcome !== 'restricted') return committed;
 
   // Every session use re-checks accessState, so access is already denied; revocation ends the
-  // sessions for good (spec Section 32).
-  const sessionsRevoked = await dependencies.sessions.revokeUserSessions(
-    userId.value,
-    sessions,
-    attribution,
-  );
+  // sessions for good (spec Section 32). A failed revocation still lets reconciliation disable the
+  // identity in Keycloak before the failure is reported (IAM-R09 D-10).
+  let sessionsRevoked: number;
+  try {
+    sessionsRevoked = await dependencies.sessions.revokeUserSessions(
+      userId.value,
+      sessions,
+      attribution,
+    );
+  } catch (revocationFailure) {
+    // The revocation failure is the one reported; a reconciliation failure records its own state.
+    await reconcileIdentity(dependencies, request(userId.value, attribution)).catch(() => undefined);
+    throw revocationFailure;
+  }
   const identity = await reconcileIdentity(dependencies, request(userId.value, attribution));
   return {
     outcome: 'restricted',

@@ -22,6 +22,8 @@ const messages = {
     loginFailedDetail: 'لم يكتمل تسجيل الدخول. حاول مرة أخرى.',
     providerUnavailableTitle: 'خدمة الهوية غير متاحة',
     providerUnavailableDetail: 'تعذّر الوصول إلى خدمة الهوية. حاول مرة أخرى بعد قليل.',
+    rateLimitedTitle: 'محاولات تسجيل دخول كثيرة',
+    rateLimitedDetail: 'وصلت محاولات تسجيل الدخول من هذا الجهاز أو الشبكة إلى الحد المسموح. انتظر دقيقة ثم حاول مرة أخرى.',
     loadingSession: 'جارٍ التحقق من الجلسة…',
     unavailableTitle: 'تعذّر التحقق من الجلسة',
     unavailableDetail: 'تعذّر الوصول إلى Vertex OS. تحقّق من الاتصال ثم أعد المحاولة.',
@@ -50,6 +52,9 @@ const messages = {
     loginFailedDetail: 'Sign-in did not complete. Try again.',
     providerUnavailableTitle: 'Identity service unavailable',
     providerUnavailableDetail: 'The identity service could not be reached. Try again shortly.',
+    rateLimitedTitle: 'Too many sign-in attempts',
+    rateLimitedDetail:
+      'Sign-in attempts from this device or network reached the limit. Wait a minute, then try again.',
     loadingSession: 'Checking your session…',
     unavailableTitle: 'Session could not be checked',
     unavailableDetail: 'Vertex OS could not be reached. Check your connection and try again.',

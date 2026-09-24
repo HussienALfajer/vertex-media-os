@@ -48,6 +48,8 @@ class RecordingSessions implements SessionRevocation {
     providerCalls: number;
   }[] = [];
   live = 2;
+  /** When set, the next revocation fails with it, as a database outage would. */
+  failure: Error | undefined;
 
   constructor(
     private readonly iam: InMemoryIam,
@@ -61,6 +63,7 @@ class RecordingSessions implements SessionRevocation {
       accessState: this.iam.users.get(userId)?.accessState,
       providerCalls: this.provider.mutatingCalls().length,
     });
+    if (this.failure) throw this.failure;
     const revoked = this.live;
     this.live = 0;
     return revoked;
@@ -162,6 +165,20 @@ describe('removing access (spec Section 31.1)', () => {
     });
     expect(sessions.calls).toHaveLength(1);
     expect(iam.get().accessState).toBe('SUSPENDED');
+  });
+
+  it('still disables the identity when revoking the sessions fails, then reports that failure', async () => {
+    const { iam, provider, sessions, dependencies } = active();
+    sessions.failure = new Error('session store unavailable');
+
+    await expect(suspendUser(dependencies, { userId }, attribution())).rejects.toThrow(
+      'session store unavailable',
+    );
+
+    // The denial committed, and Keycloak no longer authenticates the identity (IAM-R09 D-10).
+    expect(iam.get()).toMatchObject({ accessState: 'SUSPENDED', identitySyncState: 'SYNCED' });
+    expect(provider.mutatingCalls()).toEqual(['setEnabled:false', 'terminateSessions']);
+    expect(trail(iam)).toEqual(['iam.user.suspended:SUCCEEDED', 'iam.user.identity-reconciled:SUCCEEDED']);
   });
 
   it('refuses transitions outside the table without writing or revoking anything', async () => {

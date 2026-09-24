@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import { hasPermission, type AuthorizationContext, type PermissionCode } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthRuntime } from './auth-runtime.js';
+import { logEvidenceLimited } from './evidence-log.js';
 import { requireAuthorization, requireSession, traceIdOf } from './request-session.js';
 
 /** Injection token of the composed {@link AuthRuntime}; private to the authentication module. */
@@ -97,18 +98,25 @@ export class AccessGuard implements CanActivate {
     if (hasPermission(actor, required)) return true;
 
     request.log.warn({ auth: 'authorization-denied', permission: required }, 'permission denied');
-    try {
-      await this.runtime.authorization.recordAuthorizationDenial({
-        userId: actor.userId,
-        permissionCode: required,
-        traceId: traceIdOf(request),
-      });
-    } catch (error) {
-      // The request stays denied; only the evidence is missing, and that is reported (D-15).
-      request.log.error(
-        { err: error, auth: 'authorization-denial-unrecorded' },
-        'authorization denial could not be recorded',
-      );
+    // One user's denials write at most the evidence limit of Audit records per window; beyond it
+    // they are logged only, and the first suppression is the alert signal (IAM-R09 D-04).
+    const evidence = this.runtime.limits.evidence.take(`denial:${actor.userId}`);
+    if (evidence.allowed) {
+      try {
+        await this.runtime.authorization.recordAuthorizationDenial({
+          userId: actor.userId,
+          permissionCode: required,
+          traceId: traceIdOf(request),
+        });
+      } catch (error) {
+        // The request stays denied; only the evidence is missing, and that is reported (D-15).
+        request.log.error(
+          { err: error, auth: 'authorization-denial-unrecorded' },
+          'authorization denial could not be recorded',
+        );
+      }
+    } else if (evidence.first) {
+      logEvidenceLimited(request, 'authorization-denial');
     }
     throw new ForbiddenException('The required permission is missing.', {
       errorCode: 'AUTHORIZATION_DENIED',

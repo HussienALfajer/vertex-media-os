@@ -157,6 +157,7 @@ describe('authentication endpoints without PostgreSQL or Keycloak', () => {
     expect(paths['/api/auth/session']?.get?.responses).toHaveProperty('401');
     expect(paths['/api/auth/csrf']?.get?.responses).toHaveProperty('200');
     expect(paths['/api/auth/logout']?.post?.responses).toHaveProperty('403');
+    expect(paths['/api/auth/logout']?.post?.responses).toHaveProperty('429');
     expect(paths['/api/auth/logout']?.post?.parameters).toContainEqual(
       expect.objectContaining({ name: 'X-CSRF-Token', in: 'header', required: true }),
     );
@@ -171,5 +172,70 @@ describe('authentication endpoints without PostgreSQL or Keycloak', () => {
     const records = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(records.at(-1)).toMatchObject({ stackOmitted: true, context: 'A2-01' });
     expect(lines.join('')).not.toContain(`stack-${SENTINEL}`);
+  });
+});
+
+describe('sign-in rate limit (IAM-R09 D-03, D-04)', () => {
+  let app: NestFastifyApplication;
+  const lines: string[] = [];
+
+  beforeAll(async () => {
+    app = await createApp(
+      loadAppConfig({
+        NODE_ENV: 'test',
+        LOG_LEVEL: 'info',
+        DATABASE_URL: 'postgresql://vertex:unused@127.0.0.1:1/vertex_os',
+      }),
+      testAuthConfig({ AUTH_RATE_LIMIT_SIGN_IN: '2' }),
+      testProvisioningConfig(),
+      { logStream: { write: (line: string) => lines.push(line) } },
+    );
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  const from = (forwardedFor: string) => ({ 'x-forwarded-for': forwardedFor });
+
+  it('counts login and callback per client address and refuses beyond the limit', async () => {
+    const login = await app.inject({ method: 'GET', url: '/api/auth/login', headers: from('10.0.0.1') });
+    expect(login.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
+    const callback = await app.inject({
+      method: 'GET',
+      url: '/api/auth/callback?code=c&state=s',
+      headers: from('10.0.0.1'),
+    });
+    expect(callback.headers['location']).toBe('/?authError=AUTH_LOGIN_FAILED');
+
+    lines.length = 0;
+    for (const url of ['/api/auth/login', '/api/auth/callback?code=c&state=s']) {
+      const refused = await app.inject({ method: 'GET', url, headers: from('10.0.0.1') });
+      expect(refused.statusCode).toBe(303);
+      expect(refused.headers['location']).toBe('/?authError=AUTH_RATE_LIMITED');
+      expect(refused.headers['cache-control']).toBe('no-store');
+      expect(refused.headers['set-cookie']).toContain('__Host-vertex-login=; Path=/; Max-Age=0');
+    }
+    // One log line per window, not one per refusal.
+    const limited = lines.filter((line) => line.includes('"auth":"rate-limited"'));
+    expect(limited).toHaveLength(1);
+    expect(limited[0]).toContain('"bucket":"sign-in"');
+
+    const other = await app.inject({ method: 'GET', url: '/api/auth/login', headers: from('10.0.0.2') });
+    expect(other.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
+  });
+
+  it('keys on the address the proxy appended, ignoring addresses a client prepends', async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await app.inject({ method: 'GET', url: '/api/auth/login', headers: from('10.0.0.3') });
+    }
+    const spoofed = await app.inject({
+      method: 'GET',
+      url: '/api/auth/login',
+      headers: from('192.0.2.77, 10.0.0.3'),
+    });
+    expect(spoofed.headers['location']).toBe('/?authError=AUTH_RATE_LIMITED');
   });
 });

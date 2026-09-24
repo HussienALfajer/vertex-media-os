@@ -14,6 +14,7 @@ const MIGRATIONS = [
   '20260923190000_auth_sessions',
   '20260923210000_auth_session_refresh_token',
   '20260924020000_auth_session_lifecycle',
+  '20260924200000_auth_session_housekeeping',
 ];
 
 describe('IAM migration history against real PostgreSQL', () => {

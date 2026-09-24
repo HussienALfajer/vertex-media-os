@@ -7,7 +7,7 @@ import { AppModule, type AppModuleOptions } from './app.module.js';
 import { type AppConfig } from './config/app-config.js';
 import type { AuthConfig } from './config/auth-config.js';
 import type { IdentityProvisioningConfig } from './config/identity-provisioning-config.js';
-import { ProblemDetailsFilter } from './http/problem-details.js';
+import { ProblemDetailsFilter, RequestValidationException } from './http/problem-details.js';
 import { REQUEST_ID_HEADER, resolveRequestId } from './http/request-id.js';
 import { PinoLoggerService } from './logging/pino-logger.service.js';
 import { safeErrorSerializer } from './logging/safe-error-serializer.js';
@@ -53,11 +53,28 @@ export async function createApp(
     requestIdHeader: false,
     genReqId: resolveRequestId,
     bodyLimit: BODY_LIMIT_BYTES,
+    // The API listens on loopback behind the local reverse proxy, so `request.ip` is the client
+    // address that proxy appended to `X-Forwarded-For`; addresses a client prepends are ignored.
+    // Rate limits key on it (IAM-R09 D-04).
+    trustProxy: 'loopback',
   });
 
   const fastify = adapter.getInstance();
   fastify.addHook('onRequest', async (request, reply) => {
     void reply.header(REQUEST_ID_HEADER, request.id);
+  });
+  // Fastify's own JSON parser (prototype-poisoning checks on) stays; a body it refuses is a request
+  // validation failure with the stable code, never an echo of the body (IAM-R07 SA-2; IAM-R09 D-09).
+  const parseJson = fastify.getDefaultJsonParser('error', 'error');
+  fastify.removeContentTypeParser('application/json');
+  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+    parseJson(request, body, (error, value) => {
+      if (error) {
+        done(new RequestValidationException(['body']), undefined);
+        return;
+      }
+      done(null, value);
+    });
   });
   // Form bodies are accepted by the back-channel logout route only; any other route answers 415.
   fastify.addContentTypeParser(
@@ -78,8 +95,8 @@ export async function createApp(
     {
       logger: new PinoLoggerService(fastify.log),
       abortOnError: false,
-      // Nest would add its own JSON and form parsers for every route. Fastify's built-in JSON parser
-      // (prototype-poisoning checks on) and the restricted form parser above are the only ones.
+      // Nest would add its own JSON and form parsers for every route. Fastify's default JSON parser
+      // (prototype-poisoning checks on, wrapped above) and the restricted form parser are the only ones.
       bodyParser: false,
     },
   );

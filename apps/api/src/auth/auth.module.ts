@@ -7,7 +7,13 @@ import { AuthController } from './auth.controller.js';
 import { createAuthRuntime, type AuthRuntimeOptions } from './auth-runtime.js';
 import { AccessGuard, AUTH_RUNTIME, createCurrentActor, CURRENT_ACTOR } from './access.guard.js';
 import type { AuthRuntime } from './auth-runtime.js';
+import { AuthHousekeeping, HOUSEKEEPING_INTERVAL } from './housekeeping.js';
 import { createUserSessionRevocation, USER_SESSION_REVOCATION } from './session-revocation.js';
+
+export interface AuthModuleOptions extends AuthRuntimeOptions {
+  /** Schedules session housekeeping at this interval (IAM-R09 D-07); the server entry sets it. */
+  readonly housekeepingIntervalMs?: number;
+}
 
 /**
  * Browser authentication (IAM-R03): the BFF endpoints and the global access guard (IAM-R04),
@@ -15,7 +21,8 @@ import { createUserSessionRevocation, USER_SESSION_REVOCATION } from './session-
  */
 @Module({})
 export class AuthModule {
-  static forRoot(config: AuthConfig, options: AuthRuntimeOptions = {}): DynamicModule {
+  static forRoot(config: AuthConfig, options: AuthModuleOptions = {}): DynamicModule {
+    const { housekeepingIntervalMs, ...runtimeOptions } = options;
     return {
       module: AuthModule,
       // Global for its exports: any module's handlers can inject the current actor (IAM-R04 D-10);
@@ -27,7 +34,8 @@ export class AuthModule {
         {
           provide: AUTH_RUNTIME,
           inject: [DATABASE_CLIENT],
-          useFactory: (database: DatabaseClient) => createAuthRuntime(config, database, options),
+          useFactory: (database: DatabaseClient) =>
+            createAuthRuntime(config, database, runtimeOptions),
         },
         {
           provide: CURRENT_ACTOR,
@@ -40,6 +48,8 @@ export class AuthModule {
           useFactory: (runtime: AuthRuntime) => createUserSessionRevocation(runtime),
         },
         { provide: APP_GUARD, useClass: AccessGuard },
+        { provide: HOUSEKEEPING_INTERVAL, useValue: housekeepingIntervalMs },
+        AuthHousekeeping,
       ],
       exports: [CURRENT_ACTOR, USER_SESSION_REVOCATION],
     };

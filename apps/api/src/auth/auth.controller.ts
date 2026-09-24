@@ -1,4 +1,14 @@
-import { Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -9,6 +19,7 @@ import {
   ApiOkResponse,
   ApiResponse,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -25,6 +36,8 @@ import {
   sessionCookie,
 } from './cookies.js';
 import { AUTH_RUNTIME, Public } from './access.guard.js';
+import { logEvidenceLimited } from './evidence-log.js';
+import type { RateLimiter } from './rate-limit.js';
 import {
   requireSession,
   systemAttribution,
@@ -32,8 +45,12 @@ import {
   userAttribution,
 } from './request-session.js';
 
-/** Browser-visible outcome codes of a failed sign-in (IAM-R03 D-23). */
-type SignInFailure = 'AUTH_ACCESS_DENIED' | 'AUTH_LOGIN_FAILED' | 'IDENTITY_PROVIDER_UNAVAILABLE';
+/** Browser-visible outcome codes of a failed sign-in (IAM-R03 D-23, IAM-R09 D-03). */
+type SignInFailure =
+  | 'AUTH_ACCESS_DENIED'
+  | 'AUTH_LOGIN_FAILED'
+  | 'AUTH_RATE_LIMITED'
+  | 'IDENTITY_PROVIDER_UNAVAILABLE';
 
 const NO_STORE = 'no-store';
 const problem = { content: { [PROBLEM_CONTENT_TYPE]: { schema: ProblemDetailsSchema } } };
@@ -51,8 +68,17 @@ export class AuthController {
   @Get('login')
   @Public()
   @ApiResponse({ status: 302, description: 'Redirect to the identity provider.' })
-  @ApiResponse({ status: 303, description: 'Sign-in cannot start: back to the app (`authError`).' })
+  @ApiResponse({
+    status: 303,
+    description:
+      'Sign-in cannot start: back to the app as `/?authError=` with `AUTH_RATE_LIMITED`, ' +
+      '`AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`.',
+  })
   async login(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
+    // A refused request stores no login attempt (IAM-R09 D-03).
+    if (!admit(request, this.runtime.limits.signIn, 'sign-in')) {
+      return this.signInFailed(reply, 'AUTH_RATE_LIMITED');
+    }
     // Every outcome, including an unexpected failure, ends in a redirect back to the app (D-23).
     try {
       await this.startSignIn(request, reply);
@@ -97,9 +123,12 @@ export class AuthController {
     status: 303,
     description:
       'Back to the app: `/` when signed in, otherwise `/?authError=` with `AUTH_ACCESS_DENIED`, ' +
-      '`AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`.',
+      '`AUTH_LOGIN_FAILED`, `AUTH_RATE_LIMITED` or `IDENTITY_PROVIDER_UNAVAILABLE`.',
   })
   async callback(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
+    if (!admit(request, this.runtime.limits.signIn, 'sign-in')) {
+      return this.signInFailed(reply, 'AUTH_RATE_LIMITED');
+    }
     // Every outcome, including an unexpected failure, ends in a redirect back to the app (D-23).
     try {
       await this.completeSignIn(request, reply);
@@ -165,13 +194,21 @@ export class AuthController {
         'session revoked',
       );
     }
-    const { secret } = await this.runtime.sessions.establish({
+    const { secret, endedByProvider } = await this.runtime.sessions.establish({
       userId: result.userId,
       idpSessionId: identity.value.idpSessionId,
       idToken: identity.value.idToken,
       refreshToken: identity.value.refreshToken,
       attribution,
     });
+    if (endedByProvider) {
+      // Keycloak logged this sign-in's session out while it completed (IAM-R09 D-08).
+      request.log.warn(
+        { auth: 'sign-in-failed', reason: 'provider-session-ended' },
+        'sign-in failed',
+      );
+      return this.signInFailed(reply, 'AUTH_LOGIN_FAILED');
+    }
     // A new sign-in in the same browser replaces the session it held (session rotation). The new
     // session exists already, so a failure here is logged and the sign-in still completes.
     if (previous.outcome === 'valid') {
@@ -254,10 +291,22 @@ export class AuthController {
     description: '`CSRF_VALIDATION_FAILED` or `IAM_USER_INACTIVE`.',
     ...problem,
   })
+  @ApiTooManyRequestsResponse({
+    description: '`RATE_LIMITED`: too many logout requests from this address; see `Retry-After`.',
+    ...problem,
+  })
   async logout(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<LogoutResponse> {
+    const limited = this.runtime.limits.logout.take(`logout:${request.ip}`);
+    if (!limited.allowed) {
+      if (limited.first) logLimited(request, 'logout');
+      void reply.header('retry-after', String(limited.retryAfterSeconds));
+      throw new HttpException('Too many logout requests; retry later.', HttpStatus.TOO_MANY_REQUESTS, {
+        errorCode: 'RATE_LIMITED',
+      });
+    }
     const { session, user } = await requireSession(this.runtime, request, reply);
     const idToken = this.runtime.sessions.idTokenOf(session);
     await this.runtime.sessions.revoke(session, 'LOGOUT', userAttribution(request, user.id));
@@ -321,6 +370,16 @@ export class AuthController {
         { auth: 'backchannel-logout-rejected', failure: verified.failure, code: verified.code },
         'back-channel logout rejected',
       );
+      // Anyone can post here, so the Audit evidence of refusals is bounded per address (D-04, D-05).
+      const evidence = this.runtime.limits.evidence.take(`backchannel-refused:${request.ip}`);
+      if (evidence.allowed) {
+        await this.runtime.sessions.recordBackchannelLogout({
+          outcome: verified.failure,
+          attribution: systemAttribution(request, 'iam.backchannel-logout'),
+        });
+      } else if (evidence.first) {
+        logEvidenceLimited(request, 'backchannel-logout-refused');
+      }
       void reply.code(400).send({ error: 'invalid_request' });
       return;
     }
@@ -347,6 +406,10 @@ export class AuthController {
               attribution,
             );
     }
+    // Each revoked session has its own record; a valid token that matched none needs one (CP1-14).
+    if (revoked === 0) {
+      await this.runtime.sessions.recordBackchannelLogout({ outcome: 'no-match', attribution });
+    }
     request.log.info({ auth: 'backchannel-logout', revoked }, 'back-channel logout processed');
     void reply.code(200).send();
   }
@@ -360,6 +423,21 @@ export class AuthController {
       .header('location', `/?authError=${code}`)
       .send();
   }
+}
+
+/**
+ * Counts the request against `limiter` for its client address (IAM-R09 D-03, D-04) and says
+ * whether it may proceed. The first refusal of each window is logged; later ones are not, so a
+ * flood cannot flood the log.
+ */
+function admit(request: FastifyRequest, limiter: RateLimiter, bucket: string): boolean {
+  const decision = limiter.take(`${bucket}:${request.ip}`);
+  if (!decision.allowed && decision.first) logLimited(request, bucket);
+  return decision.allowed;
+}
+
+function logLimited(request: FastifyRequest, bucket: string): void {
+  request.log.warn({ auth: 'rate-limited', bucket }, 'rate limit reached for this window');
 }
 
 function logoutTokenOf(body: unknown): string | undefined {

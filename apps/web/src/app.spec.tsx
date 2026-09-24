@@ -272,6 +272,7 @@ describe('session experience', () => {
   it.each([
     ['AUTH_ACCESS_DENIED', 'تعذّر منح الوصول'],
     ['AUTH_LOGIN_FAILED', 'تعذّر إكمال تسجيل الدخول'],
+    ['AUTH_RATE_LIMITED', 'محاولات تسجيل دخول كثيرة'],
     ['IDENTITY_PROVIDER_UNAVAILABLE', 'خدمة الهوية غير متاحة'],
   ])('explains the failed sign-in %s and removes it from the address', async (code, title) => {
     routeFetch(signedOut());

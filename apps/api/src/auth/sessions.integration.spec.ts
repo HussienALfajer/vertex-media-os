@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
 import type { OidcResult, RefreshedSession } from './oidc.js';
 import { csrfTokenFor, hashSecret, newSecret } from './secrets.js';
-import { createSessionStore } from './session-store.js';
+import { createSessionStore, HOUSEKEEPING_BATCH } from './session-store.js';
 import { createSessionService, type SessionService } from './sessions.js';
 import { createTokenCiphers } from './token-cipher.js';
 
@@ -15,6 +15,7 @@ const LIMITS = {
   idleTimeoutSeconds: 1800,
   absoluteTimeoutSeconds: 36000,
   loginAttemptTimeoutSeconds: 600,
+  retentionDays: 30,
 };
 const MINUTE = 60_000;
 const ENCRYPTION_SECRET = 'sentinel-token-encryption-secret-000000';
@@ -66,6 +67,7 @@ describe('application sessions against real PostgreSQL', () => {
         },
       },
       limits: LIMITS,
+      clientId: 'vertex-web',
       now: () => clock,
     });
   }
@@ -608,7 +610,7 @@ describe('application sessions against real PostgreSQL', () => {
     ]);
   });
 
-  it('discards the tokens of an expired session when it is seen, and in the sign-in sweep', async () => {
+  it('discards the tokens of an expired session when it is seen, and in housekeeping', async () => {
     const seen = await establish();
     const unseen = await establish();
     advance(30 * MINUTE);
@@ -619,7 +621,11 @@ describe('application sessions against real PostgreSQL', () => {
          FROM auth_session ORDER BY id = '${seen.session.id}' DESC`,
       );
     expect((await tokens()).split(/\s+/)).toEqual(['t|t', 'f|f']);
-    await sessions.startLogin({ state: 's', nonce: 'n', codeVerifier: 'v' });
+    expect(await sessions.housekeep()).toEqual({
+      loginAttemptsDeleted: 0,
+      sessionTokensDiscarded: 1,
+      sessionsPurged: 0,
+    });
     expect((await tokens()).split(/\s+/)).toEqual(['t|t', 't|t']);
     expect(unseen.session.id).not.toBe(seen.session.id);
   });
@@ -684,12 +690,14 @@ describe('application sessions against real PostgreSQL', () => {
       expect(await auth().authLoginAttempt.count()).toBe(0);
     });
 
-    it('expire, are removed when used late, and old ones are purged by new attempts', async () => {
+    it('expire, are removed when used late, and expired ones are deleted by housekeeping', async () => {
       const late = await sessions.startLogin(secrets);
       const abandoned = await sessions.startLogin(secrets);
       advance(10 * MINUTE);
       await expect(sessions.finishLogin(late)).resolves.toEqual({ outcome: 'expired' });
       await sessions.startLogin(secrets);
+      expect(await auth().authLoginAttempt.count()).toBe(2);
+      expect((await sessions.housekeep()).loginAttemptsDeleted).toBe(1);
       expect(await auth().authLoginAttempt.count()).toBe(1);
       await expect(sessions.finishLogin(abandoned)).resolves.toEqual({ outcome: 'missing' });
     });
@@ -700,6 +708,117 @@ describe('application sessions against real PostgreSQL', () => {
       expect(attempt?.handleHash).toBe(hashSecret(handle));
       expect(JSON.stringify(attempt)).not.toContain(handle);
       await expect(sessions.finishLogin('not-a-handle')).resolves.toEqual({ outcome: 'missing' });
+    });
+  });
+
+  describe('housekeeping (IAM-R09 D-06, D-07)', () => {
+    const DAY = 24 * 60 * MINUTE;
+    const store = () => createSessionStore(database, { auditRecorderFor: createAuditRecorder });
+
+    /** Inserts `count` sessions whose idle deadline is `idleAt`, each holding both tokens. */
+    async function insertSessions(count: number, idleAt: Date, label: string): Promise<void> {
+      await postgres.sql(`INSERT INTO auth_session (token_hash, csrf_token_hash, user_id, idp_session_id,
+          created_at, last_seen_at, idle_expires_at, absolute_expires_at, id_token_ciphertext,
+          id_token_key_version, refresh_token_ciphertext, refresh_token_key_version)
+        SELECT substr(md5('${label}-t-' || i) || md5('${label}-u-' || i), 1, 43),
+          substr(md5('${label}-c-' || i) || md5('${label}-d-' || i), 1, 43), gen_random_uuid(),
+          '${label}-' || i, ts - interval '10 minutes', ts - interval '10 minutes', ts,
+          ts + interval '1 hour', 'sealed-id', 1, 'sealed-refresh', 1
+        FROM generate_series(1, ${count}) AS i, (SELECT '${idleAt.toISOString()}'::timestamptz AS ts) AS t`);
+    }
+
+    /** Runs `statements` in one transaction that holds its locks and resolves once it sleeps. */
+    async function holdLocks(statements: string, seconds = 1.5): Promise<{ done: Promise<string> }> {
+      const marker = `hold_${randomUUID().replaceAll('-', '')}`;
+      const done = postgres.sql(`BEGIN; ${statements}; SELECT pg_sleep(${seconds}) AS ${marker}; COMMIT;`);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const sleeping = await postgres.sql(
+          `SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%AS ${marker}%' AND wait_event = 'PgSleep'`,
+        );
+        if (sleeping === '1') return { done };
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error('the lock-holding transaction never started sleeping');
+    }
+
+    it('purges only the rows whose idle deadline is older than the retention period', async () => {
+      const old = await establish();
+      advance(10 * MINUTE);
+      await sessions.revoke(old.session, 'LOGOUT', attribution());
+      const recent = await establish();
+      // 30 days of retention (LIMITS): the first row's idle deadline passes it first.
+      advance(30 * DAY + 20 * MINUTE);
+      expect(await sessions.housekeep()).toEqual({
+        loginAttemptsDeleted: 0,
+        sessionTokensDiscarded: 1,
+        sessionsPurged: 1,
+      });
+      const left = await auth().authSession.findMany({ select: { id: true } });
+      expect(left).toEqual([{ id: recent.session.id }]);
+      // Their establishment and revocation evidence stays (IAM-R09 D-07).
+      expect(await auditActions()).toEqual([
+        'iam.session.established:SUCCEEDED',
+        'iam.session.revoked:SUCCEEDED',
+        'iam.session.established:SUCCEEDED',
+      ]);
+      advance(20 * MINUTE);
+      expect((await sessions.housekeep()).sessionsPurged).toBe(1);
+      expect(await auth().authSession.count()).toBe(0);
+    });
+
+    it('works through a backlog in batches within one run', async () => {
+      const count = HOUSEKEEPING_BATCH * 2 + 50;
+      await insertSessions(count, new Date(clock.getTime() - MINUTE), 'backlog');
+      await insertSessions(3, new Date(clock.getTime() + 30 * MINUTE), 'live');
+      expect(await sessions.housekeep()).toEqual({
+        loginAttemptsDeleted: 0,
+        sessionTokensDiscarded: count,
+        sessionsPurged: 0,
+      });
+      expect(
+        await postgres.sql(
+          'SELECT count(*) FROM auth_session WHERE id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL',
+        ),
+      ).toBe('3');
+    });
+
+    it('never clears the tokens of a session a concurrent re-validation made live (CP1-22)', async () => {
+      const { session } = await establish();
+      const expired = new Date(clock.getTime() + 30 * MINUTE + MINUTE);
+      // An in-flight re-validation slides the idle deadline under its row lock, as
+      // applyRevalidation does, while housekeeping selects the row from the old version.
+      const hold = await holdLocks(
+        `UPDATE auth_session SET idle_expires_at = '${new Date(expired.getTime() + 30 * MINUTE).toISOString()}'
+          WHERE id = '${session.id}'`,
+      );
+      const run = store().housekeep({ now: expired, purgeBefore: new Date(0) });
+      let waiting = '0';
+      for (let attempt = 0; attempt < 100 && waiting !== '1'; attempt += 1) {
+        waiting = await postgres.sql(
+          "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE auth_session%'",
+        );
+        if (waiting !== '1') await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe('1');
+      await hold.done;
+      expect((await run).sessionTokensDiscarded).toBe(0);
+      const row = await auth().authSession.findUniqueOrThrow({ where: { id: session.id } });
+      expect(row.idTokenCiphertext).not.toBeNull();
+      expect(row.refreshTokenCiphertext).not.toBeNull();
+    });
+
+    it('finds its rows through the idle-deadline index', async () => {
+      await insertSessions(20_000, new Date(clock.getTime() + 30 * MINUTE), 'many');
+      await insertSessions(5, new Date(clock.getTime() - MINUTE), 'few');
+      await postgres.sql('ANALYZE auth_session');
+      const at = `'${clock.toISOString()}'::timestamptz`;
+      for (const statement of [
+        `SELECT id FROM auth_session WHERE idle_expires_at <= ${at}
+          AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL) LIMIT 200`,
+        `SELECT id FROM auth_session WHERE idle_expires_at <= ${at} LIMIT 200`,
+      ]) {
+        expect(await postgres.sql(`EXPLAIN ${statement}`)).toContain('auth_session_idle_expires_at_idx');
+      }
     });
   });
 });
