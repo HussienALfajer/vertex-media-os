@@ -12,6 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteRouteImport } from './routes/_app/route'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as DevUiRouteRouteImport } from './routes/dev/ui/route'
+import { Route as AppDepartmentsIndexRouteImport } from './routes/_app/departments/index'
+import { Route as AppDepartmentsDepartmentIdRouteImport } from './routes/_app/departments/$departmentId'
+import { Route as AppPermissionsIndexRouteImport } from './routes/_app/permissions/index'
+import { Route as AppRolesIndexRouteImport } from './routes/_app/roles/index'
+import { Route as AppRolesRoleIdRouteImport } from './routes/_app/roles/$roleId'
 import { Route as AppUsersIndexRouteImport } from './routes/_app/users/index'
 import { Route as AppUsersUserIdRouteImport } from './routes/_app/users/$userId'
 import { Route as AppUsersNewRouteImport } from './routes/_app/users/new'
@@ -31,6 +36,32 @@ const DevUiRouteRoute = DevUiRouteRouteImport.update({
   id: '/dev/ui',
   path: '/dev/ui',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppDepartmentsIndexRoute = AppDepartmentsIndexRouteImport.update({
+  id: '/departments/',
+  path: '/departments/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppDepartmentsDepartmentIdRoute =
+  AppDepartmentsDepartmentIdRouteImport.update({
+    id: '/departments/$departmentId',
+    path: '/departments/$departmentId',
+    getParentRoute: () => AppRouteRoute,
+  } as any)
+const AppPermissionsIndexRoute = AppPermissionsIndexRouteImport.update({
+  id: '/permissions/',
+  path: '/permissions/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppRolesIndexRoute = AppRolesIndexRouteImport.update({
+  id: '/roles/',
+  path: '/roles/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppRolesRoleIdRoute = AppRolesRoleIdRouteImport.update({
+  id: '/roles/$roleId',
+  path: '/roles/$roleId',
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const AppUsersIndexRoute = AppUsersIndexRouteImport.update({
   id: '/users/',
@@ -61,17 +92,27 @@ const DevUiSectionRoute = DevUiSectionRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/dev/ui': typeof DevUiRouteRouteWithChildren
+  '/departments/$departmentId': typeof AppDepartmentsDepartmentIdRoute
+  '/roles/$roleId': typeof AppRolesRoleIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
   '/users/new': typeof AppUsersNewRoute
   '/dev/ui/$section': typeof DevUiSectionRoute
+  '/departments/': typeof AppDepartmentsIndexRoute
+  '/permissions/': typeof AppPermissionsIndexRoute
+  '/roles/': typeof AppRolesIndexRoute
   '/users/': typeof AppUsersIndexRoute
   '/dev/ui/': typeof DevUiIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
+  '/departments/$departmentId': typeof AppDepartmentsDepartmentIdRoute
+  '/roles/$roleId': typeof AppRolesRoleIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
   '/users/new': typeof AppUsersNewRoute
   '/dev/ui/$section': typeof DevUiSectionRoute
+  '/departments': typeof AppDepartmentsIndexRoute
+  '/permissions': typeof AppPermissionsIndexRoute
+  '/roles': typeof AppRolesIndexRoute
   '/users': typeof AppUsersIndexRoute
   '/dev/ui': typeof DevUiIndexRoute
 }
@@ -80,9 +121,14 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteRouteWithChildren
   '/dev/ui': typeof DevUiRouteRouteWithChildren
   '/_app/': typeof AppIndexRoute
+  '/_app/departments/$departmentId': typeof AppDepartmentsDepartmentIdRoute
+  '/_app/roles/$roleId': typeof AppRolesRoleIdRoute
   '/_app/users/$userId': typeof AppUsersUserIdRoute
   '/_app/users/new': typeof AppUsersNewRoute
   '/dev/ui/$section': typeof DevUiSectionRoute
+  '/_app/departments/': typeof AppDepartmentsIndexRoute
+  '/_app/permissions/': typeof AppPermissionsIndexRoute
+  '/_app/roles/': typeof AppRolesIndexRoute
   '/_app/users/': typeof AppUsersIndexRoute
   '/dev/ui/': typeof DevUiIndexRoute
 }
@@ -91,17 +137,27 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dev/ui'
+    | '/departments/$departmentId'
+    | '/roles/$roleId'
     | '/users/$userId'
     | '/users/new'
     | '/dev/ui/$section'
+    | '/departments/'
+    | '/permissions/'
+    | '/roles/'
     | '/users/'
     | '/dev/ui/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/departments/$departmentId'
+    | '/roles/$roleId'
     | '/users/$userId'
     | '/users/new'
     | '/dev/ui/$section'
+    | '/departments'
+    | '/permissions'
+    | '/roles'
     | '/users'
     | '/dev/ui'
   id:
@@ -109,9 +165,14 @@ export interface FileRouteTypes {
     | '/_app'
     | '/dev/ui'
     | '/_app/'
+    | '/_app/departments/$departmentId'
+    | '/_app/roles/$roleId'
     | '/_app/users/$userId'
     | '/_app/users/new'
     | '/dev/ui/$section'
+    | '/_app/departments/'
+    | '/_app/permissions/'
+    | '/_app/roles/'
     | '/_app/users/'
     | '/dev/ui/'
   fileRoutesById: FileRoutesById
@@ -143,6 +204,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/dev/ui'
       preLoaderRoute: typeof DevUiRouteRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/departments/': {
+      id: '/_app/departments/'
+      path: '/departments'
+      fullPath: '/departments/'
+      preLoaderRoute: typeof AppDepartmentsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/departments/$departmentId': {
+      id: '/_app/departments/$departmentId'
+      path: '/departments/$departmentId'
+      fullPath: '/departments/$departmentId'
+      preLoaderRoute: typeof AppDepartmentsDepartmentIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/permissions/': {
+      id: '/_app/permissions/'
+      path: '/permissions'
+      fullPath: '/permissions/'
+      preLoaderRoute: typeof AppPermissionsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/roles/': {
+      id: '/_app/roles/'
+      path: '/roles'
+      fullPath: '/roles/'
+      preLoaderRoute: typeof AppRolesIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/roles/$roleId': {
+      id: '/_app/roles/$roleId'
+      path: '/roles/$roleId'
+      fullPath: '/roles/$roleId'
+      preLoaderRoute: typeof AppRolesRoleIdRouteImport
+      parentRoute: typeof AppRouteRoute
     }
     '/_app/users/': {
       id: '/_app/users/'
@@ -184,15 +280,25 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
+  AppDepartmentsDepartmentIdRoute: typeof AppDepartmentsDepartmentIdRoute
+  AppRolesRoleIdRoute: typeof AppRolesRoleIdRoute
   AppUsersUserIdRoute: typeof AppUsersUserIdRoute
   AppUsersNewRoute: typeof AppUsersNewRoute
+  AppDepartmentsIndexRoute: typeof AppDepartmentsIndexRoute
+  AppPermissionsIndexRoute: typeof AppPermissionsIndexRoute
+  AppRolesIndexRoute: typeof AppRolesIndexRoute
   AppUsersIndexRoute: typeof AppUsersIndexRoute
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppIndexRoute: AppIndexRoute,
+  AppDepartmentsDepartmentIdRoute: AppDepartmentsDepartmentIdRoute,
+  AppRolesRoleIdRoute: AppRolesRoleIdRoute,
   AppUsersUserIdRoute: AppUsersUserIdRoute,
   AppUsersNewRoute: AppUsersNewRoute,
+  AppDepartmentsIndexRoute: AppDepartmentsIndexRoute,
+  AppPermissionsIndexRoute: AppPermissionsIndexRoute,
+  AppRolesIndexRoute: AppRolesIndexRoute,
   AppUsersIndexRoute: AppUsersIndexRoute,
 }
 

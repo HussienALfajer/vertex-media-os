@@ -25,6 +25,9 @@ const RELOAD_CODES = new Set([
   'IAM_DUPLICATE_DEPARTMENT_MEMBERSHIP',
   'IAM_INVITATION_NOT_APPLICABLE',
   'IAM_IDENTITY_SYNC_INCOMPLETE',
+  'IAM_SYSTEM_ROLE_PROTECTED',
+  'IAM_UNKNOWN_PERMISSION',
+  'IAM_PERMISSION_NOT_ASSIGNABLE',
 ]);
 
 /**
@@ -32,7 +35,12 @@ const RELOAD_CODES = new Set([
  * handled by the application's query client and end the signed-in state (IAM-R08 D-10); they
  * still receive a message here in case the view is visible for a moment.
  */
-export function describeMutationFailure(error: unknown, messages: IamMessages): MutationFailure {
+export function describeMutationFailure(
+  error: unknown,
+  messages: IamMessages,
+  /** The "result not confirmed" message of the record in view; the user's by default. */
+  uncertain: string = messages.problemUncertain,
+): MutationFailure {
   const failure = (message: string, extra: Partial<MutationFailure> = {}): MutationFailure => ({
     message,
     reload: false,
@@ -43,7 +51,7 @@ export function describeMutationFailure(error: unknown, messages: IamMessages): 
   });
   if (error instanceof NetworkFailure) {
     // The request may have been applied (DESIGN_SYSTEM Section 28.5): reconcile before a repeat.
-    return failure(messages.problemUncertain, { reload: true });
+    return failure(uncertain, { reload: true });
   }
   if (!isApiProblem(error)) return failure(messages.problemGeneric);
   const reload = error.code !== undefined && RELOAD_CODES.has(error.code);
@@ -88,6 +96,11 @@ function codeMessages(messages: IamMessages): Record<string, string> {
     IAM_USER_NOT_FOUND: messages.problemUserNotFound,
     IAM_ROLE_NOT_FOUND: messages.problemRoleNotFound,
     IAM_DEPARTMENT_NOT_FOUND: messages.problemDepartmentNotFound,
+    IAM_DEPARTMENT_CODE_CONFLICT: messages.problemDepartmentCodeTaken,
+    IAM_ROLE_CODE_CONFLICT: messages.problemRoleCodeTaken,
+    IAM_SYSTEM_ROLE_PROTECTED: messages.problemSystemRoleProtected,
+    IAM_UNKNOWN_PERMISSION: messages.problemUnknownPermission,
+    IAM_PERMISSION_NOT_ASSIGNABLE: messages.problemPermissionNotAssignable,
     IAM_MEMBERSHIP_NOT_FOUND: messages.problemMembershipNotFound,
     IAM_ROLE_ASSIGNMENT_NOT_FOUND: messages.problemAssignmentNotFound,
   };

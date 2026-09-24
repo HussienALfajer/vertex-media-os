@@ -103,11 +103,11 @@ Only those of the Run Contract. An API change found necessary is recorded; if it
 ## 9. Checklist
 
 - [x] M1 Plan committed
-- [ ] M2 Foundation: API client and guards, queries, state labels, refusal codes, navigation, tests
-- [ ] M3 Departments: list, create, detail, edit, activate, deactivate, tests
-- [ ] M4 Roles: list, create, detail, system-role presentation, edit, activate, deactivate, tests
-- [ ] M5 Permission catalog and permission editor with review step, tests
-- [ ] M6 Directory filters by department and role, tests
+- [x] M2 Foundation: API client and guards, queries, state labels, refusal codes, navigation, tests
+- [x] M3 Departments: list, create, detail, edit, activate, deactivate, tests
+- [x] M4 Roles: list, create, detail, system-role presentation, edit, activate, deactivate, tests
+- [x] M5 Permission catalog and permission editor with review step, tests
+- [x] M6 Directory filters by department and role, tests
 - [ ] M7 Browser journey with axe (D-14)
 - [ ] M8 `pnpm verify`, `pnpm test:e2e`
 - [ ] M9 In-run review and fixes

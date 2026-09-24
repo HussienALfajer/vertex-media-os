@@ -63,6 +63,48 @@ const INVITATION: Readonly<Record<string, StateMapping>> = {
   },
 };
 
+/** Department and role state (IAM-R08C D-10). */
+const ENTITY: Readonly<Record<string, StateMapping>> = {
+  ACTIVE: { tone: 'success', icon: 'check-circle', label: { ar: 'نشط', en: 'Active' } },
+  INACTIVE: { tone: 'neutral', icon: 'minus-circle', label: { ar: 'غير نشط', en: 'Inactive' } },
+};
+
+/** Permission catalog state (spec Section 9.5; IAM-R08C D-10). */
+const PERMISSION: Readonly<Record<string, StateMapping>> = {
+  ACTIVE: { tone: 'success', icon: 'check-circle', label: { ar: 'نشطة', en: 'Active' } },
+  DEPRECATED: {
+    tone: 'warning',
+    icon: 'alert-triangle',
+    label: { ar: 'متقادمة', en: 'Deprecated' },
+  },
+  RETIRED: { tone: 'neutral', icon: 'archive', label: { ar: 'مسحوبة', en: 'Retired' } },
+};
+
+/** Permission sensitivity, a fact separate from its state (IAM-R08C D-10). */
+const SENSITIVITY: Readonly<Record<string, StateMapping>> = {
+  STANDARD: { tone: 'neutral', icon: 'minus-circle', label: { ar: 'عادية', en: 'Standard' } },
+  SENSITIVE: {
+    tone: 'warning',
+    icon: 'alert-triangle',
+    label: { ar: 'حساسة', en: 'Sensitive' },
+  },
+  PRIVILEGED: {
+    tone: 'warning',
+    icon: 'shield',
+    label: { ar: 'صلاحية امتيازية', en: 'Privileged' },
+  },
+};
+
+/** The label of a known department or role state, for filters. */
+export function entityStateLabel(state: string, language: Language): string | undefined {
+  return ENTITY[state]?.label[language];
+}
+
+/** The label of a known permission state, for filters. */
+export function permissionStateLabel(state: string, language: Language): string | undefined {
+  return PERMISSION[state]?.label[language];
+}
+
 /** The label of a known access state, for filters and confirmations. */
 export function accessLabel(state: string, language: Language): string | undefined {
   return ACCESS[state]?.label[language];
@@ -101,6 +143,18 @@ export function AccessStatus({ state }: { state: string }) {
 
 export function IdentityStatus({ state }: { state: string }) {
   return <StateIndicator mapping={IDENTITY} value={state} />;
+}
+
+export function EntityStatus({ state }: { state: string }) {
+  return <StateIndicator mapping={ENTITY} value={state} />;
+}
+
+export function PermissionStatus({ state }: { state: string }) {
+  return <StateIndicator mapping={PERMISSION} value={state} />;
+}
+
+export function SensitivityStatus({ sensitivity }: { sensitivity: string }) {
+  return <StateIndicator mapping={SENSITIVITY} value={sensitivity} />;
 }
 
 /**
