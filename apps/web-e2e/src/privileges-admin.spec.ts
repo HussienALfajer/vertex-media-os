@@ -153,9 +153,7 @@ test('the permission editor and its review are accessible in Arabic RTL', async 
 
   await page.goto(`/roles/${ROLE.id}`);
   await expect(page.getByRole('heading', { level: 1, name: 'محرر' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'صلاحيات الدور' })).toContainText(
-    'عرض المستخدمين',
-  );
+  await expect(page.getByRole('region', { name: 'صلاحيات الدور' })).toContainText('عرض المستخدمين');
   await expectAccessible(page);
 
   await page.getByRole('button', { name: 'تعديل الصلاحيات' }).click();
@@ -171,9 +169,7 @@ test('the permission editor and its review are accessible in Arabic RTL', async 
   expect(pageErrors).toEqual([]);
 });
 
-test('the role list and the permission catalog are accessible in English LTR', async ({
-  page,
-}) => {
+test('the role list and the permission catalog are accessible in English LTR', async ({ page }) => {
   await page.addInitScript(() =>
     localStorage.setItem('vertex.ui.preferences', JSON.stringify({ version: 1, language: 'en' })),
   );
