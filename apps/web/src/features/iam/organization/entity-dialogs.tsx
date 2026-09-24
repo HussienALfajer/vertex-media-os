@@ -16,10 +16,12 @@ import { useIamMessages } from '../iam-messages';
 import { describeMutationFailure } from '../iam-problems';
 import { useOrganizationMessages } from './organization-messages';
 
-/** The input bounds IAM applies, in characters (spec Sections 9.2, 9.4; IAM-R08C D-12). */
+/**
+ * The code bound IAM applies (spec Sections 9.2, 9.4). Codes are ASCII, so the input's length is
+ * the code's; names and descriptions are measured by IAM in code points after trimming, which an
+ * input cannot express, so the API alone bounds them (IAM-R08C D-12, review A-1).
+ */
 const CODE_MAX = 64;
-const NAME_MAX = 200;
-const DESCRIPTION_MAX = 2_000;
 
 type FieldName = 'code' | 'name' | 'description';
 type FieldErrors = Partial<Record<FieldName, string>>;
@@ -85,7 +87,6 @@ function EntityFields({
       <Field label={copy.name} error={errors.name} required>
         <Input
           autoComplete="off"
-          maxLength={NAME_MAX}
           value={name}
           readOnly={busy}
           onChange={(event) => onName(event.currentTarget.value)}
@@ -94,7 +95,6 @@ function EntityFields({
       <Field label={copy.description} error={errors.description} optional>
         <Textarea
           rows={3}
-          maxLength={DESCRIPTION_MAX}
           value={description}
           readOnly={busy}
           onChange={(event) => onDescription(event.currentTarget.value)}

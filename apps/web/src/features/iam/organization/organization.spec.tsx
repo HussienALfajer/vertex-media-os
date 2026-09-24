@@ -586,12 +586,17 @@ describe('the permission editor', () => {
     expect(within(editor).getByRole('button', { name: 'حفظ تغييرات الصلاحيات' })).toBeTruthy();
   });
 
-  it('reloads the role when the catalog refuses a code', async () => {
+  it('reloads the role and the catalog when the catalog refuses a code', async () => {
     let reads = 0;
+    let catalogReads = 0;
     fakeApi({
       [roleRoute]: () => {
         reads += 1;
         return json(200, role());
+      },
+      'GET /api/iam/permissions': () => {
+        catalogReads += 1;
+        return json(200, page(CATALOG));
       },
       [`PUT /api/iam/roles/${EDITOR}/permissions`]: () =>
         problem(409, 'IAM_PERMISSION_NOT_ASSIGNABLE'),
@@ -603,6 +608,7 @@ describe('the permission editor', () => {
     fireEvent.click(await within(editor).findByRole('button', { name: 'حفظ تغييرات الصلاحيات' }));
     expect(await within(editor).findByText(/لم تعد نشطة ولا يمكن ربطها/)).toBeTruthy();
     await waitFor(() => expect(reads).toBeGreaterThan(1));
+    await waitFor(() => expect(catalogReads).toBeGreaterThan(1));
   });
 });
 

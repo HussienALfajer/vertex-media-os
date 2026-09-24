@@ -126,6 +126,11 @@ export function refreshUser(client: QueryClient, userId: string): Promise<void> 
   ]).then(() => undefined);
 }
 
+/** After the API refuses a permission code: the catalog's states are read again. */
+export function refreshCatalog(client: QueryClient): Promise<void> {
+  return client.invalidateQueries({ queryKey: ['iam', 'permissions'] });
+}
+
 /**
  * After a department or role mutation: its lists, details and pickers, and every user read,
  * which embeds department and role names and states (IAM-R08C D-04).

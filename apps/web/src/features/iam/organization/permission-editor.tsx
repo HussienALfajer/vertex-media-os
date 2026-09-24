@@ -20,7 +20,7 @@ import {
 } from '../iam-api';
 import { useIamMessages } from '../iam-messages';
 import { describeMutationFailure } from '../iam-problems';
-import { refreshOrganization } from '../iam-queries';
+import { refreshCatalog, refreshOrganization } from '../iam-queries';
 import { SensitivityStatus } from '../iam-states';
 import { PickerNote } from '../users/picker-note';
 import { ReasonField } from '../users/reason-field';
@@ -66,13 +66,15 @@ export function PermissionEditor({
 
   const baseline = latest ?? role;
   const dropped = role.permissionCodes.filter((code) => !kept(code));
-  const added = [...selected].filter((code) => !baseline.permissionCodes.includes(code)).sort();
-  const removed = baseline.permissionCodes.filter((code) => !selected.has(code)).sort();
+  // A choice the reloaded catalog no longer lists as ACTIVE is not requested again.
+  const requested = [...selected].filter(kept).sort();
+  const added = requested.filter((code) => !baseline.permissionCodes.includes(code));
+  const removed = baseline.permissionCodes.filter((code) => !requested.includes(code)).sort();
   const changed = added.length > 0 || removed.length > 0;
   const addsPrivileged = added.some((code) => byCode.get(code)?.sensitivity === 'PRIVILEGED');
 
   const save = useMutation({
-    mutationFn: () => replaceRolePermissions(role.id, [...selected].sort(), version, reason),
+    mutationFn: () => replaceRolePermissions(role.id, requested, version, reason),
     onSuccess: onSaved,
     onError: (failed) => {
       const described = describeMutationFailure(failed, messages, copy.roleUncertain);
@@ -80,7 +82,11 @@ export function PermissionEditor({
         setConflict('stale');
         return;
       }
-      if (described.reload) void refreshOrganization(client, 'roles');
+      if (described.reload) {
+        void refreshOrganization(client, 'roles');
+        // A refused code means the catalog changed: its states are read again (D-11).
+        void refreshCatalog(client);
+      }
       setError(described.message);
     },
   });
