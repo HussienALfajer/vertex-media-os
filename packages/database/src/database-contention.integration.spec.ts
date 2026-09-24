@@ -57,7 +57,7 @@ describe('database contention classification against real PostgreSQL', () => {
     release();
     await holding;
 
-    // The server's statement timeout cancels the wait before the driver abandons it.
+    // The server's statement timeout cancels the wait; the driver gives up only a margin later.
     expect(describeDatabaseError(failure)).toMatchObject({ sqlState: '57014' });
     expect(isDatabaseContention(failure)).toBe(true);
   });

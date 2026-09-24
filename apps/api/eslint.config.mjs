@@ -120,8 +120,9 @@ export default [
   },
   {
     // IAM's inbound transport sees only the bound capabilities (IAM-R07 D-01): neither the private
-    // composition entry nor an adapter, statically or dynamically.
+    // composition entry nor an adapter, statically or dynamically. Tests seed data through them.
     files: ['src/iam/http/**/*.ts'],
+    ignores: ['src/iam/http/**/*.spec.ts'],
     rules: {
       'no-restricted-imports': [
         'error',

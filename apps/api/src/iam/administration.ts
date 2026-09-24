@@ -44,7 +44,7 @@ import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 /**
  * IAM department, membership, role and permission administration bound to its adapters
  * (IAM-R05 D-01, D-03). Every operation takes the caller's attribution; the coarse permission
- * check is the HTTP route's (IAM-MP-11), the resource and state rules are IAM's.
+ * check is the HTTP route's, the resource and state rules are IAM's.
  */
 export interface IamAdministration {
   createDepartment(
@@ -89,7 +89,7 @@ export interface IamAdministrationOptions {
   readonly auditRecorderFor: (handle: DatabaseClient | DatabaseTransaction) => AuditRecorder;
 }
 
-/** Composition root of IAM administration. Not mounted in HTTP; IAM-MP-11 consumes it. */
+/** Composition root of IAM administration; `IamModule` mounts it in HTTP (IAM-R07 D-01). */
 export function createIamAdministration(
   database: DatabaseClient,
   options: IamAdministrationOptions,

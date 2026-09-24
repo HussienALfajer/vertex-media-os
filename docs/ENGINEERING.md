@@ -137,7 +137,7 @@ The implemented backend modules (IAM, Audit) realize this structure as two Nx pr
 - an external-service adapter is a further `layer:adapter` project of the module, with its own private, lint-restricted entry into the core; IAM's Keycloak Admin adapter is `domains/iam-keycloak` (`@vertex-os/iam/identity-provider`) and never reaches the database;
 - composition (wiring adapters to ports) happens in `apps/api`. Use cases that take ports as dependencies stay off the public entry: a module MAY expose them through a private, lint-restricted composition entry that only the API's composition roots import (IAM: `@vertex-os/iam/composition`, imported by `apps/api/src/iam` and `apps/api/src/commands`), which hand out bound capabilities.
 
-Neither project may import NestJS or `@prisma/*` directly. Where inbound transport code (Section 6.4) lives is decided by the first run that adds a module endpoint and is then recorded here.
+Neither project may import NestJS or `@prisma/*` directly. Inbound transport code (Section 6.4) lives in `apps/api/src/<module>/http` (IAM: `apps/api/src/iam/http`, `docs/plans/iam/IAM_R07_HTTP_ADMINISTRATION_PLAN.md` D-01): controllers, request and response schemas and the outcome-to-problem mapping. A module's Nest module beside it (`apps/api/src/iam/iam.module.ts`) mounts the controllers and binds the capabilities; the controllers see only those bound capabilities, never the composition entry or an adapter (lint-enforced). Request and response contracts are Zod schemas from which the OpenAPI components are generated, so validation and documentation cannot drift.
 
 Browser authentication (application sessions, login attempts, CSRF, OIDC) is platform infrastructure, not a business module (`docs/modules/iam.md` Section 6.2). It lives in `apps/api/src/auth`, which alone may import its scoped persistence entry `@vertex-os/database/auth` (lint-enforced), reaches IAM's use cases only through the bound capabilities composed in `apps/api/src/iam` (it imports only value types and `hasPermission` from `@vertex-os/iam`), and appends Audit evidence through the Audit capability bound to its own transactions (`docs/plans/iam/IAM_R03_SESSIONS_AND_OIDC_PLAN.md` D-01). Its global access guard makes every API route require an application session unless the handler is marked `@Public()`, and checks `@RequirePermission()` against the current IAM authorization context (`docs/plans/iam/IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md` D-01 to D-04).
 
@@ -318,7 +318,7 @@ When generated API types/clients exist, equivalent handwritten duplicates SHOULD
 
 Breaking API changes MUST be intentional and coordinated.
 
-Pagination, filtering, sorting, and search conventions MUST be consistent across endpoints.
+Pagination, filtering, sorting, and search conventions MUST be consistent across endpoints. The convention, first defined by IAM (`docs/plans/iam/IAM_R07_HTTP_ADMINISTRATION_PLAN.md` D-03): collections take `page` (from 1) and `pageSize` (1–100, default 25) and answer `{ items, page, pageSize, total }` in a fixed, total order; `search` is a literal, case-insensitive substring (1–100 characters); filters are named query parameters; unknown query parameters are refused.
 
 Transport concerns MUST remain separate from domain behavior.
 

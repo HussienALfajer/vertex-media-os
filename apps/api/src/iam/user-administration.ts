@@ -40,7 +40,7 @@ import type { IdentityProvisioningConfig } from '../config/identity-provisioning
 
 /**
  * IAM user lifecycle administration bound to its adapters (IAM-R06 D-01). Every operation takes
- * the caller's attribution; the coarse permission check is the HTTP route's (IAM-MP-11). Bootstrap
+ * the caller's attribution; the coarse permission check is the HTTP route's. Bootstrap
  * is not here: it is an operator command, never an HTTP capability (spec Section 21).
  */
 export interface IamUserAdministration {
@@ -67,8 +67,8 @@ export type RevokeUserSessions = (
 
 export interface IamUserAdministrationOptions {
   /**
-   * The authentication area's revocation of every live session of a user: `SessionService` in the
-   * HTTP runtime (IAM-MP-11), the session store in the bootstrap command (IAM-R06 review AB-1).
+   * The authentication area's revocation of every live session of a user: `AuthRuntime.sessions`
+   * in the HTTP runtime (IAM-R07 D-09), the session store in the bootstrap command.
    */
   readonly revokeUserSessions: RevokeUserSessions;
   /** Binds MOD-AUDIT's append capability to a transaction; the Audit adapter by default. */
@@ -109,7 +109,7 @@ function userAdministrationDependencies(
   };
 }
 
-/** Composition root of IAM user administration. Not mounted in HTTP; IAM-MP-11 consumes it. */
+/** Composition root of IAM user administration; `IamModule` mounts it in HTTP (IAM-R07 D-01). */
 export function createIamUserAdministration(
   config: IdentityProvisioningConfig,
   database: DatabaseClient,

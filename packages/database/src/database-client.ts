@@ -13,8 +13,8 @@ export interface DatabaseClientOptions {
    * Upper bound for a single statement, enforced where the work happens rather than by a caller
    * that merely stops waiting: PostgreSQL cancels a statement that runs longer
    * (`statement_timeout`), and the driver abandons a statement the server does not answer at all
-   * and discards its connection (`query_timeout`), so a timed-out statement never keeps a
-   * connection busy.
+   * and discards its connection (`query_timeout`, a margin later), so a timed-out statement never
+   * keeps a connection busy.
    */
   readonly statementTimeoutMs?: number;
 }
@@ -78,6 +78,12 @@ export interface TransactionOptions {
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_STATEMENT_TIMEOUT_MS = 5_000;
+/**
+ * How much later the driver gives up than the server (IAM-R07 D-15). With equal bounds the two
+ * timers race, and a lock wait ended by the driver surfaces as a bare driver error instead of the
+ * server's SQLSTATE 57014, which callers classify as contention.
+ */
+const QUERY_TIMEOUT_MARGIN_MS = 1_000;
 // Prisma's own interactive-transaction defaults, stated so they are reviewed choices.
 const DEFAULT_TRANSACTION_TIMEOUT_MS = 5_000;
 const DEFAULT_TRANSACTION_MAX_WAIT_MS = 2_000;
@@ -92,7 +98,7 @@ export function createDatabaseClient(options: DatabaseClientOptions): DatabaseCl
     connectionString: options.connectionString,
     connectionTimeoutMillis: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
     statement_timeout: statementTimeoutMs,
-    query_timeout: statementTimeoutMs,
+    query_timeout: statementTimeoutMs + QUERY_TIMEOUT_MARGIN_MS,
   });
   const prisma = new PrismaClient({ adapter });
 

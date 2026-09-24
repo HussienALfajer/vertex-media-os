@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  DirectorySlice,
-  IamDirectoryReader,
-  UserDirectoryQuery,
-} from './ports/directory-reader.js';
+import type { DirectorySlice, IamDirectoryReader } from './ports/directory-reader.js';
 import { getRole, getUser, listDepartments, listPermissions, listUsers } from './directory.js';
 
 const empty: DirectorySlice<never> = { items: [], total: 0 };
@@ -47,7 +43,7 @@ describe('directory queries (IAM-R07 D-02, D-03)', () => {
       accessState: 'SUSPENDED',
       departmentId: DEPARTMENT,
       roleId: undefined,
-    } satisfies UserDirectoryQuery);
+    });
   });
 
   it('refuses out-of-bound pages, bad search text and unknown filters without reading', async () => {

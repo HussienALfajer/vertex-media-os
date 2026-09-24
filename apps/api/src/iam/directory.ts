@@ -1,15 +1,16 @@
 import type { DatabaseClient } from '@vertex-os/database';
 import type {
+  DepartmentView,
   GetDepartmentResult,
   GetRoleResult,
   GetUserResult,
   ListResult,
   PermissionView,
+  RoleView,
   StateListRequest,
   UserListRequest,
   UserSummary,
 } from '@vertex-os/iam';
-import type { DepartmentView, RoleView } from '@vertex-os/iam';
 import {
   getDepartment,
   getRole,

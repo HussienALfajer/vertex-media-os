@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiConsumes,
   ApiCookieAuth,
   ApiHeader,
@@ -276,8 +277,33 @@ export class AuthController {
   @Post('backchannel-logout')
   @Public()
   @ApiConsumes('application/x-www-form-urlencoded')
+  @ApiBody({
+    required: true,
+    schema: {
+      type: 'object',
+      required: ['logout_token'],
+      properties: {
+        logout_token: {
+          type: 'string',
+          maxLength: 16_384,
+          description: 'The Logout Token (OIDC Back-Channel Logout 1.0 Section 2.4).',
+        },
+      },
+    },
+  })
   @ApiOkResponse({ description: 'The matching sessions are revoked (idempotent).' })
-  @ApiBadRequestResponse({ description: 'The logout token is missing or invalid.' })
+  @ApiBadRequestResponse({
+    description: 'The logout token is missing or invalid (Section 2.8 of the same specification).',
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['error'],
+          properties: { error: { type: 'string', enum: ['invalid_request'] } },
+        },
+      },
+    },
+  })
   async backchannelLogout(
     @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,

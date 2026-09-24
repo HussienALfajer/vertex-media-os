@@ -205,7 +205,7 @@ screenshots and report are kept as a run artifact for 7 days.
 ## Repository layout
 
 ```text
-apps/api          NestJS on Fastify: configuration, health, browser sign-in (src/auth), errors, logging, OpenAPI
+apps/api          NestJS on Fastify: configuration, health, browser sign-in (src/auth), IAM HTTP (src/iam), errors, logging, OpenAPI
 apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and the /dev/ui lab
 apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab and visual baselines
 domains/iam       @vertex-os/iam: backend IAM domain core and private persistence contract
@@ -231,8 +231,8 @@ goes next: the post-logout URI, or Keycloak's end-session URL (without any token
 not end the Keycloak session itself.
 A failed sign-in returns to `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED` or
 `IDENTITY_PROVIDER_UNAVAILABLE`. Only a Keycloak identity bound to an active or invited Vertex user
-may sign in; since nothing creates users yet (see below), a local sign-in ends in
-`AUTH_ACCESS_DENIED` until one exists. Sessions expire after 30 minutes idle and 10 hours in total
+may sign in; a local sign-in ends in `AUTH_ACCESS_DENIED` until `pnpm iam:bootstrap` (or an
+administrator) has created the user. Sessions expire after 30 minutes idle and 10 hours in total
 (`AUTH_SESSION_*` in `.env`). While a session is used, the API refreshes its Keycloak session at
 most once a minute and extends the idle deadline only when Keycloak agrees; when Keycloak refuses
 (the Keycloak session ended, or the identity was disabled) the session is revoked, and while
@@ -245,21 +245,24 @@ back-channel logout does not reach a loopback-only API. Locally, Keycloak (port 
 origin (port 4200) share the host `127.0.0.1`, and cookies are not port-scoped, so the browser also
 sends the `__Host-vertex-*` cookies to the local Keycloak, which ignores them.
 
+## IAM API
+
+`/api/iam` exposes the IAM administration of `docs/modules/iam.md` Section 25: `GET /api/iam/me`
+(the signed-in user's profile, active departments and effective permission codes), the user
+directory and detail, user creation, display-name update, suspension, disablement, termination,
+reactivation, identity synchronization, invitation resend and session revocation, department
+memberships, role assignments, departments, roles with their permission mappings, and the read-only
+permission catalog. Every route needs a session and, except `/me`, the permission the
+specification assigns to it; unsafe methods also need `X-CSRF-Token`. Request bodies are strict
+(an unknown field is `400 VALIDATION_FAILED` with the offending `fields`), every refusal is a
+Problem Details response with a stable `code`, and collections take `page`, `pageSize` (at most 100) and `search`. The OpenAPI document (`/api/docs/openapi.json`, `pnpm openapi:generate`)
+describes every route, body and answer. The HTTP server therefore also needs the provisioner
+settings of `.env` (`KEYCLOAK_ISSUER_URL`, `KEYCLOAK_PROVISIONER_CLIENT_ID`,
+`KEYCLOAK_PROVISIONER_CLIENT_SECRET`), as `pnpm iam:bootstrap` does.
+
 ## Current limitations
 
-- **No IAM endpoints yet.** Every route except health, login, callback and back-channel logout
-  requires a session (`401 AUTHENTICATION_REQUIRED`), and the authorization context (effective
-  permission codes and active departments) is enforced by `@RequirePermission()` with
-  `403 AUTHORIZATION_DENIED` and an Audit record. No production route requires a permission yet;
-  `GET /api/iam/me` and the administration endpoints arrive with IAM-MP-11.
-- IAM tables, the IAM permission catalog and the protected System Administrator role exist
-  (`pnpm iam:sync-reference`), and MOD-AUDIT appends immutable records (sign-in, activation and
-  session events among them). The HTTP API touches IAM only for sign-in: it reads users by identity
-  and records first activation and sign-in refusals.
-  No user is seeded; the first System Administrator comes only from `pnpm iam:bootstrap`. There is no
-  Audit read path and no IAM endpoint. Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
+- There is no IAM user interface yet; the administration is reachable only through the API.
+- MOD-AUDIT appends immutable records for every IAM change and refusal, but has no read path.
+  Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
-- User administration (creation with departments and roles, suspension, disablement, termination,
-  reactivation, identity synchronization, invitation resend and session revocation) exists as IAM
-  application services but is not mounted in HTTP yet (IAM-MP-11); `pnpm iam:bootstrap` uses
-  the same creation, reconciliation and invitation capabilities for the first System Administrator.

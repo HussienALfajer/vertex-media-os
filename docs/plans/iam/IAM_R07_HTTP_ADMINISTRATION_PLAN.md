@@ -74,7 +74,7 @@ Carried-forward items and their resolution:
   | `identity-failed` otherwise | 503 | `IDENTITY_PROVIDER_UNAVAILABLE` |
 
   Resend's `no-action-required` is a success (`invitation: "NO_ACTION_REQUIRED"`). A committed local change whose follow-up Keycloak step failed succeeds and reports the resulting states (spec Section 27).
-- **D-06 Explicit DTOs.** Response classes with OpenAPI metadata, filled by mapping functions from views; instants as ISO 8601 strings; an absent description or optional instant is `null`. No response carries the identity mapping, a token, a session identifier or a persistence type. The directory list omits security metadata (`invitationSentAt`, `firstActivatedAt`, `lastAccessStateChangedAt`, `version`), which the detail carries (spec Section 42). Every IAM response is `Cache-Control: no-store`.
+- **D-06 Explicit DTOs.** Request and response contracts are Zod schemas; the same schema validates a request and generates its named OpenAPI component (`z.toJSONSchema`, OpenAPI 3.0 target), and response mappers are typed by the response schemas; instants as ISO 8601 strings; an absent description or optional instant is `null`. No response carries the identity mapping, a token, a session identifier or a persistence type. The directory list omits security metadata (`invitationSentAt`, `firstActivatedAt`, `lastAccessStateChangedAt`, `version`), which the detail carries (spec Section 42). Every IAM response is `Cache-Control: no-store`.
 - **D-07 The actor is the session's user.** Every mutation builds its attribution from `CurrentActor` (the authorization context the guard resolved): USER actor = the session's user, trace ID = the request ID, and the optional reason. `src/iam/http` never builds a SYSTEM attribution. A test proves that successful and REFUSED Audit records written through the routes name the session's user (SEC-1).
 - **D-08 Reasons.** An optional `reason` (Audit's rule: trimmed, 1–500 code points, no control characters) on suspend, disable, terminate, reactivate, revoke-sessions, role assignment, role deactivation and mapping replacement; never required (spec Section 53). `DELETE` routes take no body and no reason.
 - **D-09 Session revocation binding (AB-1).** The authentication module exports a second capability, `USER_SESSION_REVOCATION`, bound to `AuthRuntime.sessions.revokeUserSessions`; `IamModule` injects it into `createIamUserAdministration`. `AuthRuntime` stays private. The bootstrap command keeps the session store.
@@ -83,7 +83,7 @@ Carried-forward items and their resolution:
 - **D-12 `GET /api/iam/me`.** Any ACTIVE session, no permission. The authorization context from `CurrentActor` is the authority for the permission codes, the ACTIVE departments and the primary; the directory adds the profile and department names. Response: `user { id, email, displayName }`, `departments [{ id, code, name, isPrimary }]` (ACTIVE only), `permissionCodes` (sorted). No role names (spec Section 41).
 - **D-13 Statuses.** Creation `201`; actions and updates `200` with the resulting view or result; `DELETE /users/{userId}/roles/{roleId}` `204`; `DELETE /users/{userId}/departments/{departmentId}` `200` with the resulting primary (its optional `replacementPrimaryDepartmentId` is a query parameter). Membership and assignment results return what the use case reports, not a re-read of the user.
 - **D-14 CP1-18.** The back-channel logout operation documents its `application/x-www-form-urlencoded` body (`logout_token`, required string) and its `400` body `{ "error": "invalid_request" }`. Behavior unchanged.
-- **D-15 Contention is a stable error (DC-2).** `@vertex-os/database` classifies lock-wait and statement timeouts, lock-not-available, deadlocks, serialization failures and Prisma's interactive-transaction timeout as contention (`isDatabaseContention`), from structured fields only. The global Problem Details filter answers them `503 SERVICE_BUSY` with `Retry-After: 1` on every route, and still logs them through the safe serializer. The exact error shapes are taken from an integration test, not assumed.
+- **D-15 Contention is a stable error (DC-2).** `@vertex-os/database` classifies lock-wait and statement timeouts, lock-not-available, deadlocks, serialization failures and Prisma's interactive-transaction timeout as contention (`isDatabaseContention`), from structured fields only. The global Problem Details filter answers them `503 SERVICE_BUSY` with `Retry-After: 1` on every route, and still logs them through the safe serializer. The exact error shapes are taken from an integration test, not assumed. The driver's `query_timeout` is the statement bound plus 1 s, so the server's cancellation (SQLSTATE 57014) ends a lock wait, not the driver (Section 8.1).
 - **D-16 Evidence of each protected operation (spec Section 46.5).** Table-driven over the IAM route inventory: every route needs a session (the existing inventory test covers new routes automatically), every route declares exactly its specification permission, a user without it gets `403 AUTHORIZATION_DENIED` with a denial record, every unsafe route refuses a missing CSRF token. Per operation: the allowed actor, the invalid-state or resource refusals that apply, the contract and the Audit record.
 - **D-17 OpenAPI matches routes.** A test pins the generated IAM paths and methods to spec Section 25, requires `401` and `403` problem responses on every protected IAM operation, and `additionalProperties: false` on every request body schema. OpenAPI is generated from the same decorators the routes run on.
 - **D-18 Root types.** The root exports the value and state types the DTOs name (R05 AB-3), the read views and the directory query types; no store, reader or dependency type.
@@ -159,18 +159,22 @@ No owner decisions. The reactivation ceiling was decided by the owner (2026-09-2
 
 ### 8.1 Deviations and discoveries
 
-(Recorded during the run.)
+- **Prisma `contains` passes LIKE wildcards through.** A search for `100%` also matched `1000`. The directory adapter escapes `\`, `%` and `_`; the reader test pins literal matching of all three.
+- **Equal server and driver timeouts raced.** With `statement_timeout` and the driver's `query_timeout` both at 5 s, a probe of six lock waits at the default bounds ended five times with SQLSTATE 57014 and once with a bare driver error ("Query read timeout") that no classifier can recognize; the API contention test failed once with `500` for that reason. The driver bound is now the statement bound plus 1 s (D-15). At short bounds (400 ms) the race did not reproduce even with the margin removed (12 of 12 attempts ended in 57014), so no test discriminates the margin; the API contention test at the default bounds exercises it.
+- **Removing the primary membership without a replacement is allowed.** R05's `decideMembershipRemoval` leaves the user without a primary unless a replacement is named; `IAM_PRIMARY_DEPARTMENT_CONFLICT` answers a replacement that is not another membership (spec Section 22: the backend never guesses). The first version of the HTTP test assumed otherwise and was corrected.
+- **`createApp` takes the provisioning configuration** (D-10), so every caller changed; tests use `test-support/provisioning-config.ts`. The route inventory of spec Section 25 lives in `test-support/iam-routes.ts`, shared by the contract and integration suites.
+- **Test fixtures.** An ACTIVE user needs a bound, synchronized identity (`iam_application_user_active_ck`); the HTTP fixtures bind one under the unreachable test issuer, so revoke-sessions answers `providerSessions: "FAILED"` there and `"TERMINATED"` in the Keycloak suite.
 
 ## 9. Checklist
 
 - [x] M1 Plan committed
-- [ ] M2 Reactivation grant ceiling (use case, store read, unit and integration tests)
-- [ ] M3 Directory: views, port, queries, adapter, tests; root exports
-- [ ] M4 Platform: provisioning configuration in `createApp`, session-revocation capability, contention mapping, `fields` on problems, lint rule for `src/iam/http`
-- [ ] M5 `IamModule`, validation and problem mapping, `/me` and user routes
-- [ ] M6 Department, membership, role, assignment and permission routes
-- [ ] M7 OpenAPI pins, CP1-18, `docs/ENGINEERING.md` Sections 6 and 11, README
-- [ ] M8 HTTP integration suites
+- [x] M2 Reactivation grant ceiling (use case, store read, unit and integration tests)
+- [x] M3 Directory: views, port, queries, adapter, tests; root exports
+- [x] M4 Platform: provisioning configuration in `createApp`, session-revocation capability, contention mapping, `fields` on problems, lint rule for `src/iam/http`
+- [x] M5 `IamModule`, validation and problem mapping, `/me` and user routes
+- [x] M6 Department, membership, role, assignment and permission routes
+- [x] M7 OpenAPI pins, CP1-18, `docs/ENGINEERING.md` Sections 6 and 11, README
+- [x] M8 HTTP integration suites
 - [ ] M9 `pnpm verify` and integration suites green
 - [ ] M10 In-run review (three reviewers); findings resolved
 - [ ] M11 Master Plan ledger, hand-off, pull request, CI green
