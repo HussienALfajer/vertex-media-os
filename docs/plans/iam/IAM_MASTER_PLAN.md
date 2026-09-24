@@ -9,8 +9,8 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** the `IAM-CP2` deep audit (authorization and administration core, MP-07 to MP-10) with `/audit IAM-CP2`, after the `IAM-R06` pull request is merged; `IAM-R07` (IAM-MP-11) starts after `IAM-CP2 ACCEPTED`  
-**Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
+**Next step:** run `IAM-R07` (IAM-MP-11) with `/stage IAM-R07`; it needs the owner's decision on a grant ceiling for reactivation (IAM-R06 review SEC-2) first. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
+**Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 ---
 
@@ -315,7 +315,7 @@ next run: plan → implement → verify → in-run review → pull request
         ↓
 owner merges = accepted baseline
         ↓
-deep audit at IAM-CP1 / IAM-CP2
+deep audit at IAM-CP1 (IAM-CP2 deferred into the final audit)
         ↓
 next run
 ```
@@ -473,7 +473,7 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R03F` | fix run for the `IAM-CP1` blocking finding (IAM-MP-05, IAM-MP-06 scope; `docs/PLANNING.md` Section 9) | A | security; data and concurrency; tests and verification | `IAM-CP1` re-check of its blocking finding |
 | `IAM-R04` | IAM-MP-07 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R05` | IAM-MP-08, IAM-MP-09 | A | security; data and concurrency; architecture and boundaries | — |
-| `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | **`IAM-CP2` deep audit** — authorization and administration core (MP-07 to MP-10) |
+| `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | — (`IAM-CP2` deferred into `IAM-FINAL` by owner decision, 2026-09-24) |
 | `IAM-R07` | IAM-MP-11 | A | security; architecture and boundaries; tests and verification | — |
 | `IAM-R08` | IAM-MP-12, IAM-MP-13, IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
 | `IAM-R09` | IAM-MP-15 | A | security; data and concurrency; tests and verification | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
@@ -518,7 +518,7 @@ IAM-MP-09  Role/Permission Administration & Last-Admin Protection         [R05]
       ↓
 IAM-MP-10  User Lifecycle, Session Revocation & Bootstrap Core            [R06]
       ↓
-IAM-CP2    Deep audit: authorization and administration core
+IAM-CP2    deferred into the Final IAM Module Audit (owner decision 2026-09-24)
       ↓
 IAM-MP-11  IAM/Auth HTTP Administration Surface & OpenAPI                 [R07]
       ↓
@@ -1213,7 +1213,7 @@ Implement the highest-risk IAM administrative workflows as application services 
 - **System Administrator lock.** Suspension, disablement and termination of an ACTIVE user, and bootstrap, lock the `system-administrator` role row `FOR UPDATE` before the user row (R05 D-05, D-06), then count ACTIVE holders under it; the rule is `decideRoleRemoval`'s. Look the row up by the reserved code.
 - **User creation with memberships and roles** must apply the R05 rules (ACTIVE department locked `FOR SHARE`, ACTIVE role, System Administrator lock when the role is assigned) instead of `createApplicationUserRepository.create` inserting them unchecked.
 - **Lock order across both stores** (review AB-5): an operation that uses `OrganizationStore` and `RoleStore` together keeps role → user → department/permission.
-- **Grant ceiling (owner decision 2026-09-24, spec Section 23.1).** Enforce it in the R05 use cases `assignRole`, `activateRole` and `replaceRolePermissions` (added codes), and in user creation with initial roles: a USER actor who is not an ACTIVE System Administrator cannot grant a permission they do not hold effectively, nor assign the system role. Evaluate the actor's committed permissions inside the same transaction, after the D-05 locks (read the actor's user row without locking it, so no lock-order cycle forms); refuse with outcome `grant-exceeds-actor` and a REFUSED Audit record. Removals and deactivation stay unlimited; SYSTEM actors are exempt. Tests: self-escalation to the system role, mapping a privileged code into one's own role, activating an inactive privileged role, and a System Administrator unaffected. It lands in IAM-R06 so that `IAM-CP2` audits it with the rest of the administration core.
+- **Grant ceiling (owner decision 2026-09-24, spec Section 23.1).** Enforce it in the R05 use cases `assignRole`, `activateRole` and `replaceRolePermissions` (added codes), and in user creation with initial roles: a USER actor who is not an ACTIVE System Administrator cannot grant a permission they do not hold effectively, nor assign the system role. Evaluate the actor's committed permissions inside the same transaction, after the D-05 locks (read the actor's user row without locking it, so no lock-order cycle forms); refuse with outcome `grant-exceeds-actor` and a REFUSED Audit record. Removals and deactivation stay unlimited; SYSTEM actors are exempt. Tests: self-escalation to the system role, mapping a privileged code into one's own role, activating an inactive privileged role, and a System Administrator unaffected. It lands in IAM-R06 so that a deep audit covers it with the rest of the administration core (`IAM-CP2`, deferred into `IAM-FINAL`).
 
 ### Exit criteria
 
@@ -1240,7 +1240,7 @@ Implement the highest-risk IAM administrative workflows as application services 
 
 ## IAM-MP-11 — IAM/Auth HTTP Administration Surface & OpenAPI
 
-**Status:** PLANNED  
+**Status:** READY (run `IAM-R07`)  
 **Parent specification area:** IAM-5, Sections 24–27, 40–42  
 **Depends on:** IAM-MP-10 COMPLETE
 
@@ -1596,7 +1596,7 @@ blocking findings fixed and re-verified in the run
         ↓
 pull request + green CI  →  owner merges  =  stage COMPLETE
         ↓
-at IAM-CP1 / IAM-CP2 / final: deep audit in a separate session
+at IAM-CP1 / final: deep audit in a separate session
         ↓
 ACCEPTED → next run READY        FIXES REQUIRED → fix run → re-check
 ```
@@ -1657,7 +1657,7 @@ Risk IDs were `IAM-R01`…`IAM-R17` until run IDs took the `IAM-Rnn` form (Secti
 | IAM-RISK-13 | IAM frontend invents a second component system | UI fragmentation and accessibility regression | consume `@vertex-os/ui`; add only justified reusable primitives |
 | IAM-RISK-14 | E2E absorbs all verification | slow/flaky suite hides lower-level defects | risk-based test layering; focused E2E only |
 | IAM-RISK-15 | Scope expands into HR/multi-tenancy/client identities | delays first business module and weakens architecture | enforce explicit non-goals and PLANNING scope discipline |
-| IAM-RISK-16 | Main-branch governance relies only on convention | security-sensitive changes may bypass intended review discipline | every run lands through a reviewed pull request with green CI; deep audits at IAM-CP1, IAM-CP2 and the Final IAM Module Audit; repository protection policy may be hardened separately from IAM scope |
+| IAM-RISK-16 | Main-branch governance relies only on convention | security-sensitive changes may bypass intended review discipline | every run lands through a reviewed pull request with green CI; deep audits at IAM-CP1 and the Final IAM Module Audit (which also covers the deferred IAM-CP2 scope); repository protection policy may be hardened separately from IAM scope |
 | IAM-RISK-17 | Lighter per-run review misses a defect a full audit would catch | a security defect reaches `main` between checkpoints | three fresh-context reviewers on every Tier A run; checkpoints placed directly after the authentication and privilege clusters; later runs cannot start before the checkpoint is accepted |
 
 ---
@@ -1716,8 +1716,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-08 Department & Membership Core | R05 | COMPLETE | R04 merged (satisfied) |
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | COMPLETE | R04 merged (satisfied) |
 | IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | COMPLETE | R05 merged (satisfied) |
-| `IAM-CP2` Deep audit: authorization and administration core | — | READY | R06 merged |
-| IAM-MP-11 HTTP Administration Surface | R07 | PLANNED | `IAM-CP2 ACCEPTED` |
+| `IAM-CP2` Deep audit: authorization and administration core | — | DEFERRED into `IAM-FINAL` | owner decision 2026-09-24 |
+| IAM-MP-11 HTTP Administration Surface | R07 | READY | R06 merged (satisfied); owner decision SEC-2 |
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | PLANNED | R07 merged |
 | IAM-MP-13 Frontend User & Access Admin | R08 | PLANNED | R07 merged |
 | IAM-MP-14 Frontend Department/Role/Permission Admin | R08 | PLANNED | R07 merged |
@@ -1748,6 +1748,14 @@ The ledger changes only through the pull request of the run or audit that produc
 - **Accepted baselines:** IAM-MP-05 and IAM-MP-06 with the `IAM-R03F` correction and the CP1-21 fix.
 
 The records below were written under the previous method and are kept as history. Under the current method, a record is added only when the roadmap changes.
+
+### Amendment record — `IAM-CP2` deferred into the Final IAM Module Audit (2026-09-24)
+
+- **What changed:** the `IAM-CP2` deep audit (authorization and administration core, IAM-MP-07 to IAM-MP-10) no longer runs after `IAM-R06`. Its scope moves into `IAM-FINAL` (Section 17, "Deferred `IAM-CP2` scope"). IAM-MP-11 (`IAM-R07`) is `READY` after the `IAM-R06` merge instead of after `IAM-CP2 ACCEPTED`.
+- **Why:** owner decision (2026-09-24), to save a separate audit session. `docs/PLANNING.md` lets the Master Plan place its checkpoints; moving one is an amendment of this plan.
+- **Consequences:** the administration core is exposed over HTTP (IAM-MP-11) and used by the frontend (IAM-MP-12 to IAM-MP-14) before any independent deep audit of it. A defect a deep audit would have found in MP-07 to MP-10 is found later, and fixing it may also touch the HTTP and frontend layers built on it. Until then the evidence is the in-run reviews of `IAM-R04` to `IAM-R06` (three reviewers each, no blocking finding). Mitigation: `IAM-R07` is Tier A with three reviewers, and its security reviewer checks every administration route against the grant ceiling, the last-System-Administrator rule and the actor attribution (IAM-R06 review SEC-1).
+- **Stages affected:** no stage changes content or order; `IAM-R07` no longer waits for a checkpoint.
+- **Accepted baselines:** IAM-MP-07 to IAM-MP-10 remain accepted by their merges; their independent audit is `IAM-FINAL`.
 
 ### Amendment record — grant ceiling (2026-09-24)
 
@@ -1871,6 +1879,10 @@ This is not another implementation stage.
 
 The Final Audit evaluates IAM as one integrated system and must verify, at minimum:
 
+### Deferred `IAM-CP2` scope
+
+By owner decision (2026-09-24) the Final Audit also carries the checkpoint audit that `IAM-CP2` would have performed on IAM-MP-07 to IAM-MP-10, against their run plans (`IAM_R04`, `IAM_R05`, `IAM_R06`) and each stage's "Audit focus": protected-by-default routing and the authorization context; department, membership, role and mapping administration; the last-System-Administrator rule and its lock order; the grant ceiling; the user lifecycle, fail-closed Keycloak ordering and reactivation compensation; bootstrap and recovery; session revocation and the auth-session database guarantees; and the carried-forward findings of those runs. Findings in this scope are classified as they would have been at the checkpoint.
+
 ### Specification coverage
 
 - every applicable requirement in `docs/modules/iam.md` has implementation evidence;
@@ -1967,7 +1979,7 @@ IAM is not complete until the audit is accepted and every blocking finding is re
 IAM may be marked complete only when:
 
 - every stage IAM-MP-00 through IAM-MP-15 is `COMPLETE`;
-- every stage completion is backed by a reviewed, merged pull request with green CI (IAM-MP-00 to IAM-MP-02: by their independent audits), and checkpoints `IAM-CP1` and `IAM-CP2` are accepted;
+- every stage completion is backed by a reviewed, merged pull request with green CI (IAM-MP-00 to IAM-MP-02: by their independent audits), checkpoint `IAM-CP1` is accepted, and the deferred `IAM-CP2` scope is covered by `IAM-FINAL`;
 - the parent IAM specification Definition of Done is satisfied;
 - the dedicated Final IAM Module Audit returns `IAM-FINAL ACCEPTED`;
 - canonical documentation matches the final repository;
@@ -1993,13 +2005,13 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-10 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, and IAM-MP-10 through run `IAM-R06`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). The next step is the `IAM-CP2` deep audit of the authorization and administration core (IAM-MP-07 to IAM-MP-10). Start it in a new Claude Code session after the `IAM-R06` pull request is merged:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The next step is run `IAM-R07` (IAM-MP-11). Start it in a new Claude Code session:
 
 ```text
-/audit IAM-CP2
+/stage IAM-R07
 ```
 
-`IAM-R07` (IAM-MP-11) starts only after `IAM-CP2 ACCEPTED`. Its planner also needs the owner's decision on a grant ceiling for reactivation (IAM-R06 review SEC-2, attached to IAM-MP-11).
+Its planner needs the owner's decision on a grant ceiling for reactivation (IAM-R06 review SEC-2, attached to IAM-MP-11); if it is not recorded by then, the run stops at its planned checkpoint to ask.
 
 Do **not** plan later runs in detail now.
 
@@ -2007,7 +2019,7 @@ Do **not** plan later runs in detail now.
 
 ## 20. Core Rule for IAM Delivery
 
-> **One IAM Master Plan → one run at a time → a reviewed pull request → the owner's merge is the accepted baseline → deep audits at IAM-CP1 and IAM-CP2 → Final IAM Module Audit.**
+> **One IAM Master Plan → one run at a time → a reviewed pull request → the owner's merge is the accepted baseline → deep audit at IAM-CP1 → Final IAM Module Audit (with the deferred IAM-CP2 scope).**
 
 No stage is complete because it "looks finished."  
 No run is planned from an unmerged baseline.  
