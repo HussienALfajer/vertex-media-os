@@ -218,17 +218,11 @@ describe('application sessions against real PostgreSQL', () => {
       ],
       ['auth_session_idp_session_id_ck', { idp_session_id: `''` }],
       [
+        // The idle half alone; the absolute half is implied by auth_session_expiry_ck.
         'auth_session_lifetime_ck',
-        {
-          last_seen_at: `'2026-09-23T12:00:00Z'`,
-          idle_expires_at: `'2026-09-23T12:00:00Z'`,
-          absolute_expires_at: `'2026-09-23T12:00:00Z'`,
-        },
+        { idle_expires_at: `'2026-09-23T12:00:00Z'` },
       ],
-      [
-        'auth_session_revoked_at_ck',
-        { revoked_at: `'2026-09-23T11:59:00Z'`, revocation_reason: `'LOGOUT'` },
-      ],
+
       [
         'auth_session_token_ciphertext_ck',
         { id_token_ciphertext: `''`, id_token_key_version: '1' },

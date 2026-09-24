@@ -55,6 +55,13 @@ export function createReferenceDataStore(client: IamPersistenceClient): Referenc
   return {
     async acquireSynchronizationLock() {
       await client.$executeRaw`SELECT pg_advisory_xact_lock(${IAM_REFERENCE_SYNC_LOCK_KEY})`;
+      // The system role row next, before any permission row: every IAM transaction then locks role
+      // rows before permission rows (IAM-R06 D-05). Updating permissions first and the system role
+      // last formed a cycle with a creation holding the system role while waiting on a custom role
+      // whose mapping replacement waited on a permission row (IAM-R06 review DC-1).
+      await client.$queryRaw`
+        SELECT id FROM iam_role WHERE code = ${SYSTEM_ADMINISTRATOR_ROLE_CODE} OR is_system
+        ORDER BY id FOR UPDATE`;
     },
 
     async readSnapshot() {

@@ -21,7 +21,7 @@ enum AuthSessionRevocationReason {
 /// Database-only checks: auth_session_token_hash_ck, auth_session_csrf_token_hash_ck,
 /// auth_session_expiry_ck, auth_session_revocation_ck, auth_session_id_token_ck,
 /// auth_session_idp_session_id_ck, auth_session_refresh_token_ck, auth_session_lifetime_ck,
-/// auth_session_revoked_at_ck, auth_session_token_ciphertext_ck; trigger
+/// auth_session_token_ciphertext_ck; trigger
 /// auth_session_revocation_final keeps a revocation final (IAM-R06 D-19).
 model AuthSession {
   id                     String                       @id(map: "auth_session_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid

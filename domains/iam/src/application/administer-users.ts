@@ -562,8 +562,10 @@ export async function reactivateUser(
     return { outcome: 'superseded' };
   }
 
-  // Step 4: the final commit, conditional on the version the identity step left.
-  const completed = await dependencies.runner.run(async ({ lifecycle, audit }) => {
+  // Step 4: the final commit, conditional on the version the identity step left. If it fails
+  // outright (for example a lost connection), the identity may be enabled while the user is still
+  // denied: reconcile against the committed state before failing (IAM-R06 review DC-6).
+  const finalCommit = dependencies.runner.run(async ({ lifecycle, audit }) => {
     const written = await lifecycle.completeReactivation({
       id: committed.id,
       expectedVersion: identity.user.version,
@@ -576,6 +578,10 @@ export async function reactivateUser(
       });
     }
     return written;
+  });
+  const completed = await finalCommit.catch(async (error: unknown) => {
+    await reconcileIdentity(dependencies, provisioning).catch(() => undefined);
+    throw error;
   });
   if (completed.outcome !== 'updated') {
     // Step 6: the identity may be enabled while IAM still denies access; reconcile at once.

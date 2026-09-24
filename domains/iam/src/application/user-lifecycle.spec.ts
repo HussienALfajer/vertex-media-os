@@ -293,6 +293,22 @@ describe('reactivation (spec Sections 10.7, 31.2)', () => {
     expect(identity.enabled).toBe(true);
   });
 
+  it('disables the identity again when the final commit fails outright, then fails', async () => {
+    const { iam, provider, dependencies } = suspended();
+    iam.failAuditOnAction = 'iam.user.reactivated';
+
+    await expect(
+      reactivateUser(dependencies, { userId, expectedVersion: 5 }, attribution()),
+    ).rejects.toThrow('audit append failed');
+
+    expect(iam.get().accessState).toBe('SUSPENDED');
+    expect(provider.mutatingCalls()).toEqual([
+      'setEnabled:true',
+      'setEnabled:false',
+      'terminateSessions',
+    ]);
+  });
+
   it('returns a never-activated user to INVITED, provisioning and inviting it', async () => {
     const { iam, provider, dependencies } = setup(
       invitedUser({ accessState: 'SUSPENDED', identitySyncState: 'SYNCED', version: 2 }),

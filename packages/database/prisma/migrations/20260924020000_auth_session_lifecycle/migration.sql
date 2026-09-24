@@ -15,12 +15,12 @@ ALTER TYPE "auth_session_revocation_reason" ADD VALUE 'USER_TERMINATED';
 ALTER TYPE "auth_session_revocation_reason" ADD VALUE 'ADMINISTRATOR_REVOKED';
 
 -- Hand-written, reviewed (CP1-06): structural checks every application path already keeps. A
--- session lives for a positive time, is never revoked before it was created, and stores no empty
--- token ciphertext; a login attempt stores no empty state, nonce or PKCE verifier.
+-- session lives for a positive time and stores no empty token ciphertext; a login attempt stores
+-- no empty state, nonce or PKCE verifier. `revoked_at >= created_at` is deliberately not checked:
+-- both come from the application clock, and a check would make a revocation fail after a clock
+-- step, leaving the sessions live (IAM-R06 review DC-2).
 ALTER TABLE "auth_session" ADD CONSTRAINT "auth_session_lifetime_ck"
   CHECK (idle_expires_at > created_at AND absolute_expires_at > created_at);
-ALTER TABLE "auth_session" ADD CONSTRAINT "auth_session_revoked_at_ck"
-  CHECK (revoked_at IS NULL OR revoked_at >= created_at);
 ALTER TABLE "auth_session" ADD CONSTRAINT "auth_session_token_ciphertext_ck"
   CHECK ((id_token_ciphertext IS NULL OR char_length(id_token_ciphertext) > 0)
     AND (refresh_token_ciphertext IS NULL OR char_length(refresh_token_ciphertext) > 0));

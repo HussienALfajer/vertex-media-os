@@ -299,8 +299,8 @@ export async function replaceRolePermissions(
     const role = await roles.lockRole(id.value);
     if (role === undefined) return { outcome: 'role-not-found' };
     const current = await roles.readRolePermissionCodes(id.value);
-    // The system role's permission rows are never locked here: reference synchronization updates
-    // permissions before the system role, so locking both in the opposite order could deadlock.
+    // The system role's mappings are code-controlled and refused below, so its permission rows are
+    // never locked here; reference synchronization alone writes them (IAM-R06 D-05).
     const catalog = role.isSystem ? new Map() : await roles.lockPermissions(requested);
     const plan = planMappingReplacement(role, expectedVersion, current, requested, catalog);
     switch (plan.kind) {

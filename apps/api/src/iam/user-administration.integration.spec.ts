@@ -186,6 +186,28 @@ async function activeUser(label: string, roleIds: string[] = []): Promise<string
   return created.user.id;
 }
 
+/**
+ * Runs `statements` in one psql transaction that holds its locks for `seconds` and resolves once
+ * it sleeps, so operations started next are in flight together when it commits (as in R05).
+ */
+async function holdLocks(statements: string, seconds = 1.5): Promise<{ done: Promise<string> }> {
+  const marker = `hold_${randomUUID().replaceAll('-', '')}`;
+  const done = sql(`BEGIN; ${statements}; SELECT pg_sleep(${seconds}) AS ${marker}; COMMIT;`);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const sleeping = await value(
+      `SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%AS ${marker}%'
+         AND wait_event = 'PgSleep'`,
+    );
+    if (sleeping === '1') return { done };
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('the lock-holding transaction never started sleeping');
+}
+
+const HOLD_SYSTEM_ROLE = `SELECT id FROM iam_role WHERE code = 'system-administrator' FOR UPDATE`;
+const HOLD_USERS = (...ids: string[]) =>
+  `SELECT id FROM iam_application_user WHERE id IN ('${ids.join(`', '`)}') ORDER BY id FOR UPDATE`;
+
 async function systemRoleId(): Promise<string> {
   return value(`SELECT id FROM iam_role WHERE code = 'system-administrator'`);
 }
@@ -532,10 +554,14 @@ describe('last ACTIVE System Administrator', () => {
     const first = await activeUser('admin-a', [system_]);
     const second = await activeUser('admin-b', [system_]);
 
+    // Both targets' rows are held, so without the System Administrator lock both operations would
+    // read the ACTIVE count before either commits; with it, the second waits and sees one left.
+    const held = await holdLocks(HOLD_USERS(first, second));
     const results = await Promise.all([
       offline.suspendUser({ userId: first }, system()),
       offline.disableUser({ userId: second }, system()),
     ]);
+    await held.done;
 
     expect(results.map((result) => result.outcome).sort()).toEqual([
       'last-system-admin',
@@ -549,10 +575,12 @@ describe('last ACTIVE System Administrator', () => {
     const first = await activeUser('admin-c', [system_]);
     const second = await activeUser('admin-d', [system_]);
 
+    const held = await holdLocks(HOLD_USERS(first, second));
     const [suspended, removed] = await Promise.all([
       offline.suspendUser({ userId: first }, system()),
       roles.removeRole({ userId: second, roleId: system_ }, system()),
     ]);
+    await held.done;
 
     // Whichever commits first wins; the other sees one ACTIVE holder left and is refused.
     expect([
@@ -744,6 +772,7 @@ describe('pnpm iam:bootstrap', () => {
     if (!traceId.ok) throw new Error('trace fixture');
     const emails = [uniqueEmail('c1'), uniqueEmail('c2'), uniqueEmail('c3')];
 
+    const held = await holdLocks(HOLD_SYSTEM_ROLE);
     const results = await Promise.all(
       emails.map((email) =>
         run({
@@ -756,6 +785,7 @@ describe('pnpm iam:bootstrap', () => {
       ),
     );
 
+    await held.done;
     expect(results.filter((result) => result.outcome === 'created')).toHaveLength(1);
     expect(results.filter((result) => result.outcome === 'refused')).toHaveLength(2);
     expect((await candidates()).split('\n')).toHaveLength(1);

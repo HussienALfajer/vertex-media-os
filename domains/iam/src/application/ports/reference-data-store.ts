@@ -14,7 +14,10 @@ import type {
  * write operations. Custom roles are neither read nor written.
  */
 export interface ReferenceDataStore {
-  /** Serializes synchronization runs until the transaction ends. Called before `readSnapshot`. */
+  /**
+   * Serializes synchronization runs until the transaction ends, and locks the system role row, if
+   * any, before any permission row (IAM-R06 D-05). Called before `readSnapshot`.
+   */
   acquireSynchronizationLock(): Promise<void>;
   /** Every persisted permission, and every role with the reserved code or `is_system`. */
   readSnapshot(): Promise<ReferenceSnapshot>;
