@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { parseSystemProcess, parseTraceId } from '@vertex-os/audit';
 import type { DatabaseClient } from '@vertex-os/database';
-import { createApplicationUserRepository } from '@vertex-os/iam-persistence';
 import { expect } from 'vitest';
 import type { IdentityProvisioning } from '../src/iam/identity-provisioning.js';
 import {
@@ -19,6 +18,7 @@ import {
 } from './keycloak-browser.js';
 import type { StartedKeycloak } from './keycloak.js';
 import type { MigratedPostgres } from './postgres.js';
+import { seedInvitedUser } from './iam-users.js';
 
 /**
  * The browser sign-in journey against the pinned Keycloak, shared by the real-Keycloak API suites
@@ -100,7 +100,7 @@ export class VertexBrowser extends Browser {
 }
 
 export function keycloakJourney(context: JourneyContext) {
-  const { keycloak, postgres, database, provisioning } = context;
+  const { keycloak, postgres, provisioning } = context;
   /** Every secret the journey handled, for the suite's log scan. */
   const secrets: string[] = [];
 
@@ -114,16 +114,7 @@ export function keycloakJourney(context: JourneyContext) {
   /** A Vertex user invited through real provisioning whose recipient completed the invitation. */
   async function invitedIdentity(label: string): Promise<JourneyUser> {
     const email = `${label}-${randomUUID()}@example.invalid`;
-    const created = await createApplicationUserRepository(database).create({
-      email: email as never,
-      displayName: 'Synthetic User' as never,
-      accessState: 'INVITED',
-      identitySyncState: 'PENDING',
-      invitationDeliveryState: 'NOT_SENT',
-      memberships: [],
-      roleIds: [],
-    });
-    if (created.outcome !== 'created') throw new Error('seed user');
+    const created = { user: { id: await seedInvitedUser(postgres, email) } };
     const provisioned = await provisioning.provision({
       userId: created.user.id,
       attribution: attribution(),

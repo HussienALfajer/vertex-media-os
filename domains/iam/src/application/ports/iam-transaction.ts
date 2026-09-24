@@ -3,6 +3,7 @@ import type { OrganizationStore } from './organization-store.js';
 import type { ReferenceDataStore } from './reference-data-store.js';
 import type { RoleStore } from './role-store.js';
 import type { UserIdentityStore } from './user-identity-store.js';
+import type { UserLifecycleStore } from './user-lifecycle-store.js';
 
 /**
  * The IAM stores and the MOD-AUDIT append capability, all bound to one database transaction.
@@ -14,6 +15,7 @@ export interface IamTransactionScope {
   readonly users: UserIdentityStore;
   readonly organization: OrganizationStore;
   readonly roles: RoleStore;
+  readonly lifecycle: UserLifecycleStore;
   readonly audit: AuditRecorder;
 }
 

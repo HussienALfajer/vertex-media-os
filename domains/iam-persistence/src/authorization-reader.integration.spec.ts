@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DisplayName, NormalizedEmail, UserId } from '@vertex-os/iam/persistence';
-import { createApplicationUserRepository, createAuthorizationReader } from './index.js';
+import type { UserId } from '@vertex-os/iam/persistence';
+import { createAuthorizationReader } from './index.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../test-support/postgres.js';
+import { seedInvitedUser } from '../test-support/users.js';
 
 const DEPARTMENT = `INSERT INTO iam_department (code, name, state)
   VALUES ($1, $2, $3::iam_department_state) RETURNING id`;
@@ -29,17 +30,7 @@ describe('AuthorizationReader against real PostgreSQL', () => {
   const reader = () => createAuthorizationReader(postgres.database);
 
   async function user(email: string): Promise<UserId> {
-    const created = await createApplicationUserRepository(postgres.database).create({
-      email: email as NormalizedEmail,
-      displayName: 'Synthetic User' as DisplayName,
-      accessState: 'INVITED',
-      identitySyncState: 'PENDING',
-      invitationDeliveryState: 'NOT_SENT',
-      memberships: [],
-      roleIds: [],
-    });
-    if (created.outcome !== 'created') throw new Error('seed user');
-    return created.user.id;
+    return (await seedInvitedUser(postgres.client, email)).id;
   }
 
   async function insertReturningId(statement: string, ...values: unknown[]): Promise<string> {

@@ -80,15 +80,92 @@ async function reconcileOnce(
 ): Promise<Attempt> {
   const committed = await dependencies.users.findById(request.userId);
   if (!committed) return { outcome: 'not-found' };
-
-  const provider = dependencies.identityProvider;
-  const required = requiredIdentityState(committed.accessState);
   const steps: ReconciliationStep[] = [];
-  let user = committed;
+  const result = await bringIdentityTo(
+    dependencies,
+    request,
+    committed,
+    requiredIdentityState(committed.accessState),
+    steps,
+    applied,
+  );
+  if (result === RETRY) return RETRY;
+  if (result.kind === 'failed') {
+    return recordOutcome(
+      dependencies,
+      request,
+      result.user,
+      { state: 'FAILED', failure: result.failure },
+      steps,
+    );
+  }
+  // A converged run writes nothing; ending sessions of a denied identity is not a state change.
+  const changed = steps.some((step) => step !== 'sessions-terminated');
+  if (result.user.identitySyncState === 'SYNCED' && !changed) {
+    return { outcome: 'synced', user: result.user };
+  }
+  return recordOutcome(dependencies, request, result.user, { state: 'SYNCED' }, steps);
+}
 
-  const record = (outcome: SyncOutcome): Promise<Attempt> =>
-    recordOutcome(dependencies, request, user, outcome, steps);
-  const fail = (failure: SyncFailure): Promise<Attempt> => record({ state: 'FAILED', failure });
+export type IdentityForReactivation =
+  | {
+      readonly outcome: 'ready';
+      readonly user: ApplicationUser;
+      readonly steps: readonly ReconciliationStep[];
+    }
+  | { readonly outcome: 'failed'; readonly failure: SyncFailure }
+  /** A competing change won; Keycloak may have been changed and must be reconciled again. */
+  | { readonly outcome: 'superseded' };
+
+/**
+ * Reactivation's identity step (spec Section 31.2 step 3; IAM-R06 D-08): the reconciliation steps
+ * with the target's requirement (`enabled`) substituted for the committed state's, against exactly
+ * the version reactivation wrote in step 2, without re-reading. It never records `SYNCED`: only
+ * the final commit, together with the target state, does. A failure records `FAILED` on that
+ * version.
+ */
+export async function enableIdentityForReactivation(
+  dependencies: IdentityProvisioningDependencies,
+  request: IdentityProvisioningRequest,
+  user: ApplicationUser,
+): Promise<IdentityForReactivation> {
+  const steps: ReconciliationStep[] = [];
+  const result = await bringIdentityTo(dependencies, request, user, 'enabled', steps, []);
+  if (result === RETRY) return { outcome: 'superseded' };
+  if (result.kind === 'ready') return { outcome: 'ready', user: result.user, steps };
+  const recorded = await recordOutcome(
+    dependencies,
+    request,
+    result.user,
+    { state: 'FAILED', failure: result.failure },
+    steps,
+  );
+  return recorded === RETRY
+    ? { outcome: 'superseded' }
+    : { outcome: 'failed', failure: result.failure };
+}
+
+type IdentityStepResult =
+  | { readonly kind: 'ready'; readonly user: ApplicationUser }
+  | { readonly kind: 'failed'; readonly failure: SyncFailure; readonly user: ApplicationUser }
+  | typeof RETRY;
+
+/**
+ * Brings Keycloak to `required` for `committed` as it stands at its version (spec Section 11.2
+ * steps 1 to 6). Binding raises the version; the returned user is the latest one this attempt
+ * wrote. A lost binding race is `RETRY`. The caller records the outcome.
+ */
+async function bringIdentityTo(
+  dependencies: IdentityProvisioningDependencies,
+  request: IdentityProvisioningRequest,
+  committed: ApplicationUser,
+  required: 'enabled' | 'disabled',
+  steps: ReconciliationStep[],
+  applied: ReconciliationStep[],
+): Promise<IdentityStepResult> {
+  const provider = dependencies.identityProvider;
+  let user = committed;
+  const fail = (failure: SyncFailure): IdentityStepResult => ({ kind: 'failed', failure, user });
 
   let identity: ExternalIdentity;
   if (user.identity) {
@@ -110,9 +187,7 @@ async function reconcileOnce(
       identity = found.value;
     } else if (required === 'disabled') {
       // Nothing to disable, and nothing is ever created for a denied user.
-      return user.identitySyncState === 'SYNCED'
-        ? { outcome: 'synced', user }
-        : record({ state: 'SYNCED' });
+      return { kind: 'ready', user };
     } else {
       const created = await provider.create({ username: user.email, vertexUserId: user.id });
       if (!created.ok) {
@@ -142,12 +217,13 @@ async function reconcileOnce(
       }
     }
 
+    const bound = identity;
     const binding = await dependencies.runner.run(async ({ users, audit }) => {
       const result = await users.bindIdentity({
         id: user.id,
         expectedVersion: user.version,
         issuer: provider.issuer,
-        subject: identity.subject,
+        subject: bound.subject,
       });
       if (result.outcome === 'updated') {
         await appendUserAudit(
@@ -157,7 +233,7 @@ async function reconcileOnce(
           'iam.user.identity-bound',
           'SUCCEEDED',
           {
-            after: { identityIssuer: provider.issuer, identitySubject: identity.subject },
+            after: { identityIssuer: provider.issuer, identitySubject: bound.subject },
           },
         );
       }
@@ -200,11 +276,7 @@ async function reconcileOnce(
     if (terminated.value === 'not-found') return fail('identity-conflict');
     steps.push('sessions-terminated');
   }
-
-  // A converged run writes nothing; ending sessions of a denied identity is not a state change.
-  const changed = steps.some((step) => step !== 'sessions-terminated');
-  if (user.identitySyncState === 'SYNCED' && !changed) return { outcome: 'synced', user };
-  return record({ state: 'SYNCED' });
+  return { kind: 'ready', user };
 }
 
 async function recordOutcome(

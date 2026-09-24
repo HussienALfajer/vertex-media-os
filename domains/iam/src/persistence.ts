@@ -1,4 +1,4 @@
-export type { ApplicationUser, NewApplicationUser } from './domain/application-user.js';
+export type { ApplicationUser } from './domain/application-user.js';
 export type { DepartmentId, RoleId, UserId } from './domain/identifiers.js';
 export type { NormalizedEmail } from './domain/email.js';
 export type { Description, DisplayName, EntityName } from './domain/text.js';
@@ -12,11 +12,7 @@ export type {
   PermissionState,
   RoleState,
 } from './domain/states.js';
-export type {
-  ApplicationUserRepository,
-  CreateApplicationUserResult,
-  UpdateDisplayNameResult,
-} from './application/ports/application-user-repository.js';
+export type { ApplicationUserRepository } from './application/ports/application-user-repository.js';
 export {
   SYSTEM_ADMINISTRATOR_ROLE_CODE,
   type SystemRoleDefinition,
@@ -42,6 +38,7 @@ export type { AuthorizationFacts } from './domain/authorization-context.js';
 export type { AuthorizationReader } from './application/ports/authorization-reader.js';
 export type { OrganizationStore } from './application/ports/organization-store.js';
 export type { RoleStore } from './application/ports/role-store.js';
+export type { UserLifecycleStore } from './application/ports/user-lifecycle-store.js';
 export type { DepartmentView, MembershipFact } from './domain/organization.js';
 export type { RoleView } from './domain/roles.js';
 export type { FieldChanges } from './domain/versioned-change.js';

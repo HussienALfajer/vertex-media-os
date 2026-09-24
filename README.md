@@ -39,6 +39,7 @@ pnpm env:setup                         # creates the ignored .env with generated
 pnpm infra:up                          # starts PostgreSQL 18, Keycloak 26.7.4 and Mailpit on 127.0.0.1, waits until healthy
 pnpm db:migrate                        # applies forward-only database migrations
 pnpm iam:sync-reference                # synchronizes the IAM permission catalog and system role
+pnpm iam:bootstrap --email <address> --display-name "<name>"  # invites the first System Administrator
 pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-end tests
 ```
 
@@ -87,6 +88,7 @@ pnpm db:validate   # validate the Prisma schema
 pnpm db:generate   # generate the Prisma client into packages/database/src/generated (ignored)
 pnpm db:migrate    # apply pending migrations; safe to run again (no reset)
 pnpm iam:sync-reference  # synchronize IAM reference data (after db:migrate); safe to run again
+pnpm iam:bootstrap --email <address> --display-name "<name>"  # first System Administrator; safe to run again
 pnpm infra:down    # stop local PostgreSQL, Keycloak and Mailpit; both data volumes are kept
 pnpm infra:reset   # stop them AND delete both local data volumes (destructive)
 ```
@@ -141,8 +143,28 @@ result line (`iam reference data synchronized`, `… refused` or `… failed`, w
 also appears on the Audit records) and never logs the connection string. The command process
 exits 0 (synchronized, with or without changes), 2 (refused) or 1 (configuration or unexpected
 failure); through `pnpm`/Nx any non-zero exit is reported as 1, so read the result line. Run it
-after every `pnpm db:migrate`; the later bootstrap command will require synchronized reference
-data.
+after every `pnpm db:migrate`; `pnpm iam:bootstrap` refuses until reference data is synchronized.
+
+`pnpm iam:bootstrap --email <address> --display-name "<name>"` is the only way to create the first
+System Administrator (spec Section 21); no user is ever seeded and there is no HTTP endpoint for it.
+It needs the database and the Keycloak provisioner settings of `.env` (`DATABASE_URL`,
+`KEYCLOAK_ISSUER_URL`, `KEYCLOAK_PROVISIONER_CLIENT_ID`, `KEYCLOAK_PROVISIONER_CLIENT_SECRET`), and
+runs the same way locally and in production. It decides only from committed state: with no
+candidate it creates an INVITED user holding the `system-administrator` role, then creates the
+Keycloak identity and sends the invitation (locally to Mailpit), through which the administrator
+sets a password and enrolls TOTP; Vertex never sees or sets credentials. Run again with the same
+email, it resumes an interrupted run and otherwise changes nothing; `--resend-invitation` sends a
+new invitation email. It refuses while an ACTIVE System Administrator exists (further
+administrators are managed in IAM), for a different email, or with more than one candidate.
+`--recovery --reason "<text>"` is for a lost bootstrap when no ACTIVE System Administrator exists:
+it terminates INVITED candidates, removes the role from SUSPENDED or DISABLED ones without changing
+their access, and creates one new candidate for a new email. An ACTIVE administrator who lost a
+password or TOTP is recovered in Keycloak, not here. Every run is audited as the `iam.bootstrap`
+system process. Its own JSON result line carries the user ID and outcomes, never the email, name,
+reason or a secret; `pnpm` and Nx do echo the command line with its arguments before it runs,
+so the email, name and reason appear in that terminal or CI output. It exits 0 (complete), 2 (refused), 3 (a Keycloak step did not complete; run
+it again to resume), 64 (usage) or 1 (unexpected failure); through `pnpm`/Nx any non-zero exit
+is reported as 1.
 
 ## Verification
 
@@ -234,7 +256,10 @@ sends the `__Host-vertex-*` cookies to the local Keycloak, which ignores them.
   (`pnpm iam:sync-reference`), and MOD-AUDIT appends immutable records (sign-in, activation and
   session events among them). The HTTP API touches IAM only for sign-in: it reads users by identity
   and records first activation and sign-in refusals.
-  There is no seed user, no user holding any role, no Audit read path and no IAM endpoint. Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
+  No user is seeded; the first System Administrator comes only from `pnpm iam:bootstrap`. There is no
+  Audit read path and no IAM endpoint. Session endpoints are not rate-limited yet. The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.
-- Identity provisioning (creating, linking, enabling and disabling Keycloak identities and sending
-  invitations) is not reachable from the API yet: no endpoint or command creates users.
+- User administration (creation with departments and roles, suspension, disablement, termination,
+  reactivation, identity synchronization, invitation resend and session revocation) exists as IAM
+  application services but is not mounted in HTTP yet (IAM-MP-11); `pnpm iam:bootstrap` uses
+  the same creation, reconciliation and invitation capabilities for the first System Administrator.

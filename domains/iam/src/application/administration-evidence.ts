@@ -10,7 +10,7 @@ import {
 export interface IamEvidence {
   readonly action: string;
   readonly target: {
-    readonly type: 'iam.department' | 'iam.role' | 'iam.user';
+    readonly type: 'iam.department' | 'iam.role' | 'iam.user' | 'iam.bootstrap';
     readonly id: string;
   };
   readonly result?: AuditResult;

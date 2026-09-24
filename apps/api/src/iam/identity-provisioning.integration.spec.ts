@@ -22,6 +22,7 @@ import {
   type IdentityProvisioningConfig,
 } from '../config/identity-provisioning-config.js';
 import { createIdentityProvisioning, type IdentityProvisioning } from './identity-provisioning.js';
+import { seedInvitedUser } from '../../test-support/iam-users.js';
 
 /**
  * IAM identity provisioning composed with its real adapters: PostgreSQL, the Audit adapter, and
@@ -72,16 +73,7 @@ function uniqueEmail(label: string): string {
 /** Commits a new INVITED user, as user creation does before any Keycloak work (spec Section 12). */
 async function invitedUser(label: string): Promise<{ id: UserId; email: string }> {
   const email = uniqueEmail(label);
-  const created = await createApplicationUserRepository(database).create({
-    email: email as never,
-    displayName: 'Synthetic User' as never,
-    accessState: 'INVITED',
-    identitySyncState: 'PENDING',
-    invitationDeliveryState: 'NOT_SENT',
-    memberships: [],
-    roleIds: [],
-  });
-  if (created.outcome !== 'created') throw new Error('seed user');
+  const created = { user: { id: await seedInvitedUser(postgres, email) } };
   return { id: created.user.id, email };
 }
 
@@ -378,12 +370,44 @@ describe('identity conflicts', () => {
 
   it('reports a conflict when the email belongs to an identity under another username', async () => {
     const user = await invitedUser('email-taken');
-    await createForeign({ username: `other-${randomBytes(4).toString('hex')}`, email: user.email });
+    const foreign = await createForeign({
+      username: `other-${randomBytes(4).toString('hex')}`,
+      email: user.email,
+    });
+    const before = await adminJson<KeycloakUser>(`/users/${foreign}`);
 
     const result = await provisioning.provision(request(user.id));
 
     expect(result.identity).toMatchObject({ outcome: 'failed', failure: 'identity-conflict' });
     expect(await identitiesNamed(user.email)).toEqual([]);
+    // The identity holding the email stays byte-for-byte unchanged (IAM-CP1 CP1-13).
+    expect(await adminJson<KeycloakUser>(`/users/${foreign}`)).toEqual(before);
+    expect(await keycloak.mail.messages(user.email)).toEqual([]);
+  });
+
+  it('never links or changes an owned-looking identity whose subject another user holds', async () => {
+    const holder = await invitedUser('subject-holder');
+    const user = await invitedUser('bound-elsewhere');
+    // Every ownership check passes for `user`, but Vertex already binds the subject to `holder`.
+    const foreign = await createForeign({
+      username: user.email,
+      email: user.email,
+      enabled: true,
+      attributes: { vertexUserId: [user.id] },
+    });
+    await postgres.sql(
+      `UPDATE iam_application_user SET identity_issuer = '${config.issuer}',
+         identity_subject = '${foreign}', version = version + 1 WHERE id = '${holder.id}'`,
+    );
+    const before = await adminJson<KeycloakUser>(`/users/${foreign}`);
+
+    const result = await provisioning.provision(request(user.id));
+
+    expect(result.identity).toMatchObject({ outcome: 'failed', failure: 'identity-conflict' });
+    expect(await adminJson<KeycloakUser>(`/users/${foreign}`)).toEqual(before);
+    expect(await row(user.id)).toMatchObject({ identity: undefined, identitySyncState: 'FAILED' });
+    expect((await row(holder.id)).identity?.subject).toBe(foreign);
+    expect(await keycloak.mail.messages(user.email)).toEqual([]);
   });
 
   it('reports a conflict when the bound identity was deleted, and never re-creates it', async () => {
@@ -565,13 +589,28 @@ describe('invitation delivery', () => {
 
 describe('evidence and secret safety', () => {
   it('records no email, token or secret in Audit evidence', async () => {
+    // Self-contained (IAM-CP1 CP1-26): this test produces the evidence it scans, whatever ran
+    // before it: a creation, binding, dispatch and resend, and a failed reconciliation.
+    const user = await invitedUser('evidence');
+    expect((await provisioning.provision(request(user.id))).invitation.outcome).toBe('sent');
+    expect((await provisioning.resendInvitation(request(user.id))).outcome).toBe('sent');
+    const failing = createIdentityProvisioning(config, database, {
+      fetch: () => Promise.reject(new TypeError('fetch failed')),
+    });
+    expect(await failing.reconcile(request(user.id))).toMatchObject({ outcome: 'failed' });
+    expect(await auditTrail(user.id)).toEqual(
+      expect.arrayContaining([
+        'iam.user.identity-bound:SUCCEEDED',
+        'iam.user.invitation-dispatched:SUCCEEDED',
+        'iam.user.identity-reconciled:FAILED',
+      ]),
+    );
+
     const leaks = await postgres.sql(
       `SELECT count(*) FROM audit_record
        WHERE row_to_json(audit_record)::text ~* '(@example\\.test|sentinel-|bearer)'`,
     );
     expect(Number(leaks)).toBe(0);
-    const total = Number(await postgres.sql(`SELECT count(*) FROM audit_record`));
-    expect(total).toBeGreaterThan(10);
   });
 
   it('never writes the provisioner or SMTP secret to the Keycloak log', async () => {

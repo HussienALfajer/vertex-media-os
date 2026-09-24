@@ -1,5 +1,5 @@
 import type { DatabaseClient } from '@vertex-os/database';
-import { iamPersistenceOf } from '@vertex-os/database/iam';
+import { iamPersistenceOf, type IamPersistenceClient } from '@vertex-os/database/iam';
 import type {
   AuthorizationFacts,
   AuthorizationReader,
@@ -47,51 +47,59 @@ const permissionStates: Record<string, PermissionState> = {
  */
 export function createAuthorizationReader(database: DatabaseClient): AuthorizationReader {
   const client = iamPersistenceOf(database);
-
   return Object.freeze({
-    async readAuthorizationFacts(userId: UserId): Promise<AuthorizationFacts | undefined> {
-      const rows = await client.$queryRaw<FactsRow[]>`
-        SELECT
-          u.access_state::text AS "accessState",
-          COALESCE((
-            SELECT json_agg(json_build_object(
-              'departmentId', m.department_id,
-              'isPrimary', m.is_primary,
-              'departmentState', d.state))
-            FROM iam_department_membership m
-            JOIN iam_department d ON d.id = m.department_id
-            WHERE m.user_id = u.id
-          ), '[]'::json) AS "memberships",
-          COALESCE((
-            SELECT json_agg(json_build_object(
-              'roleState', r.state,
-              'permissionCode', p.code,
-              'permissionState', p.state))
-            FROM iam_user_role_assignment a
-            JOIN iam_role r ON r.id = a.role_id
-            JOIN iam_role_permission rp ON rp.role_id = r.id
-            JOIN iam_permission p ON p.code = rp.permission_code
-            WHERE a.user_id = u.id
-          ), '[]'::json) AS "grants"
-        FROM iam_application_user u
-        WHERE u.id = ${userId}::uuid`;
-      const row = rows[0];
-      if (row === undefined) return undefined;
-      return {
-        accessState: known(accessStates, row.accessState),
-        memberships: list(row.memberships).map((item) => ({
-          departmentId: text(item, 'departmentId') as DepartmentId,
-          isPrimary: flag(item, 'isPrimary'),
-          departmentState: known(departmentStates, text(item, 'departmentState')),
-        })),
-        grants: list(row.grants).map((item) => ({
-          roleState: known(roleStates, text(item, 'roleState')),
-          permissionCode: text(item, 'permissionCode') as PermissionCode,
-          permissionState: known(permissionStates, text(item, 'permissionState')),
-        })),
-      };
-    },
+    readAuthorizationFacts: (userId: UserId) => readAuthorizationFacts(client, userId),
   });
+}
+
+/**
+ * The reader's statement on any IAM client: the pool, or a transaction whose committed view the
+ * grant ceiling evaluates (IAM-R06 D-12).
+ */
+export async function readAuthorizationFacts(
+  client: IamPersistenceClient,
+  userId: UserId,
+): Promise<AuthorizationFacts | undefined> {
+  const rows = await client.$queryRaw<FactsRow[]>`
+    SELECT
+      u.access_state::text AS "accessState",
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'departmentId', m.department_id,
+          'isPrimary', m.is_primary,
+          'departmentState', d.state))
+        FROM iam_department_membership m
+        JOIN iam_department d ON d.id = m.department_id
+        WHERE m.user_id = u.id
+      ), '[]'::json) AS "memberships",
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'roleState', r.state,
+          'permissionCode', p.code,
+          'permissionState', p.state))
+        FROM iam_user_role_assignment a
+        JOIN iam_role r ON r.id = a.role_id
+        JOIN iam_role_permission rp ON rp.role_id = r.id
+        JOIN iam_permission p ON p.code = rp.permission_code
+        WHERE a.user_id = u.id
+      ), '[]'::json) AS "grants"
+    FROM iam_application_user u
+    WHERE u.id = ${userId}::uuid`;
+  const row = rows[0];
+  if (row === undefined) return undefined;
+  return {
+    accessState: known(accessStates, row.accessState),
+    memberships: list(row.memberships).map((item) => ({
+      departmentId: text(item, 'departmentId') as DepartmentId,
+      isPrimary: flag(item, 'isPrimary'),
+      departmentState: known(departmentStates, text(item, 'departmentState')),
+    })),
+    grants: list(row.grants).map((item) => ({
+      roleState: known(roleStates, text(item, 'roleState')),
+      permissionCode: text(item, 'permissionCode') as PermissionCode,
+      permissionState: known(permissionStates, text(item, 'permissionState')),
+    })),
+  };
 }
 
 function known<T>(values: Record<string, T>, value: string): T {

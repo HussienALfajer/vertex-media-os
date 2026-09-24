@@ -7,6 +7,10 @@ enum AuthSessionRevocationReason {
   ACCESS_REVOKED
   REPLACED
   PROVIDER_SESSION_ENDED
+  USER_SUSPENDED
+  USER_DISABLED
+  USER_TERMINATED
+  ADMINISTRATOR_REVOKED
 
   @@map("auth_session_revocation_reason")
 }
@@ -16,7 +20,9 @@ enum AuthSessionRevocationReason {
 /// the identity provider, IAM-R03F D-06) only encrypted. No foreign key to IAM (D-02).
 /// Database-only checks: auth_session_token_hash_ck, auth_session_csrf_token_hash_ck,
 /// auth_session_expiry_ck, auth_session_revocation_ck, auth_session_id_token_ck,
-/// auth_session_idp_session_id_ck, auth_session_refresh_token_ck.
+/// auth_session_idp_session_id_ck, auth_session_refresh_token_ck, auth_session_lifetime_ck,
+/// auth_session_token_ciphertext_ck; trigger
+/// auth_session_revocation_final keeps a revocation final (IAM-R06 D-19).
 model AuthSession {
   id                     String                       @id(map: "auth_session_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tokenHash              String                       @unique(map: "auth_session_token_hash_key") @map("token_hash") @db.Text
@@ -41,7 +47,8 @@ model AuthSession {
 
 /// A pending OIDC sign-in (spec Section 13 step 2), bound to the initiating browser by the hash of
 /// its cookie handle. Deleted when consumed; expired rows are deleted when a new attempt starts.
-/// Database-only checks: auth_login_attempt_handle_hash_ck, auth_login_attempt_expiry_ck.
+/// Database-only checks: auth_login_attempt_handle_hash_ck, auth_login_attempt_expiry_ck,
+/// auth_login_attempt_secrets_ck.
 model AuthLoginAttempt {
   id           String   @id(map: "auth_login_attempt_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   handleHash   String   @unique(map: "auth_login_attempt_handle_hash_key") @map("handle_hash") @db.Text

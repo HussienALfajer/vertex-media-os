@@ -90,6 +90,16 @@
           "{projectRoot}/generated"
         ]
       },
+      "iam-bootstrap": {
+        "command": "node --enable-source-maps --env-file-if-exists=../../.env dist/commands/iam-bootstrap.js",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": false,
+        "dependsOn": [
+          "build"
+        ]
+      },
       "iam-sync-reference": {
         "command": "node --enable-source-maps --env-file-if-exists=../../.env dist/commands/iam-sync-reference.js",
         "options": {

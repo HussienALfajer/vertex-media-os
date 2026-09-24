@@ -13,6 +13,7 @@ const MIGRATIONS = [
   '20260923041312_iam_system_role_code',
   '20260923190000_auth_sessions',
   '20260923210000_auth_session_refresh_token',
+  '20260924020000_auth_session_lifecycle',
 ];
 
 describe('IAM migration history against real PostgreSQL', () => {

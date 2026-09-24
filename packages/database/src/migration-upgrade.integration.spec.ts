@@ -12,6 +12,7 @@ const AUDIT = '20260923035742_audit_foundation';
 const IAM_SYSTEM_ROLE_CODE = '20260923041312_iam_system_role_code';
 const AUTH_SESSIONS = '20260923190000_auth_sessions';
 const AUTH_REFRESH_TOKEN = '20260923210000_auth_session_refresh_token';
+const AUTH_SESSION_LIFECYCLE = '20260924020000_auth_session_lifecycle';
 const migrationsRoot = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
 const schemaRoot = fileURLToPath(new URL('../prisma/schema', import.meta.url));
 
@@ -103,6 +104,7 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
         { name: IAM_SYSTEM_ROLE_CODE, finished: true, rolledBack: false },
         { name: AUTH_SESSIONS, finished: true, rolledBack: false },
         { name: AUTH_REFRESH_TOKEN, finished: true, rolledBack: false },
+        { name: AUTH_SESSION_LIFECYCLE, finished: true, rolledBack: false },
       ]);
       expect(await hasSystemCodeCheck(client)).toBe(true);
       expect(await roles(client)).toEqual(before);
@@ -143,7 +145,7 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
     });
   }, 180_000);
 
-  it('keeps live and revoked IAM-R03 sessions when adding refresh-token storage (IAM-R03F D-06)', async () => {
+  it('keeps live and revoked IAM-R03 sessions through refresh-token storage and the lifecycle checks (IAM-R03F D-06, IAM-R06 D-19)', async () => {
     await withIam01Database(
       async (postgres, client) => {
         const hash = (label: string) => label.repeat(43).slice(0, 43);
@@ -160,11 +162,10 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
 
         await postgres.prisma(['migrate', 'deploy']);
 
-        expect((await history(client)).at(-1)).toEqual({
-          name: AUTH_REFRESH_TOKEN,
-          finished: true,
-          rolledBack: false,
-        });
+        expect((await history(client)).slice(-2)).toEqual([
+          { name: AUTH_REFRESH_TOKEN, finished: true, rolledBack: false },
+          { name: AUTH_SESSION_LIFECYCLE, finished: true, rolledBack: false },
+        ]);
         const rows = await client.$queryRaw<
           Array<{ refresh: boolean; idToken: boolean; revoked: boolean }>
         >`SELECT refresh_token_ciphertext IS NULL AND refresh_token_key_version IS NULL AS refresh,
@@ -176,7 +177,13 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
         ]);
         const [reasons] = await client.$queryRaw<Array<{ values: string[] }>>`
           SELECT enum_range(NULL::auth_session_revocation_reason)::text[] AS values`;
-        expect(reasons?.values).toContain('PROVIDER_SESSION_ENDED');
+        expect(reasons?.values).toEqual(
+          expect.arrayContaining([
+            'PROVIDER_SESSION_ENDED',
+            'USER_SUSPENDED',
+            'ADMINISTRATOR_REVOKED',
+          ]),
+        );
       },
       [IAM_01, AUDIT, IAM_SYSTEM_ROLE_CODE, AUTH_SESSIONS],
     );

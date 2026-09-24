@@ -14,10 +14,12 @@ import {
 import {
   accessToDatabase,
   knownLabel,
+  permissionStateToDatabase,
   permissionStateFromDatabase,
   roleStateFromDatabase,
   roleStateToDatabase,
 } from './enum-mapping.js';
+import { readAuthorizationFacts } from './authorization-reader.js';
 import { lockUserRow } from './user-lock.js';
 
 interface RoleRow {
@@ -193,6 +195,25 @@ export function createRoleStore(client: IamPersistenceClient): RoleStore {
           user: { accessState: accessToDatabase.ACTIVE },
         },
       });
+    },
+
+    async readActivePermissionCodes(roleId) {
+      const rows = await client.iamRolePermission.findMany({
+        where: { roleId, permission: { state: permissionStateToDatabase.ACTIVE } },
+        select: { permissionCode: true },
+        orderBy: { permissionCode: 'asc' },
+      });
+      return rows.map((row) => row.permissionCode as PermissionCode);
+    },
+
+    async readActorAuthority(userId) {
+      const [facts, holding] = [
+        await readAuthorizationFacts(client, userId),
+        await client.iamUserRoleAssignment.count({
+          where: { userId, role: { code: SYSTEM_ADMINISTRATOR_ROLE_CODE } },
+        }),
+      ];
+      return { facts, holdsSystemAdministratorRole: holding > 0 };
     },
   };
 }

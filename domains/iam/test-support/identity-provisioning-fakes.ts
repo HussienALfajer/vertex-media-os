@@ -13,6 +13,7 @@ import type {
   UserId,
   UserIdentityStore,
   UserIdentityWriteResult,
+  UserLifecycleStore,
 } from '../src/persistence.js';
 
 export const ISSUER = 'http://127.0.0.1:8080/realms/vertex';
@@ -106,12 +107,90 @@ export class InMemoryIam implements IamTransactionRunner {
       users: this.store(staged, operations),
       organization: undefined as never,
       roles: undefined as never,
+      lifecycle: this.lifecycle(staged, operations),
       audit,
     });
     for (const [id, user] of staged) this.users.set(id, user);
     this.audit.push(...entries);
     this.transactions.push(operations.join('+'));
     return result;
+  }
+
+  /**
+   * The user lifecycle writes without roles: no user holds the System Administrator role here
+   * (last-administrator cases run against PostgreSQL).
+   */
+  private lifecycle(
+    staged: Map<UserId, ApplicationUser>,
+    operations: string[],
+  ): UserLifecycleStore {
+    const next = (): Date => {
+      this.clock += 1000;
+      return new Date(this.clock);
+    };
+    const locked = (id: UserId): ApplicationUser => {
+      const user = staged.get(id);
+      if (!user) throw new Error('unknown user');
+      return user;
+    };
+    return {
+      lockSystemAdministratorRole: async () => undefined,
+      lockUser: async (id) => {
+        operations.push('lock-user');
+        return staged.get(id);
+      },
+      emailInUse: async (email) => [...staged.values()].some((user) => user.email === email),
+      insertUser: async () => {
+        throw new Error('creation runs against PostgreSQL');
+      },
+      writeAccessRestriction: async ({ id, expectedVersion, accessState }) => {
+        operations.push(`restrict:${accessState}`);
+        const user = locked(id);
+        if (user.version !== expectedVersion) throw new Error('locked user changed');
+        const at = next();
+        const updated: ApplicationUser = {
+          ...user,
+          accessState,
+          identitySyncState: 'PENDING',
+          lastAccessStateChangedAt: at,
+          updatedAt: at,
+          version: user.version + 1,
+        };
+        staged.set(id, updated);
+        return updated;
+      },
+      completeReactivation: async ({ id, expectedVersion, accessState }) => {
+        operations.push(`reactivate:${accessState}`);
+        const user = staged.get(id);
+        if (!user) return { outcome: 'not-found' };
+        if (
+          user.version !== expectedVersion ||
+          (user.accessState !== 'SUSPENDED' && user.accessState !== 'DISABLED')
+        ) {
+          return { outcome: 'version-conflict' };
+        }
+        const at = next();
+        const updated: ApplicationUser = {
+          ...user,
+          accessState,
+          identitySyncState: 'SYNCED',
+          lastAccessStateChangedAt: at,
+          updatedAt: at,
+          version: user.version + 1,
+        };
+        staged.set(id, updated);
+        return { outcome: 'updated', user: updated };
+      },
+      writeDisplayName: async ({ id, expectedVersion, displayName }) => {
+        operations.push('display-name');
+        const user = locked(id);
+        if (user.version !== expectedVersion) throw new Error('locked user changed');
+        const updated = { ...user, displayName, updatedAt: next(), version: user.version + 1 };
+        staged.set(id, updated);
+        return updated;
+      },
+      readRoleHolders: async () => [],
+    };
   }
 
   private store(staged: Map<UserId, ApplicationUser>, operations: string[]): UserIdentityStore {

@@ -292,6 +292,15 @@ const violations = [
     'let env; ({ env } = globalThis[`process`]); void env;',
     'function f({ env } = globalThis[`process`]) { return env; } void f;',
   ].map((code, index) => [`V${107 + index}`, 'domains/iam', code, syntaxRule, rawEnvironment]),
+  // IAM-R06 review AB-6: only the command entries bridge the raw environment, not their logic.
+  [
+    'V110',
+    'apps/api',
+    "process.env['X'];",
+    syntaxRule,
+    rawEnvironment,
+    'src/commands/iam-bootstrap.command.ts',
+  ],
   // IAM-R04 D-12 (CP1-05): the composition entry is for the API's composition roots only.
   [
     'V102',
@@ -371,6 +380,7 @@ const controls = [
     'src/auth/auth-runtime.ts',
   ],
   ['C5', 'apps/api', ["process.env['DATABASE_URL'];"], 'src/commands/iam-sync-reference.ts'],
+  ['C15', 'apps/api', ["process.env['DATABASE_URL'];"], 'src/commands/iam-bootstrap.ts'],
   // Tagged raw SQL and a literal dynamic import stay permitted.
   [
     'C6',

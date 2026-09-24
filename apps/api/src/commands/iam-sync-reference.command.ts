@@ -6,12 +6,12 @@ import {
   type DatabaseClient,
   type DatabaseTransaction,
 } from '@vertex-os/database';
-import { iamPermissionManifest } from '@vertex-os/iam';
 import { synchronizeIamReferenceData } from '@vertex-os/iam/composition';
 import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 import { pino, type DestinationStream, type Logger } from 'pino';
 import { type AppConfig } from '../config/app-config.js';
 import { safeErrorSerializer } from '../logging/safe-error-serializer.js';
+import { permissionManifests } from './permission-manifests.js';
 
 /** Process exit codes of `pnpm iam:sync-reference`. */
 export const EXIT_SYNCHRONIZED = 0;
@@ -34,10 +34,14 @@ export interface IamReferenceSyncOptions {
 }
 
 /** The command's structured logger: same format as the API's, with the safe `err` serializer. */
-export function createCommandLogger(config: AppConfig, destination?: DestinationStream): Logger {
+export function createCommandLogger(
+  config: AppConfig,
+  destination?: DestinationStream,
+  command = 'iam:sync-reference',
+): Logger {
   const options = {
     level: config.logging.level,
-    base: { command: 'iam:sync-reference' },
+    base: { command },
     serializers: { err: safeErrorSerializer },
   };
   return destination ? pino(options, destination) : pino(options);
@@ -68,7 +72,7 @@ export async function runIamReferenceSync(
     });
     const result = await synchronizeIamReferenceData(
       { runner },
-      { manifests: [iamPermissionManifest], traceId: traceId.value },
+      { manifests: permissionManifests, traceId: traceId.value },
     );
     if (result.outcome === 'refused') {
       logger.warn(

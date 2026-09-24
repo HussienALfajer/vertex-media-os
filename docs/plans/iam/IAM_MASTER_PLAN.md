@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R06` (IAM-MP-10) with `/stage IAM-R06`, after the `IAM-R05` pull request is merged; the `IAM-CP2` deep audit follows it  
+**Next step:** the `IAM-CP2` deep audit (authorization and administration core, MP-07 to MP-10) with `/audit IAM-CP2`, after the `IAM-R06` pull request is merged; `IAM-R07` (IAM-MP-11) starts after `IAM-CP2 ACCEPTED`  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoints `IAM-CP1` and `IAM-CP2` and the Final IAM Module Audit (Section 8)
 
 ---
@@ -1152,7 +1152,7 @@ Implement application-layer role and permission administration with concurrency-
 
 ## IAM-MP-10 — User Lifecycle, Session Revocation & Bootstrap Core
 
-**Status:** READY (run `IAM-R06`)  
+**Status:** COMPLETE (run `IAM-R06`)  
 **Parent specification area:** IAM-5, Sections 10–13, 20–21, 31–32, 48, 53–54  
 **Depends on:** IAM-MP-09 COMPLETE
 
@@ -1287,6 +1287,13 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 - **Routes over the bound capability** `createIamAdministration` (`apps/api/src/iam/administration.ts`), each with `@RequirePermission` and an Audit attribution from `CurrentActor`; the outcome → error-code mapping of R05 Section 5.6, naming once the codes the specification lacks (`version-conflict`, `code-taken`, `membership-not-found`, `assignment-not-found`, `unknown-permission`, `permission-not-assignable`, `invalid`).
 - **Root types for DTOs** (review AB-3): `DepartmentCode`, `RoleCode`, `EntityName`, `Description`, `DepartmentState`, `RoleState` are not on the root yet.
 - **Lock-wait timeouts** (review DC-2) surface as unclassified errors; map them to a stable error. Validate every request field before the use cases (review S-6).
+
+### Carried forward from run IAM-R06 (`IAM_R06_USER_LIFECYCLE_PLAN.md`)
+
+- **Routes over** `createIamUserAdministration` (`apps/api/src/iam/user-administration.ts`) with the outcome → error-code mapping of R06 Section 5.8, naming once the codes the specification lacks (`version-conflict`, `superseded`, `invalid`). `UserView` is the user DTO; it omits the identity mapping.
+- **Actor (review SEC-1).** The grant ceiling exempts every `SYSTEM` actor. Administration routes must pass the session's USER actor as the attribution, never `systemAttribution`; prove it with a test.
+- **Session revocation binding (review AB-1).** In the HTTP runtime bind `revokeUserSessions` to `AuthRuntime.sessions`, not to the session store.
+- **Owner decision needed (review SEC-2)** before `POST /api/iam/users/{userId}/reactivate` is mounted: reactivation has no grant ceiling, so an actor with `iam.users.manage-access` can restore a suspended System Administrator or any holder of roles the actor lacks. Options and recommendation: R06 plan Section 10.
 
 ### Exit criteria
 
@@ -1521,6 +1528,12 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 
 - **Denial evidence volume (R04 D-15; review DC-03, S-4):** every permission denial of an authenticated user appends one `iam.authorization.denied` Audit record in its own transaction, without a limit. Bound it together with the rate-limiting item above.
 
+### Carried forward from run IAM-R06 (`IAM_R06_USER_LIFECYCLE_PLAN.md`)
+
+- **SEC-5:** the grant ceiling counts only ACTIVE mappings; a DEPRECATED permission that reference synchronization makes ACTIVE again widens roles assigned under the ceiling (needs a code release).
+- **SEC-6:** if session revocation throws after a committed restriction, reconciliation is skipped and the user stays `PENDING` (access stays denied); decide whether the use case should still reconcile.
+- **DC-4:** `readActorAuthority` reads the actor's facts and System Administrator holding in two statements; one statement would give one snapshot.
+
 ### Exit criteria
 
 - the IAM specification Definition of Done is satisfied or every remaining item is explicitly classified as a blocker;
@@ -1669,11 +1682,14 @@ Run `IAM-R04` delivered IAM-MP-07 (plan `IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`)
 
 Run `IAM-R05` delivered IAM-MP-08 and IAM-MP-09 (plan `IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. Departments, memberships, custom roles, role-permission mappings and user-role assignments are administered by application use cases behind `@vertex-os/iam/composition`, bound in `apps/api/src/iam/administration.ts` and not yet mounted in HTTP (R05 D-01, D-03). Each change commits with one Audit record; departments and roles are version-checked; row locks in one order (role → user → department or permission) serialize competing operations, and the `system-administrator` role row is the lock that keeps at least one ACTIVE System Administrator (D-05 to D-08). The system role is protected, a custom role never newly maps a non-ACTIVE code (D-13, D-15), and every change reaches the next authorization context. It closed the primary-membership switch ordering (IAM-01) and the `DEPRECATED`/`RETIRED` mapping question (IAM-02), and the R04 items attached to IAM-MP-09. Review S-1 raised an owner decision on a grant ceiling, attached to IAM-MP-11; its other carried-forward items are attached to IAM-MP-10 and IAM-MP-11.
 
+Run `IAM-R06` delivered IAM-MP-10 (plan `IAM_R06_USER_LIFECYCLE_PLAN.md`). It is `COMPLETE` once its pull request is merged. User creation with memberships and roles, display-name update, suspension, disablement, termination, backend-derived reactivation, sync-identity, resend-invitation and the administrator's revoke-sessions action are application use cases behind `@vertex-os/iam/composition`, bound in `apps/api/src/iam/user-administration.ts` and not yet mounted in HTTP (R06 D-01). Access removal commits the denial with `PENDING` under the System Administrator and user row locks, then revokes every application session, then reconciles the identity; reactivation grants access only in a version-checked final commit after Keycloak is ready, and reconciles at once when that commit loses (D-06 to D-08). The grant ceiling decided by the owner (spec Section 23.1) is enforced in role assignment, role activation, mapping replacement and user creation (D-12). `pnpm iam:bootstrap` creates, resumes or recovers the first System Administrator from committed state in one transaction serialized by the reference-synchronization lock and the System Administrator row, and refuses unless reference data is synchronized (D-15, D-16). A migration adds four session revocation reasons, the `auth_session` checks of CP1-06 and a trigger that keeps a revocation final. It closed the IAM-02 bootstrap item, the R02 and R03 items, CP1-06, CP1-07, CP1-13, CP1-26 and the R05 items attached to IAM-MP-10. Review SEC-2 raised an owner decision (a grant ceiling for reactivation), attached to IAM-MP-11; its other carried-forward items are attached to IAM-MP-11 and IAM-MP-15.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
 - `docs/modules/audit.md`: when MOD-AUDIT is fully specified; it adopts or deliberately migrates the foundation contract (IAM-02 D-05). Until then `docs/modules/iam.md` Sections 34–35 specify the implemented foundation;
 - a shared test-support package: decided when a fourth copy of the PostgreSQL test harness would be needed;
+- an administrative credential-recovery action (spec Section 54 MAY; not built, IAM-R06 D-17): whoever adds one must make it not runnable through an unexpired invitation link (IAM-R02 review S-06, S-07);
 - production identity provider (run IAM-R01): production deployment design. It covers:
   - the realm's production form (hostname, TLS, database, no `start-dev`);
   - never importing `vertex-realm.json` without every placeholder set, because Keycloak imports an unset `${NAME}` literally (verified on 26.7.4);
@@ -1699,8 +1715,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-07 Default Protection & Authorization Context | R04 | COMPLETE | `IAM-CP1 ACCEPTED` (satisfied) |
 | IAM-MP-08 Department & Membership Core | R05 | COMPLETE | R04 merged (satisfied) |
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | COMPLETE | R04 merged (satisfied) |
-| IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | READY | R05 merged |
-| `IAM-CP2` Deep audit: authorization and administration core | — | PLANNED | R06 merged |
+| IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | COMPLETE | R05 merged (satisfied) |
+| `IAM-CP2` Deep audit: authorization and administration core | — | READY | R06 merged |
 | IAM-MP-11 HTTP Administration Surface | R07 | PLANNED | `IAM-CP2 ACCEPTED` |
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | PLANNED | R07 merged |
 | IAM-MP-13 Frontend User & Access Admin | R08 | PLANNED | R07 merged |
@@ -1975,15 +1991,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-09 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, and IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-10 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, and IAM-MP-10 through run `IAM-R06`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). The next step is run `IAM-R06` (IAM-MP-10). Start it in a new Claude Code session after the `IAM-R05` pull request is merged:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). The next step is the `IAM-CP2` deep audit of the authorization and administration core (IAM-MP-07 to IAM-MP-10). Start it in a new Claude Code session after the `IAM-R06` pull request is merged:
 
 ```text
-/stage IAM-R06
+/audit IAM-CP2
 ```
 
-Its planner reads the IAM-MP-10 section, including the items carried forward from run `IAM-R05`. The `IAM-CP2` deep audit (authorization and administration core, MP-07 to MP-10) follows `IAM-R06`.
+`IAM-R07` (IAM-MP-11) starts only after `IAM-CP2 ACCEPTED`. Its planner also needs the owner's decision on a grant ceiling for reactivation (IAM-R06 review SEC-2, attached to IAM-MP-11).
 
 Do **not** plan later runs in detail now.
 
