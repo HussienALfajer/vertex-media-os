@@ -215,5 +215,27 @@ export function createRoleStore(client: IamPersistenceClient): RoleStore {
       ];
       return { facts, holdsSystemAdministratorRole: holding > 0 };
     },
+
+    async readUserGrant(userId) {
+      const holding = await client.iamUserRoleAssignment.count({
+        where: { userId, role: { code: SYSTEM_ADMINISTRATOR_ROLE_CODE } },
+      });
+      const rows = await client.iamRolePermission.findMany({
+        where: {
+          role: {
+            state: roleStateToDatabase.ACTIVE,
+            userAssignments: { some: { userId } },
+          },
+          permission: { state: permissionStateToDatabase.ACTIVE },
+        },
+        select: { permissionCode: true },
+        distinct: ['permissionCode'],
+        orderBy: { permissionCode: 'asc' },
+      });
+      return {
+        holdsSystemAdministratorRole: holding > 0,
+        activePermissionCodes: rows.map((row) => row.permissionCode as PermissionCode),
+      };
+    },
   };
 }

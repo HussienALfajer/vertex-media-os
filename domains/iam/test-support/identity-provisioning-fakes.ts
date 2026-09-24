@@ -7,9 +7,12 @@ import {
 } from '../src/identity-provider.js';
 import type {
   ApplicationUser,
+  AuthorizationFacts,
   IamTransactionRunner,
   IamTransactionScope,
   NormalizedEmail,
+  PermissionCode,
+  RoleStore,
   UserId,
   UserIdentityStore,
   UserIdentityWriteResult,
@@ -52,6 +55,16 @@ export class InMemoryIam implements IamTransactionRunner {
   readonly transactions: string[] = [];
   beforeRun: (() => void) | undefined;
   failAuditOnAction: string | undefined;
+  /** What each user's roles grant (the grant ceiling's view of a target); nothing by default. */
+  readonly grants = new Map<
+    UserId,
+    { holdsSystemAdministratorRole: boolean; activePermissionCodes: PermissionCode[] }
+  >();
+  /** Each actor's committed authorization facts; an unknown actor holds nothing. */
+  readonly authorities = new Map<
+    UserId,
+    { facts: AuthorizationFacts; holdsSystemAdministratorRole: boolean }
+  >();
   private clock = Date.parse('2026-09-23T12:00:00.000Z');
 
   constructor(...users: ApplicationUser[]) {
@@ -106,7 +119,7 @@ export class InMemoryIam implements IamTransactionRunner {
       referenceData: undefined as never,
       users: this.store(staged, operations),
       organization: undefined as never,
-      roles: undefined as never,
+      roles: this.roles(operations),
       lifecycle: this.lifecycle(staged, operations),
       audit,
     });
@@ -114,6 +127,35 @@ export class InMemoryIam implements IamTransactionRunner {
     this.audit.push(...entries);
     this.transactions.push(operations.join('+'));
     return result;
+  }
+
+  /** The grant-ceiling reads only; role administration runs against PostgreSQL. */
+  private roles(operations: string[]): RoleStore {
+    const unsupported = async (): Promise<never> => {
+      throw new Error('role administration runs against PostgreSQL');
+    };
+    return {
+      createRole: unsupported,
+      lockRole: unsupported,
+      writeRole: unsupported,
+      readRolePermissionCodes: unsupported,
+      lockPermissions: unsupported,
+      replaceRolePermissions: unsupported,
+      lockUser: unsupported,
+      hasAssignment: unsupported,
+      insertAssignment: unsupported,
+      deleteAssignment: unsupported,
+      countActiveSystemAdministrators: unsupported,
+      readActivePermissionCodes: unsupported,
+      readActorAuthority: async (id) =>
+        this.authorities.get(id) ?? { facts: undefined, holdsSystemAdministratorRole: false },
+      readUserGrant: async (id) => {
+        operations.push('read-grant');
+        return (
+          this.grants.get(id) ?? { holdsSystemAdministratorRole: false, activePermissionCodes: [] }
+        );
+      },
+    };
   }
 
   /**

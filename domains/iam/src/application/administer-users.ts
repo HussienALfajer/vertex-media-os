@@ -131,7 +131,11 @@ export type ReactivateUserResult =
   | { readonly outcome: 'identity-failed'; readonly failure: IdentityFailure }
   | {
       readonly outcome:
-        'user-not-found' | 'version-conflict' | 'invalid-access-transition' | 'superseded';
+        | 'user-not-found'
+        | 'version-conflict'
+        | 'invalid-access-transition'
+        | 'grant-exceeds-actor'
+        | 'superseded';
     }
   | Invalid<'userId' | 'expectedVersion'>;
 
@@ -517,43 +521,63 @@ export async function reactivateUser(
   if (expectedVersion === undefined) return { outcome: 'invalid', field: 'expectedVersion' };
   const provisioning = request(userId.value, attribution);
 
-  // Step 1: validate and derive the target from the state the caller saw.
-  const committed = await dependencies.users.findById(userId.value);
-  if (!committed) return { outcome: 'user-not-found' };
-  const decision = decideReactivation(committed, expectedVersion);
-  if (decision.kind === 'refuse') return { outcome: decision.reason };
-  const { target } = decision;
-
-  // Step 2: PENDING, version-checked, so no competing change can slip in unnoticed.
-  const pending = await dependencies.runner.run(async ({ users, audit }) => {
+  // Steps 1 and 2 under the target's row lock: validate against the state the caller saw, derive
+  // the target, apply the grant ceiling (IAM-R07 D-11), then PENDING, version-checked, so no
+  // competing change can slip in unnoticed and no Keycloak call precedes a refusal.
+  const pending = await dependencies.runner.run(async ({ lifecycle, roles, users, audit }) => {
+    const locked = await lifecycle.lockUser(userId.value);
+    if (locked === undefined) return { outcome: 'user-not-found' as const };
+    const decision = decideReactivation(locked, expectedVersion);
+    if (decision.kind === 'refuse') return { outcome: decision.reason };
+    // The target's assignments are stable under its row lock: every assignment change takes it.
+    const grant = await roles.readUserGrant(locked.id);
+    if (
+      await grantExceedsActor(
+        roles,
+        attribution,
+        grant.holdsSystemAdministratorRole
+          ? { kind: 'system-role' }
+          : { kind: 'permissions', codes: grant.activePermissionCodes },
+      )
+    ) {
+      await recordGrantRefusal(
+        audit,
+        attribution,
+        'iam.user.reactivated',
+        { type: 'iam.user', id: locked.id },
+        { target: decision.target },
+      );
+      return { outcome: 'grant-exceeds-actor' as const };
+    }
     const written = await users.recordIdentitySync({
-      id: committed.id,
+      id: locked.id,
       expectedVersion,
       state: 'PENDING',
     });
-    if (written.outcome === 'updated') {
-      await appendUserAudit(
-        audit,
-        attribution,
-        written.user,
-        'iam.user.reactivation-started',
-        'SUCCEEDED',
-        {
-          before: {
-            accessState: committed.accessState,
-            identitySyncState: committed.identitySyncState,
-          },
-          after: { identitySyncState: 'PENDING', target },
-        },
-      );
-    }
-    return written;
+    // The row is locked at `expectedVersion`, so the conditional write cannot miss.
+    if (written.outcome !== 'updated') throw new Error('A locked user changed underneath.');
+    await appendUserAudit(
+      audit,
+      attribution,
+      written.user,
+      'iam.user.reactivation-started',
+      'SUCCEEDED',
+      {
+        before: { accessState: locked.accessState, identitySyncState: locked.identitySyncState },
+        after: { identitySyncState: 'PENDING', target: decision.target },
+      },
+    );
+    return { outcome: 'pending' as const, committed: locked, target: decision.target, written };
   });
-  if (pending.outcome === 'not-found') return { outcome: 'user-not-found' };
-  if (pending.outcome !== 'updated') return { outcome: 'version-conflict' };
+  if (pending.outcome !== 'pending') return { outcome: pending.outcome };
+  const { committed, target } = pending;
 
   // Step 3: Keycloak must satisfy the target's requirement before any access is granted.
-  const identity = await enableIdentityForReactivation(dependencies, provisioning, pending.user);
+  const identity = await enableIdentityForReactivation(
+    dependencies,
+    provisioning,
+    pending.written.user,
+  );
   if (identity.outcome === 'failed') {
     return { outcome: 'identity-failed', failure: identity.failure };
   }

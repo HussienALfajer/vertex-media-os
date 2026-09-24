@@ -14,6 +14,7 @@ import {
   invitedUser,
 } from '../../test-support/identity-provisioning-fakes.js';
 import type { ApplicationUser } from '../domain/application-user.js';
+import type { PermissionCode } from '../domain/codes.js';
 import type { UserId } from '../domain/identifiers.js';
 import {
   disableUser,
@@ -225,7 +226,7 @@ describe('reactivation (spec Sections 10.7, 31.2)', () => {
     });
     expect(provider.mutatingCalls()).toEqual(['setEnabled:true']);
     // PENDING first, the target state only in the final commit.
-    expect(iam.transactions).toEqual(['sync:PENDING', 'reactivate:ACTIVE']);
+    expect(iam.transactions).toEqual(['lock-user+read-grant+sync:PENDING', 'reactivate:ACTIVE']);
     expect(trail(iam)).toEqual([
       'iam.user.reactivation-started:SUCCEEDED',
       'iam.user.reactivated:SUCCEEDED',
@@ -383,6 +384,108 @@ describe('reactivation (spec Sections 10.7, 31.2)', () => {
 
     expect(result).toEqual({ outcome: 'version-conflict' });
     expect(provider.calls).toEqual([]);
+  });
+});
+
+describe('grant ceiling for reactivation (spec Section 23.1; IAM-R07 D-11)', () => {
+  const READ = 'iam.users.read' as PermissionCode;
+  const MANAGE = 'iam.users.manage-access' as PermissionCode;
+
+  function suspendedTarget() {
+    const context = active({ accessState: 'SUSPENDED' });
+    context.identity.enabled = false;
+    context.identity.sessions = 0;
+    return context;
+  }
+
+  function actorHolds(iam: InMemoryIam, codes: PermissionCode[], systemAdministrator = false) {
+    iam.authorities.set(ADMIN as UserId, {
+      facts: {
+        accessState: 'ACTIVE',
+        memberships: [],
+        grants: codes.map((permissionCode) => ({
+          roleState: 'ACTIVE' as const,
+          permissionCode,
+          permissionState: 'ACTIVE' as const,
+        })),
+      },
+      holdsSystemAdministratorRole: systemAdministrator,
+    });
+  }
+
+  it('refuses a target whose ACTIVE roles grant a permission the actor lacks, before Keycloak', async () => {
+    const { iam, provider, dependencies } = suspendedTarget();
+    actorHolds(iam, [MANAGE]);
+    iam.grants.set(USER_ID, { holdsSystemAdministratorRole: false, activePermissionCodes: [READ] });
+
+    const result = await reactivateUser(
+      dependencies,
+      { userId, expectedVersion: 5 },
+      attribution(),
+    );
+
+    expect(result).toEqual({ outcome: 'grant-exceeds-actor' });
+    expect(provider.calls).toEqual([]);
+    expect(iam.get()).toMatchObject({ accessState: 'SUSPENDED', version: 5 });
+    expect(trail(iam)).toEqual(['iam.user.reactivated:REFUSED']);
+    expect(iam.audit[0]).toMatchObject({
+      actor: { type: 'USER', userId: ADMIN },
+      target: { type: 'iam.user', id: USER_ID },
+      change: { after: { target: 'ACTIVE' } },
+    });
+  });
+
+  it('refuses a System Administrator target to an actor who is not one', async () => {
+    const { iam, provider, dependencies } = suspendedTarget();
+    actorHolds(iam, [READ, MANAGE]);
+    iam.grants.set(USER_ID, { holdsSystemAdministratorRole: true, activePermissionCodes: [READ] });
+
+    const result = await reactivateUser(
+      dependencies,
+      { userId, expectedVersion: 5 },
+      attribution(),
+    );
+
+    expect(result).toEqual({ outcome: 'grant-exceeds-actor' });
+    expect(provider.calls).toEqual([]);
+  });
+
+  it('reactivates a target within the permissions of the actor', async () => {
+    const { iam, dependencies } = suspendedTarget();
+    actorHolds(iam, [READ, MANAGE]);
+    iam.grants.set(USER_ID, { holdsSystemAdministratorRole: false, activePermissionCodes: [READ] });
+
+    const result = await reactivateUser(
+      dependencies,
+      { userId, expectedVersion: 5 },
+      attribution(),
+    );
+
+    expect(result).toMatchObject({ outcome: 'reactivated', target: 'ACTIVE' });
+  });
+
+  it('does not limit an ACTIVE System Administrator', async () => {
+    const { iam, dependencies } = suspendedTarget();
+    actorHolds(iam, [MANAGE], true);
+    iam.grants.set(USER_ID, { holdsSystemAdministratorRole: true, activePermissionCodes: [READ] });
+
+    const result = await reactivateUser(
+      dependencies,
+      { userId, expectedVersion: 5 },
+      attribution(),
+    );
+
+    expect(result).toMatchObject({ outcome: 'reactivated', target: 'ACTIVE' });
+  });
+
+  it('checks the transition and the version before the ceiling', async () => {
+    const { iam, dependencies } = suspendedTarget();
+    iam.grants.set(USER_ID, { holdsSystemAdministratorRole: true, activePermissionCodes: [] });
+
+    expect(
+      await reactivateUser(dependencies, { userId, expectedVersion: 4 }, attribution()),
+    ).toEqual({ outcome: 'version-conflict' });
+    expect(iam.audit).toEqual([]);
   });
 });
 
