@@ -5,6 +5,7 @@ import { createApp } from '../app.factory.js';
 import { testAuthConfig } from '../../test-support/auth-config.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { DATABASE_ERROR_MESSAGE, safeErrorSerializer } from './safe-error-serializer.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 const SENTINEL = 'sentinel-person@example.com';
 
@@ -128,6 +129,7 @@ describe('the API logger', () => {
         DATABASE_URL: 'postgresql://vertex:unused@127.0.0.1:1/vertex_os',
       }),
       testAuthConfig(),
+      testProvisioningConfig(),
       {
         logStream: new Writable({
           write(chunk: Buffer, _encoding, done) {

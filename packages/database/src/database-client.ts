@@ -275,6 +275,28 @@ export function describeDatabaseError(error: unknown): DatabaseErrorDescription 
 }
 
 /**
+ * SQLSTATEs of competing work (IAM-R07 D-15): a statement cancelled by `statement_timeout`, which
+ * is how a lock wait ends here (57014), a lock that is not available (55P03), a deadlock (40P01)
+ * and a serialization failure (40001).
+ */
+const CONTENTION_SQLSTATES = new Set(['57014', '55P03', '40P01', '40001']);
+/** Prisma's interactive-transaction timeout or start failure (P2028) and write conflict (P2034). */
+const CONTENTION_PRISMA_CODES = new Set(['P2028', 'P2034']);
+
+/**
+ * Whether a database error means the work lost to competing work or ran out of its time bound,
+ * so the same request may succeed when retried. Decided from the allowlisted description only.
+ */
+export function isDatabaseContention(error: unknown): boolean {
+  const description = describeDatabaseError(error);
+  if (description === undefined) return false;
+  return (
+    (description.sqlState !== undefined && CONTENTION_SQLSTATES.has(description.sqlState)) ||
+    (description.prismaCode !== undefined && CONTENTION_PRISMA_CODES.has(description.prismaCode))
+  );
+}
+
+/**
  * The driver adapter's classification of a failed query, which Prisma exposes as
  * `meta.driverAdapterError.cause` (`{ kind, originalCode?, … }`).
  */

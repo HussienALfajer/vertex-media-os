@@ -14,17 +14,17 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import type { AuthorizationContext, PermissionCode } from '@vertex-os/iam';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { API_PREFIX } from '../src/app.factory.js';
-import { AppModule } from '../src/app.module.js';
+import { AppModule, type AppModuleOptions } from '../src/app.module.js';
 import {
   CURRENT_ACTOR,
   Public,
   RequirePermission,
   type CurrentActor,
 } from '../src/auth/access.guard.js';
-import type { AuthRuntimeOptions } from '../src/auth/auth-runtime.js';
 import type { AppConfig } from '../src/config/app-config.js';
 import type { AuthConfig } from '../src/config/auth-config.js';
 import { ProblemDetailsFilter } from '../src/http/problem-details.js';
+import { testProvisioningConfig } from './provisioning-config.js';
 
 export const PROBE_PERMISSION = 'iam.users.read' as PermissionCode;
 
@@ -84,16 +84,16 @@ class ProbeController {
 
 @Module({})
 class ProbeModule {
-  static forRoot(config: AppConfig, auth: AuthConfig, options: AuthRuntimeOptions): DynamicModule {
+  static forRoot(config: AppConfig, auth: AuthConfig, options: AppModuleOptions): DynamicModule {
     return {
       module: ProbeModule,
-      imports: [AppModule.forRoot(config, auth, options)],
+      imports: [AppModule.forRoot(config, auth, testProvisioningConfig(), options)],
       controllers: [ProbeController],
     };
   }
 }
 
-export interface ProbeAppOptions extends AuthRuntimeOptions {
+export interface ProbeAppOptions extends AppModuleOptions {
   readonly logStream?: { write(line: string): void };
 }
 
@@ -107,9 +107,9 @@ export async function createProbeApp(
   auth: AuthConfig,
   options: ProbeAppOptions = {},
 ): Promise<NestFastifyApplication> {
-  const { logStream, ...authOptions } = options;
+  const { logStream, ...moduleOptions } = options;
   const app = await NestFactory.create<NestFastifyApplication>(
-    ProbeModule.forRoot(config, auth, authOptions),
+    ProbeModule.forRoot(config, auth, moduleOptions),
     new FastifyAdapter({
       logger: { level: 'info', ...(logStream ? { stream: logStream } : {}) },
     }),

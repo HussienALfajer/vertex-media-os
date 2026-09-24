@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp, type CreateAppOptions } from '../app.factory.js';
 import { testAuthConfig } from '../../test-support/auth-config.js';
 import { type LogLevel, loadAppConfig } from '../config/app-config.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 // Same image as infra/compose.yaml and the database package tests.
 const POSTGRES_IMAGE = 'postgres:18.6-alpine';
@@ -17,6 +18,7 @@ async function startApp(
   const app = await createApp(
     loadAppConfig({ NODE_ENV: 'test', LOG_LEVEL: logLevel, DATABASE_URL: databaseUrl }),
     testAuthConfig(),
+    testProvisioningConfig(),
     options,
   );
   await app.init();

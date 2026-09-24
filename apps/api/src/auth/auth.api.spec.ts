@@ -5,6 +5,7 @@ import { testAuthConfig } from '../../test-support/auth-config.js';
 import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { createOpenApiDocument } from '../openapi/openapi.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 /**
  * The authentication endpoints over Fastify inject, with neither PostgreSQL nor an identity
@@ -25,6 +26,7 @@ describe('authentication endpoints without PostgreSQL or Keycloak', () => {
         DATABASE_URL: 'postgresql://vertex:unused@127.0.0.1:1/vertex_os',
       }),
       testAuthConfig(),
+      testProvisioningConfig(),
       { logStream: { write: (line: string) => lines.push(line) } },
     );
     await app.init();

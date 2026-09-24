@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { createApp } from '../app.factory.js';
 import { type AppConfig } from '../config/app-config.js';
 import { type AuthConfig } from '../config/auth-config.js';
+import { type IdentityProvisioningConfig } from '../config/identity-provisioning-config.js';
 import { createOpenApiDocument } from './openapi.js';
 
 /**
@@ -10,8 +11,8 @@ import { createOpenApiDocument } from './openapi.js';
  * (`pnpm openapi:generate` -> apps/api/generated/openapi.json).
  *
  * The application is created but never listens, the database client connects lazily on first
- * query, and OIDC discovery happens on the first sign-in, so the placeholders below are never
- * contacted.
+ * query, OIDC discovery happens on the first sign-in, and the Keycloak Admin adapter authenticates
+ * on its first call, so the placeholders below are never contacted.
  */
 const GENERATION_CONFIG: AppConfig = {
   environment: 'development',
@@ -38,8 +39,21 @@ const GENERATION_AUTH_CONFIG: AuthConfig = {
   tokenEncryptionSecret: 'openapi-generation-placeholder-secret-0000',
 };
 
+const GENERATION_PROVISIONING_CONFIG: IdentityProvisioningConfig = {
+  issuer: 'http://127.0.0.1:1/realms/never-contacted',
+  provisioner: {
+    clientId: 'vertex-provisioner',
+    clientSecret: 'openapi-generation-placeholder',
+  },
+  invitationLifespanSeconds: 43_200,
+};
+
 async function generate(outputPath: string): Promise<void> {
-  const app = await createApp(GENERATION_CONFIG, GENERATION_AUTH_CONFIG);
+  const app = await createApp(
+    GENERATION_CONFIG,
+    GENERATION_AUTH_CONFIG,
+    GENERATION_PROVISIONING_CONFIG,
+  );
   try {
     const document = createOpenApiDocument(app);
     await mkdir(dirname(outputPath), { recursive: true });

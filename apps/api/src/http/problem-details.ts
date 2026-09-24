@@ -1,5 +1,12 @@
 import { STATUS_CODES } from 'node:http';
-import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException } from '@nestjs/common';
+import {
+  type ArgumentsHost,
+  BadRequestException,
+  Catch,
+  type ExceptionFilter,
+  HttpException,
+} from '@nestjs/common';
+import { isDatabaseContention } from '@vertex-os/database';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
@@ -17,7 +24,22 @@ export interface ProblemDetails {
   readonly instance: string;
   readonly code: string;
   readonly traceId: string;
+  /** The request fields that failed validation, by name; never their values (IAM-R07 D-04). */
+  readonly fields?: readonly string[];
 }
+
+/** Request input that failed transport or use-case validation: `400 VALIDATION_FAILED`. */
+export class RequestValidationException extends BadRequestException {
+  constructor(readonly fields: readonly string[]) {
+    super(`Invalid request field${fields.length === 1 ? '' : 's'}: ${fields.join(', ')}.`, {
+      errorCode: 'VALIDATION_FAILED',
+    });
+  }
+}
+
+/** Code of the answer to work that lost to competing work or ran out of time (IAM-R07 D-15). */
+export const SERVICE_BUSY = 'SERVICE_BUSY';
+const SERVICE_UNAVAILABLE = 503;
 
 interface ProblemContext {
   readonly url: string;
@@ -32,6 +54,17 @@ const INTERNAL_SERVER_ERROR = 500;
  * (stack traces, database or infrastructure messages) never reach clients.
  */
 export function toProblemDetails(exception: unknown, context: ProblemContext): ProblemDetails {
+  if (isDatabaseContention(exception)) {
+    return {
+      type: 'about:blank',
+      title: STATUS_CODES[SERVICE_UNAVAILABLE] ?? 'Service Unavailable',
+      status: SERVICE_UNAVAILABLE,
+      detail: 'The service is busy; retry the request.',
+      instance: context.url.split('?', 1)[0] ?? context.url,
+      code: SERVICE_BUSY,
+      traceId: context.requestId,
+    };
+  }
   const isHttpException = exception instanceof HttpException;
   const status = isHttpException ? exception.getStatus() : INTERNAL_SERVER_ERROR;
   const explicitCode = isHttpException ? exception.errorCode : undefined;
@@ -47,6 +80,7 @@ export function toProblemDetails(exception: unknown, context: ProblemContext): P
     instance: context.url.split('?', 1)[0] ?? context.url,
     code: explicitCode ?? codeForStatus(status),
     traceId: context.requestId,
+    ...(exception instanceof RequestValidationException ? { fields: [...exception.fields] } : {}),
   };
 }
 
@@ -81,6 +115,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     const problem = toProblemDetails(exception, { url: request.url, requestId: request.id });
+    if (problem.code === SERVICE_BUSY) void reply.header('retry-after', '1');
     void reply.status(problem.status).type(PROBLEM_CONTENT_TYPE).send(problem);
   }
 }

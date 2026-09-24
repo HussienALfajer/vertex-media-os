@@ -1,12 +1,14 @@
 import { createApp } from './app.factory.js';
 import { ConfigurationError, loadAppConfig } from './config/app-config.js';
 import { loadAuthConfig } from './config/auth-config.js';
+import { loadIdentityProvisioningConfig } from './config/identity-provisioning-config.js';
 import { safeErrorSerializer } from './logging/safe-error-serializer.js';
 
 async function bootstrap(): Promise<void> {
   const config = loadAppConfig(process.env);
   const auth = loadAuthConfig(process.env);
-  const app = await createApp(config, auth);
+  const provisioning = loadIdentityProvisioningConfig(process.env);
+  const app = await createApp(config, auth, provisioning);
 
   // SIGINT/SIGTERM close the HTTP server and release the database pool.
   app.enableShutdownHooks();

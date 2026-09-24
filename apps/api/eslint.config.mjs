@@ -22,6 +22,9 @@ const compositionPatterns = restrictedImportPatterns.map((pattern) =>
     : pattern,
 );
 
+const IAM_HTTP_CAPABILITIES_ONLY =
+  'IAM controllers use the bound capabilities of src/iam; only its composition roots import adapters.';
+
 const ADAPTERS_ONLY_IN_RUNTIME =
   'Only auth-runtime.ts composes adapters; use the bound capabilities of AuthRuntime.';
 
@@ -112,6 +115,37 @@ export default [
       'no-restricted-imports': [
         'error',
         { paths: restrictedImportPaths, patterns: compositionPatterns },
+      ],
+    },
+  },
+  {
+    // IAM's inbound transport sees only the bound capabilities (IAM-R07 D-01): neither the private
+    // composition entry nor an adapter, statically or dynamically.
+    files: ['src/iam/http/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedImportPaths,
+          patterns: [
+            ...restrictedImportPatterns,
+            {
+              group: [
+                '@vertex-os/iam-persistence',
+                '@vertex-os/audit-persistence',
+                '@vertex-os/iam-keycloak',
+              ],
+              message: IAM_HTTP_CAPABILITIES_ONLY,
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        ...restrictedImportSyntax,
+        ...restrictedEnvSyntax,
+        ...restrictedRawSqlSyntax,
+        ...adapterImportSyntax.map((rule) => ({ ...rule, message: IAM_HTTP_CAPABILITIES_ONLY })),
       ],
     },
   },

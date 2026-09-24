@@ -20,6 +20,7 @@ const createRequireBan = 'createRequire bypasses the import boundaries';
 const stringLiteralImport = 'Write a dynamic import specifier as a string literal';
 const commonJs = 'CommonJS require bypasses the import boundaries';
 const adaptersOnlyInRuntime = 'Only auth-runtime.ts';
+const iamHttpCapabilitiesOnly = 'IAM controllers use the bound capabilities';
 const approvedEntry = 'approved root entry points';
 
 // [id, project, code, rule, message fragment?, virtual file relative to the project?]
@@ -328,6 +329,27 @@ const violations = [
     privateSubpath,
     'src/iam/x.ts',
   ],
+  // IAM-R07 D-01: IAM's controllers reach neither the composition entry nor an adapter.
+  [
+    'V111',
+    'apps/api',
+    "import '@vertex-os/iam/composition';",
+    importsRule,
+    approvedEntry,
+    'src/iam/http/x.ts',
+  ],
+  ...[
+    "import '@vertex-os/iam-persistence';",
+    "import '@vertex-os/audit-persistence';",
+    "await import('@vertex-os/iam-keycloak');",
+  ].map((code, index) => [
+    `V${112 + index}`,
+    'apps/api',
+    code,
+    index < 2 ? importsRule : syntaxRule,
+    iamHttpCapabilitiesOnly,
+    'src/iam/http/x.ts',
+  ]),
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
@@ -392,6 +414,7 @@ const controls = [
   ['C12', 'apps/api', imports('@vertex-os/iam/composition'), 'src/iam/x.ts'],
   ['C13', 'apps/api', imports('@vertex-os/iam/composition'), 'src/commands/x.ts'],
   ['C14', 'domains/iam-persistence', imports('@vertex-os/iam/composition'), 'src/x.spec.ts'],
+  ['C16', 'apps/api', imports('@vertex-os/iam', '@vertex-os/audit'), 'src/iam/http/x.ts'],
   // The black-box end-to-end project resolves installed packages with createRequire.
   [
     'C8',

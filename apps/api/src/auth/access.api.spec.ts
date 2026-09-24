@@ -7,6 +7,7 @@ import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { createOpenApiDocument } from '../openapi/openapi.js';
 import { PUBLIC_ROUTE } from './access.guard.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
 /**
  * Protected by default (spec Section 24; IAM-R04 D-01, D-02), over Fastify inject with neither
@@ -36,7 +37,9 @@ describe('protected by default', () => {
   const lines: string[] = [];
 
   beforeAll(async () => {
-    app = await createApp(config(), testAuthConfig(), { logStream: { write: () => undefined } });
+    app = await createApp(config(), testAuthConfig(), testProvisioningConfig(), {
+      logStream: { write: () => undefined },
+    });
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     probe = await createProbeApp(config(), testAuthConfig(), {
