@@ -137,13 +137,14 @@ export interface SessionStore {
    * of sessions whose idle deadline lies after `tokensExpiredAfter` and at or before `now`
    * (SECURITY Section 11), and deletes session rows whose idle deadline is at or before
    * `purgeBefore`. Each statement repeats its predicate outside the batch subquery, so a row that a
-   * concurrent statement changed is re-checked after the lock wait (CP1-22).
+   * concurrent statement changed is re-checked after the lock wait (CP1-22). `expiredTokensRemain`
+   * says whether that window still holds expired sessions with tokens when the run ends.
    */
   housekeep(change: {
     readonly now: Date;
     readonly tokensExpiredAfter: Date;
     readonly purgeBefore: Date;
-  }): Promise<HousekeepingResult>;
+  }): Promise<HousekeepingResult & { readonly expiredTokensRemain: boolean }>;
 }
 
 /** What one housekeeping run removed. */
@@ -466,6 +467,13 @@ export function createSessionStore(
           AND idle_expires_at > ${tokensExpiredAfter} AND idle_expires_at <= ${now}
           AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)`,
       );
+      // A batch that lost rows to a concurrent discard stops the loop early, so the window is
+      // re-read rather than inferred from the count (IAM-R09 review DC-1).
+      const [remaining] = await client.$queryRaw<Array<{ remain: boolean }>>`SELECT EXISTS (
+          SELECT 1 FROM auth_session
+          WHERE idle_expires_at > ${tokensExpiredAfter} AND idle_expires_at <= ${now}
+            AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)
+        ) AS remain`;
       // Sessions are authentication state, not IAM entities; their establishment and revocation
       // stay in the Audit records (IAM-R09 D-07).
       const sessionsPurged = await inBatches(
@@ -474,7 +482,12 @@ export function createSessionStore(
             LIMIT ${HOUSEKEEPING_BATCH})
           AND idle_expires_at <= ${purgeBefore}`,
       );
-      return { loginAttemptsDeleted, sessionTokensDiscarded, sessionsPurged };
+      return {
+        loginAttemptsDeleted,
+        sessionTokensDiscarded,
+        sessionsPurged,
+        expiredTokensRemain: remaining?.remain ?? true,
+      };
     },
 
     async recordBackchannelLogout({ clientId, outcome, attribution }) {

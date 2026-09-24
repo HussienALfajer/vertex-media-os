@@ -128,25 +128,27 @@ describe('the expired-token sweep window (IAM-R09 review DATA-1)', () => {
   const MINUTE = 60_000;
   const DAY = 86_400_000;
 
-  function recordingStore(discarded: number[]) {
+  function recordingStore(remain: boolean[]) {
     const windows: Array<{ now: Date; tokensExpiredAfter: Date; purgeBefore: Date }> = [];
     const store = {
       async housekeep(change: { now: Date; tokensExpiredAfter: Date; purgeBefore: Date }) {
         windows.push(change);
         return {
           loginAttemptsDeleted: 0,
-          sessionTokensDiscarded: discarded.shift() ?? 0,
+          sessionTokensDiscarded: 0,
           sessionsPurged: 0,
+          expiredTokensRemain: remain.shift() ?? false,
         };
       },
     } as unknown as SessionStore;
     return { store, windows };
   }
 
-  it('reads the whole retention window first, then only the deadlines since the last complete run', async () => {
+  it('reads the whole retention window first, then only the deadlines since the last emptied window', async () => {
     let at = Date.parse('2026-09-24T12:00:00.000Z');
-    // The second run stops at its batch bound, so the third reads from where the second began.
-    const { store, windows } = recordingStore([0, 2000, 0, 0]);
+    // The second run leaves expired tokens in its window, so the third reads from where the second
+    // began (review DC-1).
+    const { store, windows } = recordingStore([false, true, false, false]);
     const sessions = createSessionService({
       store,
       ciphers: createTokenCiphers('sentinel-token-encryption-secret-000000'),

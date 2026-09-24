@@ -2,15 +2,13 @@ import { parseSystemProcess, type AuditAttribution } from '@vertex-os/audit';
 import type { AuthConfig } from '../config/auth-config.js';
 import type { OidcClient } from './oidc.js';
 import { csrfTokenFor, hashSecret, isSecretShaped, matchesHash, newSecret } from './secrets.js';
-import {
-  HOUSEKEEPING_BATCH,
-  HOUSEKEEPING_MAX_BATCHES,
-  type BackchannelLogoutEvent,
-  type HousekeepingResult,
-  type LoginAttemptSecrets,
-  type RevocationReason,
-  type SessionStore,
-  type StoredSession,
+import type {
+  BackchannelLogoutEvent,
+  HousekeepingResult,
+  LoginAttemptSecrets,
+  RevocationReason,
+  SessionStore,
+  StoredSession,
 } from './session-store.js';
 import type { TokenCiphers } from './token-cipher.js';
 
@@ -339,11 +337,14 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
         tokensSweptUntil === undefined
           ? purgeBefore
           : new Date(Math.max(purgeBefore.getTime(), tokensSweptUntil.getTime() - SWEEP_MARGIN_MS));
-      const result = await store.housekeep({ now: at, tokensExpiredAfter, purgeBefore });
-      // A run that stopped at its batch bound left a backlog: the next run starts where this began.
-      if (result.sessionTokensDiscarded < HOUSEKEEPING_BATCH * HOUSEKEEPING_MAX_BATCHES) {
-        tokensSweptUntil = at;
-      }
+      const { expiredTokensRemain, ...result } = await store.housekeep({
+        now: at,
+        tokensExpiredAfter,
+        purgeBefore,
+      });
+      // Rows left in the window (a batch bound, or rows lost to a concurrent discard) keep the
+      // window where it was; the next run reads it again (review DC-1).
+      if (!expiredTokensRemain) tokensSweptUntil = at;
       return result;
     },
   };

@@ -862,6 +862,34 @@ describe('application sessions against real PostgreSQL', () => {
       expect(row.refreshTokenCiphertext).not.toBeNull();
     });
 
+    it('reads its window again when a concurrent discard cut a batch short (review DC-1)', async () => {
+      // A complete run narrows later windows to the deadlines after it, less the margin.
+      await sessions.housekeep();
+      const count = HOUSEKEEPING_BATCH * 2 + 50;
+      await insertSessions(count, new Date(clock.getTime() + MINUTE), 'racing');
+      advance(120 * MINUTE);
+      // An expired cookie is presented: its tokens are discarded under a row lock the sweep meets,
+      // so the sweep's first batch loses that row and its loop stops early.
+      const hold = await holdLocks(
+        `UPDATE auth_session SET id_token_ciphertext = NULL, id_token_key_version = NULL,
+          refresh_token_ciphertext = NULL, refresh_token_key_version = NULL
+          WHERE idp_session_id = 'racing-1'`,
+      );
+      const cut = sessions.housekeep();
+      await waitingOnLocks(1);
+      await hold.done;
+      expect((await cut).sessionTokensDiscarded).toBe(HOUSEKEEPING_BATCH - 1);
+
+      // The rows left behind expired more than the margin before this run; the window stayed.
+      advance(MINUTE);
+      expect((await sessions.housekeep()).sessionTokensDiscarded).toBe(count - HOUSEKEEPING_BATCH);
+      expect(
+        await postgres.sql(
+          'SELECT count(*) FROM auth_session WHERE id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL',
+        ),
+      ).toBe('0');
+    });
+
     it('finds its rows through an index in the steady state of retention (review DATA-1)', async () => {
       // Retention keeps many expired rows whose tokens are gone; few live or just-expired rows
       // still hold tokens.
