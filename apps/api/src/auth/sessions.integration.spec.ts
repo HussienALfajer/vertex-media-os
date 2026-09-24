@@ -905,6 +905,12 @@ describe('application sessions against real PostgreSQL', () => {
       expect((await sessions.housekeep()).sessionTokensDiscarded).toBe(5);
       advance(MINUTE);
       expect((await sessions.housekeep()).sessionTokensDiscarded).toBe(0);
+      // The later runs really read only that window (review T-1): a probe row that cannot occur, an
+      // old deadline still holding tokens, is outside it; a restarted process would sweep it.
+      await insertSessions(1, new Date(clock.getTime() - 2 * DAY), 'probe');
+      advance(MINUTE);
+      expect((await sessions.housekeep()).sessionTokensDiscarded).toBe(0);
+      expect((await service().housekeep()).sessionTokensDiscarded).toBe(1);
       const at = `'${clock.toISOString()}'::timestamptz`;
       const since = `'${new Date(clock.getTime() - 61 * MINUTE).toISOString()}'::timestamptz`;
       const cutoff = `'${new Date(clock.getTime() - 30 * DAY).toISOString()}'::timestamptz`;

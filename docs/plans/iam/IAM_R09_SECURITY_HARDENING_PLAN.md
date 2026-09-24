@@ -1,6 +1,6 @@
 # IAM-R09 — Security, Concurrency and Operational Hardening (IAM-MP-15, part 1)
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETE  
 **Master Plan stages:** IAM-MP-15 (part 1 of 2; split by this planner, D-01)  
 **Risk tier:** A (session effort `high`)  
 **Branch:** `iam/r09-security-hardening`  
@@ -86,7 +86,7 @@ No owner decisions. The run adds bounded behavior inside the accepted authentica
 5. Housekeeping runs without sign-in activity, uses the new indexes (checked with `EXPLAIN`), logs failures, discards expired tokens, and purges rows past retention. The retention boundary is proven by an integration test. (R03 retention; CP1-08; CP1-27.)
 6. A back-channel logout that arrives between the code exchange and the session insert leaves no live session and no session cookie. Proven by a forced interleaving. (R03 D-3.)
 7. Malformed JSON answers `400 VALIDATION_FAILED`, and every Problem Details answer carries `Cache-Control: no-store`. Proven by API tests. (SA-2; no-store.)
-8. A revocation failure after a committed restriction still reconciles the identity. The actor's authority is one statement. Proven by tests. (SEC-6; DC-4.)
+8. A revocation failure after a committed restriction still reconciles the identity, proven by a test. The actor's authority is one statement, established by reading the code; tests prove its behavior (Section 9.1). (SEC-6; DC-4.)
 9. The realm's `delete_credential` is disabled, and the pinned Keycloak refuses OTP deletion by the user. Proven by the realm contract. (CP1-15.)
 10. The CP1-09 race tests fail under their mutations. The Section 46.3 race list and the Section 46.6 CSRF list each map to a discriminating test. (CP1-09; spec Sections 46.3, 46.6.)
 11. The log scans collect logout tokens and every login attempt, and no Audit `change` or `reason` holds token material. (CP1-23 to CP1-25.)
@@ -119,8 +119,8 @@ Only those of the Run Contract. If a Keycloak behavior makes D-13 or D-08 imposs
 - [x] M6 Realm `delete_credential` and realm contract
 - [x] M7 Test evidence: CP1-09, CP1-23 to CP1-25, CP1-11, T-8; Section 46.3 and 46.6 maps
 - [x] M8 `pnpm verify` and integration suites; mutation checks
-- [ ] M9 In-run review; fixes
-- [ ] M10 Master Plan ledger and hand-off; pull request; CI
+- [x] M9 In-run review; fixes
+- [x] M10 Master Plan ledger and hand-off; pull request; CI
 
 ### 9.1 Deviations and discoveries
 
@@ -136,15 +136,17 @@ Only those of the Run Contract. If a Keycloak behavior makes D-13 or D-08 imposs
 
 ## 10. Hand-off
 
-**In-run review.** Three fresh-context reviewers checked `main...HEAD`: security; data and concurrency; tests and verification (D-02). The first tests review ended before it reported and was run again after the fixes; data and concurrency re-checked the sweep-window fix. The implementer checked the evidence of each finding before acting on it.
+**In-run review.** Three fresh-context reviewers checked `main...HEAD`: security; data and concurrency; tests and verification (D-02). The first tests review ended before it reported and was run again after the fixes; data and concurrency re-checked the sweep-window fix. The implementer checked the evidence of each finding before acting on it; each held.
 
 - **Blocking, fixed:** S-1 (rejected back-channel logout tokens bounded per address only; one budget for the process now, tested across addresses).
 - **Fixed in the run:** S-2, S-3, S-4 (comment; production item in Master Plan Section 15), S-5, S-6, DATA-1, DATA-2, DATA-4 (Section 9.1).
 - **Recorded, not changed:** S-3's residual (login-attempt volume beyond housekeeping, carried to `IAM-R09B`), S-7 (a refused logout leaves the session live; only a session holder with its CSRF token can spend that budget), DATA-3 (Section 9.1).
-<!-- REVIEW-2 -->
+- **Re-review, blocking, fixed:** DC-1 (a batch that lost rows to a concurrent discard moved the sweep window past expired tokens; reproduced by the reviewer on PostgreSQL, fixed and tested with a held discard, Section 9.1).
+- **Re-review, fixed in the run:** DC-3 (scheduler tests), DC-5 (migration text restored), T-1 (the window's lower bound pinned by a probe row), T-3 (a valid logout token is served after the budgets are spent), T-6 (Done means 8 wording). Each new test was mutation-checked.
+- **Re-review, recorded, not changed:** DC-2 (the `EXPLAIN` checks copy the statement's predicate; T-1 now pins the window itself), DC-4 (clock step beyond the margin combined with failing runs; covered by the DC-1 check), T-2 (race holds end on a 1.5 s timer; a slow runner fails loudly rather than passing), T-4 (no test that the server entry passes the housekeeping interval through `AuthModule`), T-5 (activation races prove the version and `INVITED` guards together).
 
 **Carried forward** (attached to the Master Plan, IAM-MP-15 "Carried forward to run IAM-R09B" and Section 15):
 
-- **IAM-R09B:** every item of Section 2 "Out of scope"; the login-attempt volume residual (review S-3); the reactivated-permission review for `IAM-FINAL` (D-12).
+- **IAM-R09B:** every item of Section 2 "Out of scope"; the login-attempt volume residual (review S-3); the housekeeping wiring test (review T-4); the reactivated-permission review for `IAM-FINAL` (D-12).
 - **Production deployment design:** the proxy appends the client address, is the only way in and sets a fresh `X-Request-Id` (D-04, D-14, review S-4); rate limits, the evidence bound and the recent-logout memory are per process (D-03, D-08).
 - **Owner, local only:** the Compose realm disables `delete_credential` only after the realm is imported again (D-13).

@@ -669,7 +669,11 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
     });
 
     /** One sign-in from `address`: its login and callback use that address's whole budget. */
-    async function signInFrom(address: string, subject: string): Promise<string> {
+    async function signInFrom(
+      address: string,
+      subject: string,
+      sessionId?: string,
+    ): Promise<string> {
       const login = await limited.inject({
         method: 'GET',
         url: '/api/auth/login',
@@ -677,7 +681,9 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       });
       const handle = cookieOf(login, LOGIN_COOKIE);
       if (handle) secrets.push(handle);
-      const callback = new URL(provider.authorize(String(login.headers['location']), { subject }));
+      const callback = new URL(
+        provider.authorize(String(login.headers['location']), { subject, sessionId }),
+      );
       const response = await limited.inject({
         method: 'GET',
         url: `${callback.pathname}${callback.search}`,
@@ -762,6 +768,43 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
         own.filter((line) => line.includes('"auth":"backchannel-logout-rejected"')),
       ).toHaveLength(3);
       expect(own.filter((line) => line.includes('"auth":"evidence-limited"'))).toHaveLength(1);
+    });
+
+    it('never limits a valid logout token, whatever the spent budgets (D-03; review T-3)', async () => {
+      const user = await seedUser('ACTIVE');
+      const session = await signInFrom('198.51.100.40', user.subject, 'kc-session-limited');
+      // Spend the evidence and logout budgets of the window first.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await limited.inject({
+          method: 'POST',
+          url: '/api/auth/backchannel-logout',
+          headers: from('198.51.100.40', {
+            'content-type': 'application/x-www-form-urlencoded',
+          }),
+          payload: `logout_token=${await provider.logoutToken({}, 'stranger')}`,
+        });
+      }
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const token = await provider.logoutToken({
+          sid: 'kc-session-limited',
+          sub: user.subject,
+        });
+        const response = await limited.inject({
+          method: 'POST',
+          url: '/api/auth/backchannel-logout',
+          headers: from('198.51.100.40', {
+            'content-type': 'application/x-www-form-urlencoded',
+          }),
+          payload: `logout_token=${token}`,
+        });
+        expect(response.statusCode).toBe(200);
+      }
+      const ended = await limited.inject({
+        method: 'GET',
+        url: '/api/auth/session',
+        headers: withSession(session),
+      });
+      expect(ended.json()).toMatchObject({ code: 'AUTH_SESSION_INVALID' });
     });
   });
 
