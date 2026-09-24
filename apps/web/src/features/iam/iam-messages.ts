@@ -116,7 +116,7 @@ const ar = {
     'يحدد الخادم النتيجة: «نشط» إن كان قد فعّل حسابه من قبل، أو «مدعو» بانتظار أول تسجيل دخول. لا تُنشأ له جلسة، ولا تتغير بيانات دخوله، ويلزمه تسجيل دخول كامل عبر خدمة الهوية.',
   selfWarning: 'هذا حسابك أنت: ستنتهي جلساتك وقد تفقد الوصول.',
   reason: 'السبب',
-  reasonHelp: 'اختياري. يُحفظ في سجل المساءلة؛ لا تكتب فيه كلمات مرور أو أسرارًا.',
+  reasonHelp: 'يُحفظ في سجل المساءلة؛ لا تكتب فيه كلمات مرور أو أسرارًا.',
 
   suspendedOutcome: 'تم إيقاف الوصول مؤقتًا',
   disabledOutcome: 'تم تعطيل المستخدم',
@@ -324,7 +324,7 @@ const en: IamMessages = {
     'The server decides the result: Active if they activated the account before, or Invited pending their first sign-in. No session is created, their credentials do not change, and they must complete a full sign-in through the identity service.',
   selfWarning: 'This is your own account: your sessions will end and you may lose access.',
   reason: 'Reason',
-  reasonHelp: 'Optional. Kept in the accountability record; do not include passwords or secrets.',
+  reasonHelp: 'Kept in the accountability record; do not include passwords or secrets.',
 
   suspendedOutcome: 'Access suspended',
   disabledOutcome: 'User disabled',

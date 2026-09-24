@@ -121,7 +121,7 @@ export function InvitationStatus({
   if (accessState !== 'INVITED')
     return <span className="text-secondary">{messages.notApplicable}</span>;
   return (
-    <span className="flex flex-col">
+    <span className="flex flex-col items-start">
       <StateIndicator mapping={INVITATION} value={state} />
       {sentAt != null && state === 'SENT' && (
         <span className="text-secondary">
