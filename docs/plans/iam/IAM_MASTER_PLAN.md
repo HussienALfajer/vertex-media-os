@@ -478,7 +478,8 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R08` | IAM-MP-12 | B | security; tests and verification (swapped by the run planner, R08 D-02) | — |
 | `IAM-R08B` | IAM-MP-13 | B | architecture and boundaries; tests and verification | — |
 | `IAM-R08C` | IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
-| `IAM-R09` | IAM-MP-15 | A | security; data and concurrency; tests and verification | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
+| `IAM-R09` | IAM-MP-15 (part 1: backend security, concurrency and operational hardening; test evidence) | A | security; data and concurrency; tests and verification | — |
+| `IAM-R09B` | IAM-MP-15 (part 2: real-browser journeys, cross-engine cookies, closeout and Definition of Done map) | A | security; tests and verification; architecture and boundaries | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
 
 Grouping rules behind the table:
 
@@ -486,6 +487,7 @@ Grouping rules behind the table:
 - IAM-MP-04 and IAM-MP-10 stay alone: identity linking and user lifecycle carry the highest failure cost and the most concurrency.
 - `IAM-R08` is Tier B because the backend stays authoritative for every rule it presents. Its planner splits it if the frontend diff would not be reviewable in one pass.
 - The `IAM-R08` planner split it into `IAM-R08` (IAM-MP-12), `IAM-R08B` (IAM-MP-13) and `IAM-R08C` (IAM-MP-14): the three stages together would not be reviewable in one pass (plan `IAM_R08_FRONTEND_SESSION_PLAN.md` D-01). Each stays Tier B.
+- The `IAM-R09` planner split IAM-MP-15 into `IAM-R09` (backend and test evidence) and `IAM-R09B` (browser journeys and closeout): one pull request with both would not be reviewable in one pass (plan `IAM_R09_SECURITY_HARDENING_PLAN.md` D-01). Both stay Tier A.
 - Each stage's "Audit focus" in Section 10 is the review focus of its run and of the checkpoint that covers it.
 
 ### 8.4 Scope rule
@@ -529,7 +531,7 @@ IAM-MP-12  Frontend Authentication & Session Experience                   [R08]
 IAM-MP-13  Frontend User, Access & Provisioning Administration            [R08]
 IAM-MP-14  Frontend Departments, Roles & Permissions Administration       [R08]
       ↓
-IAM-MP-15  End-to-End Security, Concurrency & Operational Hardening       [R09]
+IAM-MP-15  End-to-End Security, Concurrency & Operational Hardening       [R09, R09B]
       ↓
 Final IAM Module Audit
       ↓
@@ -1775,8 +1777,9 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | COMPLETE | R07 merged (satisfied) |
 | IAM-MP-13 Frontend User & Access Admin | R08B | COMPLETE | R08 merged (satisfied) |
 | IAM-MP-14 Frontend Department/Role/Permission Admin | R08C | COMPLETE | R08B merged (satisfied) |
-| IAM-MP-15 E2E & Hardening | R09 | READY | R08C merged (satisfied) |
-| `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09 merged |
+| IAM-MP-15 E2E & Hardening, part 1 (backend and test evidence) | R09 | READY | R08C merged (satisfied) |
+| IAM-MP-15 E2E & Hardening, part 2 (browser journeys and closeout) | R09B | PLANNED | R09 merged |
+| `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09B merged |
 
 The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
 
