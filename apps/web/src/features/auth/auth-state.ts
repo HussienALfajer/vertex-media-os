@@ -192,7 +192,7 @@ export function handleApiError(client: QueryClient, error: unknown, query?: AnyQ
 }
 
 /** Re-reads the authentication state now, whether or not a component currently observes it. */
-function refreshAuthState(client: QueryClient): Promise<void> {
+export function refreshAuthState(client: QueryClient): Promise<void> {
   return client.invalidateQueries({ queryKey: AUTH_QUERY_KEY, refetchType: 'all' });
 }
 

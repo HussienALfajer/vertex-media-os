@@ -358,6 +358,14 @@ describe('creating a user', () => {
     expect(screen.queryByLabelText(/كلمة المرور/)).toBeNull();
   });
 
+  it('does not offer the form without iam.users.create (review AB-1)', async () => {
+    const api = fakeApi({}, ['iam.users.read', 'iam.departments.read', 'iam.roles.read']);
+    renderAt('/users/new');
+    expect(await screen.findByText('لا تملك صلاحية الوصول إلى هذه الصفحة')).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(api.calls.some((call) => call.url.startsWith('/api/iam/departments'))).toBe(false);
+  });
+
   it('creates with memberships and roles, then opens the user with its reported states', async () => {
     const api = fakeApi({
       'POST /api/iam/users': () =>
@@ -645,6 +653,26 @@ describe('the user detail', () => {
       within(await openUserActions()).getByRole('menuitem', { name: 'إعادة إرسال الدعوة' }),
     );
     expect(await screen.findByText('الخدمة مشغولة الآن. أعد المحاولة بعد قليل.')).toBeTruthy();
+  });
+
+  it('removes the user data when the administrator loses iam.users.read (review AB-2)', async () => {
+    let codes = ALL_CODES;
+    let denied = false;
+    fakeApi({
+      'GET /api/iam/me': () => json(200, { user: ADMIN, departments: [], permissionCodes: codes }),
+      [detailRoute]: () => (denied ? problem(403, 'AUTHORIZATION_DENIED') : json(200, detail())),
+    });
+    const { client } = renderAt(detailPath);
+    expect(await screen.findByRole('region', { name: 'الملف' })).toBeTruthy();
+    expect(client.getQueryData(['iam', 'users', 'detail', TARGET_ID])).toBeDefined();
+
+    codes = [];
+    denied = true;
+    await client.refetchQueries({ queryKey: ['auth'] });
+
+    await waitFor(() => expect(screen.queryByText('sara@example.test')).toBeNull());
+    expect(await screen.findByText('لا تملك صلاحية الوصول إلى هذه الصفحة')).toBeTruthy();
+    expect(client.getQueryData(['iam', 'users', 'detail', TARGET_ID])).toBeUndefined();
   });
 
   it('shows a missing user as not found', async () => {

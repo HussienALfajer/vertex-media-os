@@ -15,7 +15,7 @@ import {
 } from '@vertex-os/ui';
 import { useState, type FormEvent } from 'react';
 import { useAccess } from '../../auth/use-access';
-import { AUTH_QUERY_KEY } from '../../auth/auth-state';
+import { refreshAuthState } from '../../auth/auth-state';
 import { assignRole, removeRole, type UserDetail, type UserRole } from '../iam-api';
 import { useIamMessages } from '../iam-messages';
 import { describeMutationFailure } from '../iam-problems';
@@ -49,7 +49,7 @@ export function UserRoles({
     onOutcome(outcome);
     void refreshUser(client, user.id);
     // The administrator's own permissions changed: navigation and actions follow (D-13).
-    if (access.user?.id === user.id) void client.invalidateQueries({ queryKey: AUTH_QUERY_KEY });
+    if (access.user?.id === user.id) void refreshAuthState(client);
   };
   const failed = (error: unknown) => {
     const described = describeMutationFailure(error, messages);

@@ -49,7 +49,11 @@ export function describeMutationFailure(error: unknown, messages: IamMessages): 
   const reload = error.code !== undefined && RELOAD_CODES.has(error.code);
   switch (error.code) {
     case 'VALIDATION_FAILED':
-      return failure(messages.problemValidation, { fields: error.fields });
+      // The reason is the only free text in most dialogs: name it (spec Section 53).
+      return failure(
+        error.fields.includes('reason') ? messages.reasonInvalid : messages.problemValidation,
+        { fields: error.fields },
+      );
     case 'IAM_VERSION_CONFLICT':
       return failure(messages.conflictDetail, { conflict: true });
     case 'CSRF_VALIDATION_FAILED':

@@ -15,7 +15,7 @@ import {
 } from '@vertex-os/ui';
 import { useState, type FormEvent } from 'react';
 import { useAccess } from '../../auth/use-access';
-import { AUTH_QUERY_KEY } from '../../auth/auth-state';
+import { refreshAuthState } from '../../auth/auth-state';
 import {
   addMembership,
   removeMembership,
@@ -52,7 +52,7 @@ export function UserMemberships({
     onOutcome(outcome);
     void refreshUser(client, user.id);
     // The administrator's own context changed: navigation and actions follow (IAM-R08B D-13).
-    if (access.user?.id === user.id) void client.invalidateQueries({ queryKey: AUTH_QUERY_KEY });
+    if (access.user?.id === user.id) void refreshAuthState(client);
   };
   const failed = (error: unknown) => {
     const described = describeMutationFailure(error, messages);

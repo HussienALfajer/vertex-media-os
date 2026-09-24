@@ -17,6 +17,10 @@ describe('describeMutationFailure (IAM-R08B D-11)', () => {
     expect(
       describeMutationFailure(new ApiProblem(400, 'VALIDATION_FAILED', ['displayName']), messages),
     ).toMatchObject({ message: 'problemValidation', fields: ['displayName'] });
+    expect(
+      describeMutationFailure(new ApiProblem(400, 'VALIDATION_FAILED', ['reason']), messages)
+        .message,
+    ).toBe('reasonInvalid');
   });
 
   it('treats a lost answer as unconfirmed and asks for a reload', () => {

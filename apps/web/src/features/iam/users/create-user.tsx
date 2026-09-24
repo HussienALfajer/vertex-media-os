@@ -6,6 +6,7 @@ import {
   Bdi,
   Button,
   Checkbox,
+  EmptyState,
   ErrorSummary,
   Field,
   Fieldset,
@@ -27,7 +28,12 @@ import { useAccess } from '../../auth/use-access';
 import { createUser } from '../iam-api';
 import { useIamMessages } from '../iam-messages';
 import { describeMutationFailure } from '../iam-problems';
-import { activeDepartmentsQuery, activeRolesQuery, IAM_PERMISSIONS } from '../iam-queries';
+import {
+  activeDepartmentsQuery,
+  activeRolesQuery,
+  IAM_PERMISSIONS,
+  refreshDirectory,
+} from '../iam-queries';
 import { PickerNote } from './picker-note';
 
 const EMAIL_ID = 'create-user-email';
@@ -51,8 +57,9 @@ export function CreateUser() {
   const [issues, setIssues] = useState<readonly FormIssue[]>([]);
   const [attempt, setAttempt] = useState(0);
   const [confirming, setConfirming] = useState(false);
-  const canReadDepartments = can(IAM_PERMISSIONS.departmentsRead);
-  const canReadRoles = can(IAM_PERMISSIONS.rolesRead);
+  const canCreate = can(IAM_PERMISSIONS.usersCreate);
+  const canReadDepartments = canCreate && can(IAM_PERMISSIONS.departmentsRead);
+  const canReadRoles = canCreate && can(IAM_PERMISSIONS.rolesRead);
   const departments = useQuery({ ...activeDepartmentsQuery, enabled: canReadDepartments });
   const roles = useQuery({ ...activeRolesQuery, enabled: canReadRoles });
   const grantsSystemRole = (roles.data?.items ?? []).some(
@@ -72,7 +79,7 @@ export function CreateUser() {
       }),
     onSuccess: async (user) => {
       setConfirming(false);
-      await client.invalidateQueries({ queryKey: ['iam', 'users', 'list'] });
+      await refreshDirectory(client);
       await navigate({
         to: '/users/$userId',
         params: { userId: user.id },
@@ -125,6 +132,21 @@ export function CreateUser() {
   const chosenDepartments = (departments.data?.items ?? []).filter((department) =>
     departmentIds.has(department.id),
   );
+
+  if (!canCreate) {
+    // The screen follows the permission codes (presentation); the API refuses anyway (review AB-1).
+    return (
+      <Page width="form">
+        <PageHeader title={messages.createTitle} />
+        <EmptyState
+          icon="lock"
+          title={messages.noPermissionTitle}
+          description={messages.noPermissionDetail}
+          headingLevel={2}
+        />
+      </Page>
+    );
+  }
 
   return (
     <Page width="form">

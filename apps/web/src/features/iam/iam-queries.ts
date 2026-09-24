@@ -50,6 +50,11 @@ export const activeRolesQuery = protectedQuery({
   queryFn: ({ signal }) => listActiveRoles(signal),
 });
 
+/** After a user is created: the directory is read again. */
+export function refreshDirectory(client: QueryClient): Promise<void> {
+  return client.invalidateQueries({ queryKey: ['iam', 'users', 'list'] });
+}
+
 /** After any user mutation: the directory and that user's detail are read again (D-10). */
 export function refreshUser(client: QueryClient, userId: string): Promise<void> {
   return Promise.all([

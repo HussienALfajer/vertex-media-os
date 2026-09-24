@@ -23,7 +23,6 @@ const ar = {
   noUsersTitle: 'لا يوجد مستخدمون بعد',
   noUsersInvite: 'ادعُ أول عضو في الفريق.',
   noUsersDescription: 'لم يُضف أي مستخدم بعد.',
-  loadingUsers: 'جارٍ تحميل المستخدمين…',
   usersLoadFailed: 'تعذّر تحميل المستخدمين',
   loadFailedDetail: 'تحقّق من الاتصال ثم أعد المحاولة.',
   noPermissionTitle: 'لا تملك صلاحية الوصول إلى هذه الصفحة',
@@ -174,7 +173,6 @@ const ar = {
     'إزالة دور مسؤول النظام تُفقده كل صلاحيات الإدارة. لا يمكن إزالة آخر مسؤول نظام نشط.',
   roleAssigned: 'أُسند الدور',
   roleRemoved: 'أُزيل الدور',
-  dismiss: 'إغلاق',
 
   problemValidation: 'تحقّق من البيانات المُدخلة.',
   problemCsrf: 'تعذّر التحقق من الطلب. أعد المحاولة.',
@@ -230,7 +228,6 @@ const en: IamMessages = {
   noUsersTitle: 'No users yet',
   noUsersInvite: 'Invite the first team member.',
   noUsersDescription: 'No user has been added yet.',
-  loadingUsers: 'Loading users…',
   usersLoadFailed: 'Users could not be loaded',
   loadFailedDetail: 'Check your connection and try again.',
   noPermissionTitle: 'You do not have access to this page',
@@ -383,7 +380,6 @@ const en: IamMessages = {
     'Removing the System Administrator role takes away every administration permission. The last active System Administrator cannot be removed.',
   roleAssigned: 'Role assigned',
   roleRemoved: 'Role removed',
-  dismiss: 'Dismiss',
 
   problemValidation: 'Check the values you entered.',
   problemCsrf: 'The request could not be verified. Try again.',
