@@ -475,7 +475,9 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R05` | IAM-MP-08, IAM-MP-09 | A | security; data and concurrency; architecture and boundaries | — |
 | `IAM-R06` | IAM-MP-10 | A | security; data and concurrency; architecture and boundaries | — (`IAM-CP2` deferred into `IAM-FINAL` by owner decision, 2026-09-24) |
 | `IAM-R07` | IAM-MP-11 | A | security; architecture and boundaries; tests and verification | — |
-| `IAM-R08` | IAM-MP-12, IAM-MP-13, IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
+| `IAM-R08` | IAM-MP-12 | B | security; tests and verification (swapped by the run planner, R08 D-02) | — |
+| `IAM-R08B` | IAM-MP-13 | B | architecture and boundaries; tests and verification | — |
+| `IAM-R08C` | IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
 | `IAM-R09` | IAM-MP-15 | A | security; data and concurrency; tests and verification | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
 
 Grouping rules behind the table:
@@ -483,6 +485,7 @@ Grouping rules behind the table:
 - Runs group stages that share one risk surface: sessions with the OIDC flow that creates them (R03), the two privilege-administration cores (R05), and the three frontend stages that consume one accepted HTTP surface (R08).
 - IAM-MP-04 and IAM-MP-10 stay alone: identity linking and user lifecycle carry the highest failure cost and the most concurrency.
 - `IAM-R08` is Tier B because the backend stays authoritative for every rule it presents. Its planner splits it if the frontend diff would not be reviewable in one pass.
+- The `IAM-R08` planner split it into `IAM-R08` (IAM-MP-12), `IAM-R08B` (IAM-MP-13) and `IAM-R08C` (IAM-MP-14): the three stages together would not be reviewable in one pass (plan `IAM_R08_FRONTEND_SESSION_PLAN.md` D-01). Each stays Tier B.
 - Each stage's "Audit focus" in Section 10 is the review focus of its run and of the checkpoint that covers it.
 
 ### 8.4 Scope rule
@@ -1383,7 +1386,7 @@ Integrate the real web application shell with backend-owned authentication/sessi
 
 ## IAM-MP-13 — Frontend User, Access & Provisioning Administration
 
-**Status:** READY (run `IAM-R08`)  
+**Status:** PLANNED (run `IAM-R08B`)  
 **Parent specification area:** IAM-6, Sections 40, 42, 52–54  
 **Depends on:** IAM-MP-12 COMPLETE
 
@@ -1436,7 +1439,7 @@ Deliver the primary IAM administrator workflows for users and access state using
 
 ## IAM-MP-14 — Frontend Departments, Roles & Permissions Administration
 
-**Status:** READY (run `IAM-R08`)  
+**Status:** PLANNED (run `IAM-R08C`)  
 **Parent specification area:** IAM-6, Sections 40, 52  
 **Depends on:** IAM-MP-13 COMPLETE
 
@@ -1736,9 +1739,9 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | `IAM-CP2` Deep audit: authorization and administration core | — | DEFERRED into `IAM-FINAL` | owner decision 2026-09-24 |
 | IAM-MP-11 HTTP Administration Surface | R07 | COMPLETE | R06 merged (satisfied) |
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | READY | R07 merged (satisfied) |
-| IAM-MP-13 Frontend User & Access Admin | R08 | READY | R07 merged (satisfied) |
-| IAM-MP-14 Frontend Department/Role/Permission Admin | R08 | READY | R07 merged (satisfied) |
-| IAM-MP-15 E2E & Hardening | R09 | PLANNED | R08 merged |
+| IAM-MP-13 Frontend User & Access Admin | R08B | PLANNED | R08 merged |
+| IAM-MP-14 Frontend Department/Role/Permission Admin | R08C | PLANNED | R08B merged |
+| IAM-MP-15 E2E & Hardening | R09 | PLANNED | R08C merged |
 | `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09 merged |
 
 The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
