@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R07` (IAM-MP-11) with `/stage IAM-R07`; it needs the owner's decision on a grant ceiling for reactivation (IAM-R06 review SEC-2) first. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
+**Next step:** run `IAM-R07` (IAM-MP-11) with `/stage IAM-R07`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 ---
@@ -1293,7 +1293,7 @@ Expose the accepted IAM application capabilities through stable, validated, prot
 - **Routes over** `createIamUserAdministration` (`apps/api/src/iam/user-administration.ts`) with the outcome → error-code mapping of R06 Section 5.8, naming once the codes the specification lacks (`version-conflict`, `superseded`, `invalid`). `UserView` is the user DTO; it omits the identity mapping.
 - **Actor (review SEC-1).** The grant ceiling exempts every `SYSTEM` actor. Administration routes must pass the session's USER actor as the attribution, never `systemAttribution`; prove it with a test.
 - **Session revocation binding (review AB-1).** In the HTTP runtime bind `revokeUserSessions` to `AuthRuntime.sessions`, not to the session store.
-- **Owner decision needed (review SEC-2)** before `POST /api/iam/users/{userId}/reactivate` is mounted: reactivation has no grant ceiling, so an actor with `iam.users.manage-access` can restore a suspended System Administrator or any holder of roles the actor lacks. Options and recommendation: R06 plan Section 10.
+- **Grant ceiling for reactivation (review SEC-2): decided by the owner on 2026-09-24** — option 1, spec Section 23.1. Before `POST /api/iam/users/{userId}/reactivate` is mounted, `reactivateUser` refuses with `grant-exceeds-actor` (`403 IAM_GRANT_EXCEEDS_ACTOR`, REFUSED Audit record, nothing written) when a USER actor who is not an ACTIVE System Administrator reactivates a holder of the system role, or a user whose ACTIVE roles map an ACTIVE permission the actor does not hold effectively. Evaluate it in the PENDING transaction of step 2 (spec Section 31.2), under the target's user-row lock, so no Keycloak call precedes a refusal. Tests: a non-administrator reactivating a suspended System Administrator, a holder of a role the actor lacks, a user within the actor's permissions, and a System Administrator unaffected.
 
 ### Exit criteria
 
@@ -1682,7 +1682,7 @@ Run `IAM-R04` delivered IAM-MP-07 (plan `IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md`)
 
 Run `IAM-R05` delivered IAM-MP-08 and IAM-MP-09 (plan `IAM_R05_PRIVILEGE_ADMINISTRATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. Departments, memberships, custom roles, role-permission mappings and user-role assignments are administered by application use cases behind `@vertex-os/iam/composition`, bound in `apps/api/src/iam/administration.ts` and not yet mounted in HTTP (R05 D-01, D-03). Each change commits with one Audit record; departments and roles are version-checked; row locks in one order (role → user → department or permission) serialize competing operations, and the `system-administrator` role row is the lock that keeps at least one ACTIVE System Administrator (D-05 to D-08). The system role is protected, a custom role never newly maps a non-ACTIVE code (D-13, D-15), and every change reaches the next authorization context. It closed the primary-membership switch ordering (IAM-01) and the `DEPRECATED`/`RETIRED` mapping question (IAM-02), and the R04 items attached to IAM-MP-09. Review S-1 raised an owner decision on a grant ceiling, attached to IAM-MP-11; its other carried-forward items are attached to IAM-MP-10 and IAM-MP-11.
 
-Run `IAM-R06` delivered IAM-MP-10 (plan `IAM_R06_USER_LIFECYCLE_PLAN.md`). It is `COMPLETE` once its pull request is merged. User creation with memberships and roles, display-name update, suspension, disablement, termination, backend-derived reactivation, sync-identity, resend-invitation and the administrator's revoke-sessions action are application use cases behind `@vertex-os/iam/composition`, bound in `apps/api/src/iam/user-administration.ts` and not yet mounted in HTTP (R06 D-01). Access removal commits the denial with `PENDING` under the System Administrator and user row locks, then revokes every application session, then reconciles the identity; reactivation grants access only in a version-checked final commit after Keycloak is ready, and reconciles at once when that commit loses (D-06 to D-08). The grant ceiling decided by the owner (spec Section 23.1) is enforced in role assignment, role activation, mapping replacement and user creation (D-12). `pnpm iam:bootstrap` creates, resumes or recovers the first System Administrator from committed state in one transaction serialized by the reference-synchronization lock and the System Administrator row, and refuses unless reference data is synchronized (D-15, D-16). A migration adds four session revocation reasons, the `auth_session` checks of CP1-06 and a trigger that keeps a revocation final. It closed the IAM-02 bootstrap item, the R02 and R03 items, CP1-06, CP1-07, CP1-13, CP1-26 and the R05 items attached to IAM-MP-10. Review SEC-2 raised an owner decision (a grant ceiling for reactivation), attached to IAM-MP-11; its other carried-forward items are attached to IAM-MP-11 and IAM-MP-15.
+Run `IAM-R06` delivered IAM-MP-10 (plan `IAM_R06_USER_LIFECYCLE_PLAN.md`). It is `COMPLETE` once its pull request is merged. User creation with memberships and roles, display-name update, suspension, disablement, termination, backend-derived reactivation, sync-identity, resend-invitation and the administrator's revoke-sessions action are application use cases behind `@vertex-os/iam/composition`, bound in `apps/api/src/iam/user-administration.ts` and not yet mounted in HTTP (R06 D-01). Access removal commits the denial with `PENDING` under the System Administrator and user row locks, then revokes every application session, then reconciles the identity; reactivation grants access only in a version-checked final commit after Keycloak is ready, and reconciles at once when that commit loses (D-06 to D-08). The grant ceiling decided by the owner (spec Section 23.1) is enforced in role assignment, role activation, mapping replacement and user creation (D-12). `pnpm iam:bootstrap` creates, resumes or recovers the first System Administrator from committed state in one transaction serialized by the reference-synchronization lock and the System Administrator row, and refuses unless reference data is synchronized (D-15, D-16). A migration adds four session revocation reasons, the `auth_session` checks of CP1-06 and a trigger that keeps a revocation final. It closed the IAM-02 bootstrap item, the R02 and R03 items, CP1-06, CP1-07, CP1-13, CP1-26 and the R05 items attached to IAM-MP-10. Review SEC-2 raised an owner decision (a grant ceiling for reactivation, decided on 2026-09-24: option 1), attached to IAM-MP-11; its other carried-forward items are attached to IAM-MP-11 and IAM-MP-15.
 
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
@@ -1717,7 +1717,7 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-09 Role/Permission & Last-Admin Core | R05 | COMPLETE | R04 merged (satisfied) |
 | IAM-MP-10 User Lifecycle & Bootstrap Core | R06 | COMPLETE | R05 merged (satisfied) |
 | `IAM-CP2` Deep audit: authorization and administration core | — | DEFERRED into `IAM-FINAL` | owner decision 2026-09-24 |
-| IAM-MP-11 HTTP Administration Surface | R07 | READY | R06 merged (satisfied); owner decision SEC-2 |
+| IAM-MP-11 HTTP Administration Surface | R07 | READY | R06 merged (satisfied) |
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | PLANNED | R07 merged |
 | IAM-MP-13 Frontend User & Access Admin | R08 | PLANNED | R07 merged |
 | IAM-MP-14 Frontend Department/Role/Permission Admin | R08 | PLANNED | R07 merged |
@@ -1756,6 +1756,12 @@ The records below were written under the previous method and are kept as history
 - **Consequences:** the administration core is exposed over HTTP (IAM-MP-11) and used by the frontend (IAM-MP-12 to IAM-MP-14) before any independent deep audit of it. A defect a deep audit would have found in MP-07 to MP-10 is found later, and fixing it may also touch the HTTP and frontend layers built on it. Until then the evidence is the in-run reviews of `IAM-R04` to `IAM-R06` (three reviewers each, no blocking finding). Mitigation: `IAM-R07` is Tier A with three reviewers, and its security reviewer checks every administration route against the grant ceiling, the last-System-Administrator rule and the actor attribution (IAM-R06 review SEC-1).
 - **Stages affected:** no stage changes content or order; `IAM-R07` no longer waits for a checkpoint.
 - **Accepted baselines:** IAM-MP-07 to IAM-MP-10 remain accepted by their merges; their independent audit is `IAM-FINAL`.
+
+### Amendment record — grant ceiling for reactivation (2026-09-24)
+
+- **What changed:** the owner chose option 1 for review finding SEC-2 of run `IAM-R06`: an actor who is not an ACTIVE System Administrator may reactivate a user only when they hold every ACTIVE permission of that user's ACTIVE roles, and never a System Administrator. Spec Section 23.1 now says so. Implementation is attached to IAM-MP-11 (run `IAM-R07`), before the reactivate route is mounted.
+- **Why:** without it, `iam.users.manage-access` alone could restore privileges the actor does not hold, including a System Administrator suspended as compromised; `docs/SECURITY.md` requires protection against vertical privilege escalation. It changes the authorization model, so it was the owner's decision.
+- **Placement:** in `IAM-R07`, because IAM-MP-10 is merged and the use case is not reachable over HTTP until that run mounts it.
 
 ### Amendment record — grant ceiling (2026-09-24)
 
@@ -2011,7 +2017,7 @@ IAM-MP-00 to IAM-MP-10 are complete (Section 15); IAM-MP-03 through run `IAM-R01
 /stage IAM-R07
 ```
 
-Its planner needs the owner's decision on a grant ceiling for reactivation (IAM-R06 review SEC-2, attached to IAM-MP-11); if it is not recorded by then, the run stops at its planned checkpoint to ask.
+Its planner reads the IAM-MP-11 section, including the grant ceiling for reactivation that the owner decided on 2026-09-24 (IAM-R06 review SEC-2).
 
 Do **not** plan later runs in detail now.
 
