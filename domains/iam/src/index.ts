@@ -79,3 +79,43 @@ export type {
   BootstrapRequest,
   BootstrapResult,
 } from './application/bootstrap.js';
+export type { DepartmentCode, ModuleCode, RoleCode } from './domain/codes.js';
+export type { NormalizedEmail } from './domain/email.js';
+export type { Description, DisplayName, EntityName } from './domain/text.js';
+export {
+  departmentStates,
+  identitySyncStates,
+  invitationDeliveryStates,
+  permissionSensitivities,
+  permissionStates,
+  roleStates,
+  userAccessStates,
+  type DepartmentState,
+  type IdentitySyncState,
+  type InvitationDeliveryState,
+  type PermissionSensitivity,
+  type PermissionState,
+  type RoleState,
+  type UserAccessState,
+} from './domain/states.js';
+export {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE,
+  MAX_PAGE_SIZE,
+  type Page,
+  type PermissionView,
+  type RoleDetail,
+  type UserDepartmentView,
+  type UserDetail,
+  type UserRoleView,
+  type UserSummary,
+} from './domain/directory.js';
+export type {
+  GetDepartmentResult,
+  GetRoleResult,
+  GetUserResult,
+  ListRequest,
+  ListResult,
+  StateListRequest,
+  UserListRequest,
+} from './application/directory.js';

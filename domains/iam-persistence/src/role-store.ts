@@ -32,7 +32,7 @@ interface RoleRow {
   readonly version: number;
 }
 
-const roleSelect = {
+export const roleSelect = {
   id: true,
   code: true,
   name: true,
@@ -42,7 +42,7 @@ const roleSelect = {
   version: true,
 } as const;
 
-function mapRole(row: RoleRow): RoleView {
+export function mapRole(row: RoleRow): RoleView {
   return Object.freeze({
     id: row.id as RoleId,
     code: row.code as RoleCode,
