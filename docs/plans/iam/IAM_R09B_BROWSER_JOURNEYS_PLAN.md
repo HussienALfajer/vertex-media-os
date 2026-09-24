@@ -4,7 +4,7 @@
 **Master Plan stages:** IAM-MP-15 (part 2 of 2; split by the `IAM-R09` planner, R09 D-01)  
 **Risk tier:** A (session effort `high`)  
 **Branch:** `iam/r09b-browser-journeys`  
-**Baseline commit:** `3752046c1cfda1e5d52a3ae2e40ec7c7fce77850`
+**Baseline commit:** `3752046b07c24db3d9cc265acdce42501b4826d3`
 
 ## 1. Objective
 
@@ -93,7 +93,7 @@ Only those of the Run Contract. If a journey shows that a locked invariant does 
 ## 9. Checklist
 
 - [x] M0 Plan committed
-- [ ] M1 Stack: configuration, global setup and teardown, `e2e-iam` target, root script
+- [x] M1 Stack: configuration, global setup and teardown, `e2e-iam` target, root script
 - [ ] M2 Session journeys: J-01, J-02, J-07, J-09, J-10, J-11
 - [ ] M3 Administration journeys: J-03 to J-06, J-08, J-12, J-13
 - [ ] M4 Closeout: Definition of Done map, sweep, dependency audit, documentation

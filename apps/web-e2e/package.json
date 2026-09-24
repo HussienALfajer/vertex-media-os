@@ -12,6 +12,15 @@
     "implicitDependencies": [
       "@vertex-os/web",
       "@vertex-os/api"
-    ]
+    ],
+    "targets": {
+      "e2e-iam": {
+        "command": "playwright test --config playwright.iam.config.mts",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": false
+      }
+    }
   }
 }
