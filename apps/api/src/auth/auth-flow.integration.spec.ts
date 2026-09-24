@@ -682,7 +682,10 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       const handle = cookieOf(login, LOGIN_COOKIE);
       if (handle) secrets.push(handle);
       const callback = new URL(
-        provider.authorize(String(login.headers['location']), { subject, sessionId }),
+        provider.authorize(String(login.headers['location']), {
+          subject,
+          ...(sessionId === undefined ? {} : { sessionId }),
+        }),
       );
       const response = await limited.inject({
         method: 'GET',
