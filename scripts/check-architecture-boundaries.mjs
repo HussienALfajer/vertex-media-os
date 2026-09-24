@@ -397,6 +397,17 @@ const violations = [
     iamHttpUserActorOnly,
     'src/iam/http/x.ts',
   ],
+  ...[
+    'const actor = { type: `SYSTEM` }; void actor;',
+    "declare const m: any; void m['systemAttribution'];",
+  ].map((code, index) => [
+    `V${123 + index}`,
+    'apps/api',
+    code,
+    syntaxRule,
+    iamHttpUserActorOnly,
+    'src/iam/http/x.ts',
+  ]),
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);

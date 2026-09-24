@@ -75,7 +75,9 @@ const iamHttpSyntax = [
   ...restrictedRawSqlSyntax,
   ...adapterImportSyntax.map((rule) => ({ ...rule, message: IAM_HTTP_CAPABILITIES_ONLY })),
   { selector: "Literal[value='SYSTEM']", message: IAM_HTTP_USER_ACTOR_ONLY },
+  { selector: "TemplateElement[value.raw='SYSTEM']", message: IAM_HTTP_USER_ACTOR_ONLY },
   { selector: "Identifier[name='systemAttribution']", message: IAM_HTTP_USER_ACTOR_ONLY },
+  { selector: "Literal[value='systemAttribution']", message: IAM_HTTP_USER_ACTOR_ONLY },
 ];
 
 const iamHttpCompositionSyntax = [

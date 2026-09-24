@@ -323,6 +323,16 @@ describe('departments', () => {
       expectedVersion: 2,
     });
     expect(deactivated.json()).toMatchObject({ state: 'INACTIVE', version: 3 });
+    const reactivated = await call(manager, 'POST', `/api/iam/departments/${view.id}/activate`, {
+      expectedVersion: 3,
+    });
+    expect([reactivated.statusCode, reactivated.json()]).toEqual([
+      200,
+      expect.objectContaining({ state: 'ACTIVE', version: 4 }),
+    ]);
+    await call(manager, 'POST', `/api/iam/departments/${view.id}/deactivate`, {
+      expectedVersion: 4,
+    });
 
     const missing = await call(manager, 'GET', `/api/iam/departments/${randomUUID()}`);
     expect([missing.statusCode, problemOf(missing).code]).toEqual([

@@ -174,6 +174,12 @@ describe('user routes against the pinned Keycloak', () => {
 
     const revoked = await post(`/api/iam/users/${userId}/revoke-sessions`);
     expect(revoked.json()).toEqual({ sessionsRevoked: 0, providerSessions: 'TERMINATED' });
+    // Every record of these requests, reactivation and resend included, names the session user.
+    const actors = await postgres.sql(
+      `SELECT DISTINCT actor_type || '|' || coalesce(actor_user_id::text, actor_process)
+         FROM audit_record WHERE target_id = '${userId}'`,
+    );
+    expect(actors.split('\n')).toEqual([`USER|${admin.id}`]);
     const notInvited = await post(`/api/iam/users/${admin.id}/resend-invitation`);
     expect([notInvited.statusCode, (notInvited.json() as { code: string }).code]).toEqual([
       409,
