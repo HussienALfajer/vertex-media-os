@@ -956,9 +956,10 @@ No administrator can grant more than they hold (owner decision, 2026-09-24). An 
 
 - may assign a role, or activate a custom role, only when every ACTIVE permission mapped to that role is among the actor's own effective permissions;
 - may add a permission to a custom role's mappings only when the actor holds that permission effectively;
-- may never assign the system-administrator role.
+- may never assign the system-administrator role;
+- may reactivate a SUSPENDED or DISABLED user (Section 10.7) only when every ACTIVE permission mapped to that user's ACTIVE roles is among the actor's own effective permissions, and never a user holding the system-administrator role (owner decision, 2026-09-24).
 
-Removing a role, removing a mapping, and deactivating a role are not limited by the ceiling. An ACTIVE System Administrator holds every ACTIVE permission and is therefore not limited. The ceiling is evaluated inside the same serialized transaction as the change, against the actor's committed state; a system process (bootstrap) is not subject to it. A refused grant changes nothing, is recorded as a REFUSED Audit record, and fails with IAM_GRANT_EXCEEDS_ACTOR (403).
+Removing a role, removing a mapping, deactivating a role, and removing access (suspension, disablement, termination) are not limited by the ceiling. An ACTIVE System Administrator holds every ACTIVE permission and is therefore not limited. The ceiling is evaluated inside the same serialized transaction as the change, against the actor's committed state; a system process (bootstrap) is not subject to it. A refused grant changes nothing, is recorded as a REFUSED Audit record, and fails with IAM_GRANT_EXCEEDS_ACTOR (403).
 
 ---
 
