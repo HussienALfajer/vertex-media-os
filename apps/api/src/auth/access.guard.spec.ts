@@ -15,6 +15,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AccessGuard, PUBLIC_ROUTE, RequirePermission } from './access.guard.js';
 import type { AuthRuntime } from './auth-runtime.js';
+import { createRateLimiter } from './rate-limit.js';
 import { requireAuthorization, requireSession } from './request-session.js';
 import { csrfTokenFor, hashSecret } from './secrets.js';
 import type { ValidSession } from './sessions.js';
@@ -55,8 +56,10 @@ function fakeRuntime(
   observed: Observed,
   answer: () => ResolveAuthorizationContextResult,
   failDenial = false,
+  evidenceLimit = 30,
 ): AuthRuntime {
   return {
+    limits: { evidence: createRateLimiter({ limit: evidenceLimit, windowSeconds: 60 }) },
     sessions: {
       authenticate: async () => ({ outcome: 'valid', session, revalidation: 'not-due' }),
       verifyCsrf: (_session: ValidSession, presented: string | undefined) =>
@@ -274,6 +277,35 @@ describe('AccessGuard', () => {
       'warn',
       { auth: 'authorization-denied', permission: ROLES_MANAGE },
     ]);
+  });
+
+  it('records at most the evidence limit of denials per user and window, then logs only (IAM-R09 D-04)', async () => {
+    const observed = { resolutions: 0, revoked: [], denials: [] as AuthorizationDenial[] };
+    const guard = new AccessGuard(
+      fakeRuntime(observed, () => ({ outcome: 'active', context }), false, 2),
+      new Reflector(),
+    );
+    const allLogs: Array<[string, unknown]> = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const { request, reply, logs } = fakeRequest();
+      const failure = await guard
+        .canActivate(executionContext(handlers.missing, request, reply))
+        .catch((error: unknown) => error);
+      // The answer never depends on the evidence bound.
+      expect((failure as ForbiddenException).errorCode).toBe('AUTHORIZATION_DENIED');
+      allLogs.push(...logs);
+    }
+    expect(observed.denials).toHaveLength(2);
+    expect(
+      allLogs.filter(([, entry]) => (entry as { auth?: string }).auth === 'authorization-denied'),
+    ).toHaveLength(4);
+    expect(allLogs).toContainEqual([
+      'warn',
+      { auth: 'evidence-limited', evidence: 'authorization-denial' },
+    ]);
+    expect(
+      allLogs.filter(([, entry]) => (entry as { auth?: string }).auth === 'evidence-limited'),
+    ).toHaveLength(1);
   });
 
   it('still denies when the denial cannot be recorded, and reports the missing evidence', async () => {

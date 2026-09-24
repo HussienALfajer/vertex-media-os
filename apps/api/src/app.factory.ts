@@ -68,7 +68,7 @@ export async function createApp(
   const parseJson = fastify.getDefaultJsonParser('error', 'error');
   fastify.removeContentTypeParser('application/json');
   fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
-    parseJson(request, body, (error, value) => {
+    parseJson(request, String(body), (error, value) => {
       if (error) {
         done(new RequestValidationException(['body']), undefined);
         return;

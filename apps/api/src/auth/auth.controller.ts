@@ -377,10 +377,7 @@ export class AuthController {
       // Anyone can post here, so the Audit evidence of refusals is bounded per address (D-04, D-05).
       const evidence = this.runtime.limits.evidence.take(`backchannel-refused:${request.ip}`);
       if (evidence.allowed) {
-        await this.runtime.sessions.recordBackchannelLogout({
-          outcome: verified.failure,
-          attribution: systemAttribution(request, 'iam.backchannel-logout'),
-        });
+        await this.recordBackchannelLogout(request, verified.failure);
       } else if (evidence.first) {
         logEvidenceLimited(request, 'backchannel-logout-refused');
       }
@@ -411,11 +408,30 @@ export class AuthController {
             );
     }
     // Each revoked session has its own record; a valid token that matched none needs one (CP1-14).
-    if (revoked === 0) {
-      await this.runtime.sessions.recordBackchannelLogout({ outcome: 'no-match', attribution });
-    }
+    if (revoked === 0) await this.recordBackchannelLogout(request, 'no-match');
     request.log.info({ auth: 'backchannel-logout', revoked }, 'back-channel logout processed');
     void reply.code(200).send();
+  }
+
+  /**
+   * Records a back-channel logout that revoked nothing (D-05). The protocol answer does not depend
+   * on it: a failed append is logged as missing evidence, as for authorization denials (R04 D-15).
+   */
+  private async recordBackchannelLogout(
+    request: FastifyRequest,
+    outcome: 'rejected' | 'unavailable' | 'no-match',
+  ): Promise<void> {
+    try {
+      await this.runtime.sessions.recordBackchannelLogout({
+        outcome,
+        attribution: systemAttribution(request, 'iam.backchannel-logout'),
+      });
+    } catch (error) {
+      request.log.error(
+        { err: error, auth: 'backchannel-logout-unrecorded' },
+        'back-channel logout could not be recorded',
+      );
+    }
   }
 
   private signInFailed(reply: FastifyReply, code: SignInFailure): void {
