@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** run `IAM-R08B` (IAM-MP-13) with `/stage IAM-R08B`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
+**Next step:** run `IAM-R08C` (IAM-MP-14) with `/stage IAM-R08C`. `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24)  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 ---
@@ -1385,7 +1385,7 @@ Integrate the real web application shell with backend-owned authentication/sessi
 
 ## IAM-MP-13 — Frontend User, Access & Provisioning Administration
 
-**Status:** READY (run `IAM-R08B`)  
+**Status:** COMPLETE (run `IAM-R08B`)  
 **Parent specification area:** IAM-6, Sections 40, 42, 52–54  
 **Depends on:** IAM-MP-12 COMPLETE
 
@@ -1446,7 +1446,7 @@ Deliver the primary IAM administrator workflows for users and access state using
 
 ## IAM-MP-14 — Frontend Departments, Roles & Permissions Administration
 
-**Status:** PLANNED (run `IAM-R08C`)  
+**Status:** READY (run `IAM-R08C`)  
 **Parent specification area:** IAM-6, Sections 40, 52  
 **Depends on:** IAM-MP-13 COMPLETE
 
@@ -1470,6 +1470,12 @@ Complete the IAM administration UI for organizational and privilege management w
 
 - corresponding backend contracts are accepted;
 - shared table/form/overlay patterns are available.
+
+### Carried forward from run IAM-R08B (`IAM_R08B_USER_ADMINISTRATION_PLAN.md`)
+
+- **Foundation to build on:** `protectedQuery` (`apps/web/src/lib/protected-query.ts`) for every protected read, `describeMutationFailure` for refusals, `ReasonField`, the status mapping in `features/iam/iam-states.tsx`, and `useAccess` for presentation-only visibility. Department and role reads already exist as ACTIVE pickers (`iam-queries.ts`).
+- **Directory filters by department and role (R08B D-03):** the API supports `departmentId` and `roleId` on `GET /api/iam/users`; the directory offers search and access state only. Add them when the department and role lists exist, or record why not.
+- **Route search validation (R08B discovery):** TanStack Router can expose raw address parameters next to a route's validated search; a page must apply its own validation to what it reads (see `routes/_app/users/index.tsx`).
 
 ### Exit criteria
 
@@ -1558,6 +1564,10 @@ Verify IAM as an integrated system, close cross-stage defects, and produce an au
 - **T-8:** `isDatabaseContention` is proven for SQLSTATE 57014 and Prisma P2028 only; 55P03, 40P01, 40001 and P2034 are classified but untested.
 - **Trace IDs:** a well-formed client `X-Request-Id` becomes the Audit `trace_id` (pre-existing); a client can make its records share a trace ID with others. `actor_user_id` is unaffected.
 - **No-store on refusals:** guard refusals (401, 403) of IAM routes do not carry `Cache-Control: no-store`; their Problem Details hold no personal data.
+
+### Carried forward from run IAM-R08B (`IAM_R08B_USER_ADMINISTRATION_PLAN.md`, D-15)
+
+- **Signed-in user administration through the real API:** the R08B browser journey answers `/api` in the page. Prove create/invite, a lifecycle action with its confirmation and a role change end to end with Keycloak, PostgreSQL and the API.
 
 ### Carried forward from run IAM-R08 (`IAM_R08_FRONTEND_SESSION_PLAN.md`, D-03)
 
@@ -1719,6 +1729,8 @@ Run `IAM-R07` delivered IAM-MP-11 (plan `IAM_R07_HTTP_ADMINISTRATION_PLAN.md`). 
 
 Run `IAM-R08` delivered IAM-MP-12 (plan `IAM_R08_FRONTEND_SESSION_PLAN.md`); its planner split the frontend run into `IAM-R08`, `IAM-R08B` and `IAM-R08C` (D-01). It is `COMPLETE` once its pull request is merged. The web app reads its authentication state from `/api/auth/session` and `/api/iam/me` and never handles a token: signed out, expired, ended, inactive, unavailable and signed in are distinct states; sign-in is a top-level navigation to the API and the callback's `authError` is explained once; sign-out uses the in-memory CSRF token and follows `logoutUrl` (D-05 to D-09). Protected data is removed on sign-out, on a session refusal (whose reason is kept, because the API clears the cookie with it), on a user change and on permission loss, and the protected views remount on those changes (D-10; review S-1, S-2). Lint and boundary probes keep application code away from browser storage and cookies (D-14). The real-Keycloak browser items (three-engine cookies, rotation across sites, CP1-17) moved to IAM-MP-15 (D-03). Its carried-forward items are attached to IAM-MP-13 and IAM-MP-15.
 
+Run `IAM-R08B` delivered IAM-MP-13 (plan `IAM_R08B_USER_ADMINISTRATION_PLAN.md`). It is `COMPLETE` once its pull request is merged. The web app has a bounded, searchable user directory, user creation (invitation), and a user detail with the display-name edit, memberships, role assignments, the access lifecycle, identity synchronization, invitation resend and session revocation. Access, identity synchronization and invitation delivery are three labeled facts; invitation delivery shows only while INVITED (D-06). Security-sensitive actions confirm with the exact target, consequence and an optional reason; the reactivation result states the backend's target (D-08, D-09). Stale writes keep the draft, and unconfirmed results reload the user (D-11, D-17). Every protected read declares its permission through `protectedQuery` (D-04). `DELETE /api/iam/users/{userId}/roles/{roleId}` accepts an optional body reason that reaches Audit, which supersedes R07 D-08's "DELETE routes take no reason" for role removal (D-02). Its carried-forward items are attached to IAM-MP-14 and IAM-MP-15.
+
 Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when its trigger occurs:
 
 - database-level Audit immutability, runtime/migration role separation and schema per domain (ADR-0008): production deployment design or a third domain adapter, whichever comes first;
@@ -1754,8 +1766,8 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | `IAM-CP2` Deep audit: authorization and administration core | — | DEFERRED into `IAM-FINAL` | owner decision 2026-09-24 |
 | IAM-MP-11 HTTP Administration Surface | R07 | COMPLETE | R06 merged (satisfied) |
 | IAM-MP-12 Frontend Authentication & Session UX | R08 | COMPLETE | R07 merged (satisfied) |
-| IAM-MP-13 Frontend User & Access Admin | R08B | READY | R08 merged (satisfied) |
-| IAM-MP-14 Frontend Department/Role/Permission Admin | R08C | PLANNED | R08B merged |
+| IAM-MP-13 Frontend User & Access Admin | R08B | COMPLETE | R08 merged (satisfied) |
+| IAM-MP-14 Frontend Department/Role/Permission Admin | R08C | READY | R08B merged (satisfied) |
 | IAM-MP-15 E2E & Hardening | R09 | PLANNED | R08C merged |
 | `IAM-FINAL` Final IAM Module Audit | — | PLANNED | R09 merged |
 
@@ -2044,15 +2056,15 @@ next module planned from the new accepted baseline
 
 ## 19. Exact Next Step
 
-IAM-MP-00 to IAM-MP-12 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, and IAM-MP-12 through run `IAM-R08`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
+IAM-MP-00 to IAM-MP-13 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, IAM-MP-12 through run `IAM-R08`, and IAM-MP-13 through run `IAM-R08B`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The `IAM-R08` planner split the frontend run (Section 8.3). The next step is run `IAM-R08B` (IAM-MP-13; Tier B, session effort `medium`). Start it in a new Claude Code session:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The `IAM-R08` planner split the frontend run (Section 8.3). The next step is run `IAM-R08C` (IAM-MP-14; Tier B, session effort `medium`). Start it in a new Claude Code session:
 
 ```text
-/stage IAM-R08B
+/stage IAM-R08C
 ```
 
-Its planner reads the IAM-MP-13 section, including the IAM-R07 contracts, the reason question (SA-4) and the IAM-R08 foundation carried forward to it.
+Its planner reads the IAM-MP-14 section, including the IAM-R08B foundation and items carried forward to it.
 
 Do **not** plan later runs in detail now.
 
