@@ -39,7 +39,6 @@ export type { AuthorizationReader } from './application/ports/authorization-read
 export type { OrganizationStore } from './application/ports/organization-store.js';
 export type { RoleStore } from './application/ports/role-store.js';
 export type { UserLifecycleStore } from './application/ports/user-lifecycle-store.js';
-export type { RestrictedAccessState } from './domain/user-lifecycle.js';
 export type { DepartmentView, MembershipFact } from './domain/organization.js';
 export type { RoleView } from './domain/roles.js';
 export type { FieldChanges } from './domain/versioned-change.js';

@@ -247,15 +247,11 @@ describe('UserLifecycleStore against real PostgreSQL', () => {
     const result = await runner.run(async ({ lifecycle }) => ({
       locked: await lifecycle.lockSystemAdministratorRole(),
       holders: await lifecycle.readRoleHolders(roleId),
-      holds: await lifecycle.holdsRole({ userId: first.id, roleId }),
-      other: await lifecycle.holdsRole({ userId: missingId, roleId }),
     }));
 
     expect(result).toEqual({
       locked: roleId,
       holders: [first.id, second.id].sort(),
-      holds: true,
-      other: false,
     });
   });
 

@@ -7,13 +7,14 @@ import {
   type DatabaseClient,
   type DatabaseTransaction,
 } from '@vertex-os/database';
-import { iamPermissionManifest, type BootstrapResult } from '@vertex-os/iam';
+import type { BootstrapResult } from '@vertex-os/iam';
 import type { DestinationStream } from 'pino';
 import { createSessionStore } from '../auth/session-store.js';
 import type { AppConfig } from '../config/app-config.js';
 import type { IdentityProvisioningConfig } from '../config/identity-provisioning-config.js';
 import { createIamBootstrap } from '../iam/user-administration.js';
 import { createCommandLogger } from './iam-sync-reference.command.js';
+import { permissionManifests } from './permission-manifests.js';
 
 /** Process exit codes of `pnpm iam:bootstrap` (IAM-R06 D-16). */
 export const EXIT_COMPLETE = 0;
@@ -139,7 +140,7 @@ export async function runIamBootstrap(
       displayName: input.displayName,
       ...(input.reason === undefined ? {} : { reason: input.reason }),
       resendInvitation: input.resendInvitation,
-      manifests: [iamPermissionManifest],
+      manifests: permissionManifests,
       traceId: traceId.value,
     });
     const base = { traceId: traceId.value, mode };

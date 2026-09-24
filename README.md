@@ -160,8 +160,9 @@ administrators are managed in IAM), for a different email, or with more than one
 it terminates INVITED candidates, removes the role from SUSPENDED or DISABLED ones without changing
 their access, and creates one new candidate for a new email. An ACTIVE administrator who lost a
 password or TOTP is recovered in Keycloak, not here. Every run is audited as the `iam.bootstrap`
-system process. It logs one JSON result line with the user ID and outcomes, never the email, name,
-reason or a secret, and exits 0 (complete), 2 (refused), 3 (a Keycloak step did not complete; run
+system process. Its own JSON result line carries the user ID and outcomes, never the email, name,
+reason or a secret; `pnpm` and Nx do echo the command line with its arguments before it runs,
+so the email, name and reason appear in that terminal or CI output. It exits 0 (complete), 2 (refused), 3 (a Keycloak step did not complete; run
 it again to resume), 64 (usage) or 1 (unexpected failure); through `pnpm`/Nx any non-zero exit
 is reported as 1.
 
@@ -260,5 +261,5 @@ sends the `__Host-vertex-*` cookies to the local Keycloak, which ignores them.
   Finance) are static design fixtures.
 - User administration (creation with departments and roles, suspension, disablement, termination,
   reactivation, identity synchronization, invitation resend and session revocation) exists as IAM
-  application services but is not mounted in HTTP yet (IAM-MP-11); only `pnpm iam:bootstrap`
-  reaches it.
+  application services but is not mounted in HTTP yet (IAM-MP-11); `pnpm iam:bootstrap` uses
+  the same creation, reconciliation and invitation capabilities for the first System Administrator.

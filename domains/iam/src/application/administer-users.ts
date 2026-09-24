@@ -1,5 +1,5 @@
-import type { AuditAttribution } from '@vertex-os/audit';
-import { newApplicationUser } from '../domain/application-user.js';
+import type { AuditAttribution, AuditRecorder } from '@vertex-os/audit';
+import { newApplicationUser, type ApplicationUser } from '../domain/application-user.js';
 import {
   parseDepartmentId,
   parseRoleId,
@@ -14,12 +14,11 @@ import {
   decideAccessRestriction,
   decideReactivation,
   toUserView,
-  type Grant,
   type RestrictedAccessState,
   type UserView,
 } from '../domain/user-lifecycle.js';
 import { parseExpectedVersion, requireIamEvidence } from './administration-evidence.js';
-import { grantExceedsActor, recordGrantRefusal } from './grant-ceiling.js';
+import { grantExceedsActor, recordGrantRefusal, roleGrant } from './grant-ceiling.js';
 import {
   appendUserAudit,
   providerFailure,
@@ -203,6 +202,32 @@ async function committedView(
   return toUserView(user);
 }
 
+/**
+ * The one `iam.user.created` record shape, for user creation and bootstrap alike (IAM-R06 D-04):
+ * the initial states, departments, primary and role codes, never the email.
+ */
+export function recordUserCreated(
+  audit: AuditRecorder,
+  attribution: AuditAttribution,
+  user: ApplicationUser,
+  grants: {
+    readonly departmentIds: readonly string[];
+    readonly primaryDepartmentId: string | undefined;
+    readonly roleCodes: readonly string[];
+  },
+): Promise<void> {
+  return appendUserAudit(audit, attribution, user, 'iam.user.created', 'SUCCEEDED', {
+    after: {
+      accessState: user.accessState,
+      identitySyncState: user.identitySyncState,
+      invitationDeliveryState: user.invitationDeliveryState,
+      departmentIds: [...grants.departmentIds].sort(),
+      primaryDepartmentId: grants.primaryDepartmentId ?? null,
+      roleCodes: [...grants.roleCodes].sort(),
+    },
+  });
+}
+
 function request(userId: UserId, attribution: AuditAttribution): IdentityProvisioningRequest {
   return { userId, attribution };
 }
@@ -284,10 +309,7 @@ export async function createUser(
         if (department.state !== 'ACTIVE') return { outcome: 'department-inactive' as const };
       }
       for (const role of lockedRoles) {
-        const grant: Grant = role.isSystem
-          ? { kind: 'system-role' }
-          : { kind: 'permissions', codes: await roles.readActivePermissionCodes(role.id) };
-        if (await grantExceedsActor(roles, attribution, grant)) {
+        if (await grantExceedsActor(roles, attribution, await roleGrant(roles, role))) {
           await recordGrantRefusal(
             audit,
             attribution,
@@ -311,15 +333,10 @@ export async function createUser(
         await roles.insertAssignment({ userId: user.id, roleId: role.id });
       }
       const primary = values.memberships.find((membership) => membership.isPrimary);
-      await appendUserAudit(audit, attribution, user, 'iam.user.created', 'SUCCEEDED', {
-        after: {
-          accessState: user.accessState,
-          identitySyncState: user.identitySyncState,
-          invitationDeliveryState: user.invitationDeliveryState,
-          departmentIds: [...departmentIds].sort(),
-          primaryDepartmentId: primary?.departmentId ?? null,
-          roleCodes: lockedRoles.map((role) => role.code as string).sort(),
-        },
+      await recordUserCreated(audit, attribution, user, {
+        departmentIds,
+        primaryDepartmentId: primary?.departmentId,
+        roleCodes: lockedRoles.map((role) => role.code),
       });
       return { outcome: 'created' as const, userId: user.id };
     },
@@ -403,7 +420,7 @@ async function restrictUser(
     if (user === undefined) return { outcome: 'user-not-found' as const };
     const holdsSystemAdministratorRole =
       systemRoleId !== undefined &&
-      (await lifecycle.holdsRole({ userId: user.id, roleId: systemRoleId }));
+      (await roles.hasAssignment({ userId: user.id, roleId: systemRoleId }));
     const activeAdministrators =
       holdsSystemAdministratorRole && user.accessState === 'ACTIVE'
         ? await roles.countActiveSystemAdministrators()
@@ -658,27 +675,30 @@ export async function revokeUserSessions(
     attribution,
   );
   const provider = dependencies.identityProvider;
-  if (user.identity === undefined || user.identity.issuer !== provider.issuer) {
-    return { outcome: 'revoked', sessionsRevoked, providerSessions: { outcome: 'no-identity' } };
+  let providerSessions: ProviderSessionsOutcome = { outcome: 'no-identity' };
+  if (user.identity !== undefined && user.identity.issuer === provider.issuer) {
+    const terminated = await provider.terminateSessions(user.identity.subject);
+    providerSessions = !terminated.ok
+      ? { outcome: 'failed', failure: providerFailure(terminated.failure) }
+      : terminated.value === 'not-found'
+        ? { outcome: 'failed', failure: 'identity-conflict' }
+        : { outcome: 'terminated' };
   }
-  const terminated = await provider.terminateSessions(user.identity.subject);
-  const providerSessions: ProviderSessionsOutcome = !terminated.ok
-    ? { outcome: 'failed', failure: providerFailure(terminated.failure) }
-    : terminated.value === 'not-found'
-      ? { outcome: 'failed', failure: 'identity-conflict' }
-      : { outcome: 'terminated' };
+  // One record of the administrator's action, even when nothing was live (IAM-R06 review SEC-4);
+  // each revoked session also has its own record from the session store.
   await dependencies.runner.run(({ audit }) =>
     appendUserAudit(
       audit,
       attribution,
       user,
-      'iam.user.provider-sessions-terminated',
-      providerSessions.outcome === 'terminated' ? 'SUCCEEDED' : 'FAILED',
+      'iam.user.sessions-revoked',
+      providerSessions.outcome === 'failed' ? 'FAILED' : 'SUCCEEDED',
       {
-        after:
-          providerSessions.outcome === 'failed'
-            ? { sessionsRevoked, failure: providerSessions.failure }
-            : { sessionsRevoked },
+        after: {
+          sessionsRevoked,
+          providerSessions: providerSessions.outcome,
+          ...(providerSessions.outcome === 'failed' ? { failure: providerSessions.failure } : {}),
+        },
       },
     ),
   );

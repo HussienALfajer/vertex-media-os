@@ -470,7 +470,7 @@ describe('access lifecycle', () => {
       'ADMINISTRATOR_REVOKED\nADMINISTRATOR_REVOKED\nADMINISTRATOR_REVOKED',
     );
     expect(await row(id)).toBe('ACTIVE|SYNCED|SENT');
-    expect(await trail(id)).toContain('iam.user.provider-sessions-terminated:SUCCEEDED');
+    expect(await trail(id)).toContain('iam.user.sessions-revoked:SUCCEEDED');
   });
 
   it('updates the display name only, version-checked', async () => {

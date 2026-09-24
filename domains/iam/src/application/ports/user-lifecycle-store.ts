@@ -21,7 +21,6 @@ export interface UserLifecycleStore {
   lockSystemAdministratorRole(): Promise<RoleId | undefined>;
   /** Locks the user row `FOR UPDATE` and returns the committed user. */
   lockUser(id: UserId): Promise<ApplicationUser | undefined>;
-  holdsRole(assignment: { readonly userId: UserId; readonly roleId: RoleId }): Promise<boolean>;
   /** Whether any user, in any state, has this email. */
   emailInUse(email: NormalizedEmail): Promise<boolean>;
   /**

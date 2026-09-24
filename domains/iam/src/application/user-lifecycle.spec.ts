@@ -447,7 +447,10 @@ describe('explicit session revocation (IAM-R06 D-10)', () => {
       identitySyncState: 'SYNCED',
       version: 5,
     });
-    expect(trail(iam)).toEqual(['iam.user.provider-sessions-terminated:SUCCEEDED']);
+    expect(trail(iam)).toEqual(['iam.user.sessions-revoked:SUCCEEDED']);
+    expect(iam.audit[0]?.change).toEqual({
+      after: { sessionsRevoked: 2, providerSessions: 'terminated' },
+    });
   });
 
   it('keeps the local revocation and records a Keycloak failure', async () => {
@@ -461,16 +464,20 @@ describe('explicit session revocation (IAM-R06 D-10)', () => {
       sessionsRevoked: 2,
       providerSessions: { outcome: 'failed', failure: 'provider-unavailable' },
     });
-    expect(trail(iam)).toEqual(['iam.user.provider-sessions-terminated:FAILED']);
+    expect(trail(iam)).toEqual(['iam.user.sessions-revoked:FAILED']);
   });
 
-  it('calls no provider for a user without an identity', async () => {
-    const { iam, provider, dependencies } = setup(invitedUser());
+  it('calls no provider for a user without an identity, and still records the action', async () => {
+    const { iam, provider, sessions, dependencies } = setup(invitedUser());
+    sessions.live = 0;
 
     const result = await revokeUserSessions(dependencies, { userId }, attribution());
 
-    expect(result).toMatchObject({ providerSessions: { outcome: 'no-identity' } });
+    expect(result).toMatchObject({
+      sessionsRevoked: 0,
+      providerSessions: { outcome: 'no-identity' },
+    });
     expect(provider.calls).toEqual([]);
-    expect(iam.audit).toEqual([]);
+    expect(trail(iam)).toEqual(['iam.user.sessions-revoked:SUCCEEDED']);
   });
 });

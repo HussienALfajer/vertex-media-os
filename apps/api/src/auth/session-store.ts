@@ -8,7 +8,7 @@ import {
   type AuthPersistenceClient,
 } from '@vertex-os/database/auth';
 
-/** Why a session ended early. Later stages add reasons (suspension, administrator action). */
+/** Why a session ended early, including IAM's access changes and the administrator action (IAM-R06 D-09). */
 export type RevocationReason = keyof typeof AuthSessionRevocationReason;
 
 /** An identity-provider token encrypted for one session row (IAM-R03 D-17, IAM-R03F D-06). */

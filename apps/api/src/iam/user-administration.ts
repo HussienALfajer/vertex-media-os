@@ -66,7 +66,10 @@ export type RevokeUserSessions = (
 ) => Promise<number>;
 
 export interface IamUserAdministrationOptions {
-  /** The session revocation of the authentication area (`SessionService.revokeUserSessions`). */
+  /**
+   * The authentication area's revocation of every live session of a user: `SessionService` in the
+   * HTTP runtime (IAM-MP-11), the session store in the bootstrap command (IAM-R06 review AB-1).
+   */
   readonly revokeUserSessions: RevokeUserSessions;
   /** Binds MOD-AUDIT's append capability to a transaction; the Audit adapter by default. */
   readonly auditRecorderFor?: (handle: DatabaseClient | DatabaseTransaction) => AuditRecorder;

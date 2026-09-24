@@ -41,14 +41,6 @@ export function createUserLifecycleStore(client: IamPersistenceClient): UserLife
       return mapUser(row);
     },
 
-    async holdsRole({ userId, roleId }) {
-      const row = await client.iamUserRoleAssignment.findUnique({
-        where: { userId_roleId: { userId, roleId } },
-        select: { userId: true },
-      });
-      return row !== null;
-    },
-
     async emailInUse(email) {
       const row = await client.iamApplicationUser.findUnique({
         where: { email },

@@ -139,7 +139,6 @@ export class InMemoryIam implements IamTransactionRunner {
         operations.push('lock-user');
         return staged.get(id);
       },
-      holdsRole: async () => false,
       emailInUse: async (email) => [...staged.values()].some((user) => user.email === email),
       insertUser: async () => {
         throw new Error('creation runs against PostgreSQL');

@@ -28,6 +28,7 @@ import { requireIamEvidence } from './administration-evidence.js';
 import {
   identitySyncOutcome,
   invitationOutcome,
+  recordUserCreated,
   type IdentitySyncOutcome,
   type InvitationOutcome,
   type UserAdministrationDependencies,
@@ -203,15 +204,10 @@ export async function bootstrapSystemAdministrator(
       // A concurrent ordinary creation of the same email committed after the check above.
       if (inserted.outcome === 'email-taken') throw new EmailTaken();
       await roles.insertAssignment({ userId: inserted.user.id, roleId });
-      await appendUserAudit(audit, attribution, inserted.user, 'iam.user.created', 'SUCCEEDED', {
-        after: {
-          accessState: inserted.user.accessState,
-          identitySyncState: inserted.user.identitySyncState,
-          invitationDeliveryState: inserted.user.invitationDeliveryState,
-          departmentIds: [],
-          primaryDepartmentId: null,
-          roleCodes: [SYSTEM_ADMINISTRATOR_ROLE_CODE],
-        },
+      await recordUserCreated(audit, attribution, inserted.user, {
+        departmentIds: [],
+        primaryDepartmentId: undefined,
+        roleCodes: [SYSTEM_ADMINISTRATOR_ROLE_CODE],
       });
       return decision.kind === 'recover'
         ? succeed('recovered', inserted.user.id, {
