@@ -27,8 +27,8 @@ interface Window {
 
 /**
  * Creates a fixed-window limiter. V1 runs one API process (Master Plan Section 15), so the counters
- * need no shared store. The table is bounded: past `maxKeys`, the key seen longest ago is dropped,
- * which can only let that key start a fresh window, never refuse another key.
+ * need no shared store. The table is bounded: past `maxKeys`, the key whose window started longest
+ * ago is dropped, which can only let that key start a fresh window, never refuse another key.
  */
 export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
   const now = options.now ?? Date.now;
@@ -61,4 +61,25 @@ export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
       };
     },
   });
+}
+
+/**
+ * The rate-limit key of a client address (IAM-R09 review S-3): an IPv4 address as it is, an IPv6
+ * address by its /64 prefix, because one host usually holds a whole /64 and could otherwise rotate
+ * through it. An IPv4-mapped IPv6 address counts as its IPv4 address.
+ */
+export function clientAddressKey(address: string): string {
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address);
+  if (mapped?.[1] !== undefined) return mapped[1];
+  if (!address.includes(':')) return address;
+  const [head = '', tail = ''] = address.split('::');
+  const left = head === '' ? [] : head.split(':');
+  const right = address.includes('::') && tail !== '' ? tail.split(':') : [];
+  const groups = address.includes('::')
+    ? [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right]
+    : left;
+  return `${groups
+    .slice(0, 4)
+    .map((group) => Number.parseInt(group || '0', 16).toString(16))
+    .join(':')}::/64`;
 }

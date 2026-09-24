@@ -97,7 +97,11 @@ export class AccessGuard implements CanActivate {
     const actor = await requireAuthorization(this.runtime, request, reply);
     if (hasPermission(actor, required)) return true;
 
-    request.log.warn({ auth: 'authorization-denied', permission: required }, 'permission denied');
+    // The user is named, so denials stay attributable in the log beyond the evidence bound (S-2).
+    request.log.warn(
+      { auth: 'authorization-denied', permission: required, userId: actor.userId },
+      'permission denied',
+    );
     // One user's denials write at most the evidence limit of Audit records per window; beyond it
     // they are logged only, and the first suppression is the alert signal (IAM-R09 D-04).
     const evidence = this.runtime.limits.evidence.take(`denial:${actor.userId}`);
@@ -116,7 +120,7 @@ export class AccessGuard implements CanActivate {
         );
       }
     } else if (evidence.first) {
-      logEvidenceLimited(request, 'authorization-denial');
+      logEvidenceLimited(request, 'authorization-denial', { userId: actor.userId });
     }
     throw new ForbiddenException('The required permission is missing.', {
       errorCode: 'AUTHORIZATION_DENIED',

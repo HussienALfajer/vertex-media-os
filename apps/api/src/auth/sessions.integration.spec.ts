@@ -842,7 +842,11 @@ describe('application sessions against real PostgreSQL', () => {
         `UPDATE auth_session SET idle_expires_at = '${new Date(expired.getTime() + 30 * MINUTE).toISOString()}'
           WHERE id = '${session.id}'`,
       );
-      const run = store().housekeep({ now: expired, purgeBefore: new Date(0) });
+      const run = store().housekeep({
+        now: expired,
+        tokensExpiredAfter: new Date(0),
+        purgeBefore: new Date(0),
+      });
       let waiting = '0';
       for (let attempt = 0; attempt < 100 && waiting !== '1'; attempt += 1) {
         waiting = await postgres.sql(
@@ -858,20 +862,33 @@ describe('application sessions against real PostgreSQL', () => {
       expect(row.refreshTokenCiphertext).not.toBeNull();
     });
 
-    it('finds its rows through the idle-deadline index', async () => {
-      await insertSessions(20_000, new Date(clock.getTime() + 30 * MINUTE), 'many');
-      await insertSessions(5, new Date(clock.getTime() - MINUTE), 'few');
+    it('finds its rows through an index in the steady state of retention (review DATA-1)', async () => {
+      // Retention keeps many expired rows whose tokens are gone; few live or just-expired rows
+      // still hold tokens.
+      await insertSessions(15_000, new Date(clock.getTime() - 5 * DAY), 'kept');
+      await postgres.sql(
+        'UPDATE auth_session SET id_token_ciphertext = NULL, id_token_key_version = NULL, refresh_token_ciphertext = NULL, refresh_token_key_version = NULL',
+      );
+      await insertSessions(300, new Date(clock.getTime() + 30 * MINUTE), 'live');
+      await insertSessions(5, new Date(clock.getTime() - MINUTE), 'due');
       await postgres.sql('ANALYZE auth_session');
+      // The first run sweeps the whole retention window; later runs read only the deadlines since
+      // the previous run, less a margin, which the idle-deadline index serves.
+      expect((await sessions.housekeep()).sessionTokensDiscarded).toBe(5);
+      advance(MINUTE);
+      expect((await sessions.housekeep()).sessionTokensDiscarded).toBe(0);
       const at = `'${clock.toISOString()}'::timestamptz`;
-      for (const statement of [
-        `SELECT id FROM auth_session WHERE idle_expires_at <= ${at}
-          AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL) LIMIT 200`,
-        `SELECT id FROM auth_session WHERE idle_expires_at <= ${at} LIMIT 200`,
-      ]) {
-        expect(await postgres.sql(`EXPLAIN ${statement}`)).toContain(
-          'auth_session_idle_expires_at_idx',
-        );
-      }
+      const since = `'${new Date(clock.getTime() - 61 * MINUTE).toISOString()}'::timestamptz`;
+      const cutoff = `'${new Date(clock.getTime() - 30 * DAY).toISOString()}'::timestamptz`;
+      const plan = (statement: string) => postgres.sql(`EXPLAIN ${statement}`);
+      expect(
+        await plan(`SELECT id FROM auth_session WHERE idle_expires_at > ${since}
+          AND idle_expires_at <= ${at}
+          AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL) LIMIT 200`),
+      ).toContain('auth_session_idle_expires_at_idx');
+      expect(
+        await plan(`SELECT id FROM auth_session WHERE idle_expires_at <= ${cutoff} LIMIT 200`),
+      ).toContain('auth_session_idle_expires_at_idx');
     });
   });
 });

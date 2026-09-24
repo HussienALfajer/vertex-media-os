@@ -275,7 +275,7 @@ describe('AccessGuard', () => {
     ]);
     expect(logs).toContainEqual([
       'warn',
-      { auth: 'authorization-denied', permission: ROLES_MANAGE },
+      { auth: 'authorization-denied', permission: ROLES_MANAGE, userId: USER_ID },
     ]);
   });
 
@@ -301,7 +301,7 @@ describe('AccessGuard', () => {
     ).toHaveLength(4);
     expect(allLogs).toContainEqual([
       'warn',
-      { auth: 'evidence-limited', evidence: 'authorization-denial' },
+      { auth: 'evidence-limited', evidence: 'authorization-denial', userId: USER_ID },
     ]);
     expect(
       allLogs.filter(([, entry]) => (entry as { auth?: string }).auth === 'evidence-limited'),

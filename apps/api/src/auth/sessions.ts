@@ -2,13 +2,15 @@ import { parseSystemProcess, type AuditAttribution } from '@vertex-os/audit';
 import type { AuthConfig } from '../config/auth-config.js';
 import type { OidcClient } from './oidc.js';
 import { csrfTokenFor, hashSecret, isSecretShaped, matchesHash, newSecret } from './secrets.js';
-import type {
-  BackchannelLogoutEvent,
-  HousekeepingResult,
-  LoginAttemptSecrets,
-  RevocationReason,
-  SessionStore,
-  StoredSession,
+import {
+  HOUSEKEEPING_BATCH,
+  HOUSEKEEPING_MAX_BATCHES,
+  type BackchannelLogoutEvent,
+  type HousekeepingResult,
+  type LoginAttemptSecrets,
+  type RevocationReason,
+  type SessionStore,
+  type StoredSession,
 } from './session-store.js';
 import type { TokenCiphers } from './token-cipher.js';
 
@@ -54,6 +56,8 @@ if (!backchannelProcess.ok) throw new Error('Invalid system process code.');
 const BACKCHANNEL_LOGOUT_PROCESS = { type: 'SYSTEM', process: backchannelProcess.value } as const;
 
 const DAY_MS = 86_400_000;
+/** How far before the previous run's time a token sweep reads again, against clock steps. */
+const SWEEP_MARGIN_MS = 3_600_000;
 
 /** Identity-provider sessions a back-channel logout ended that are remembered at most (IAM-R09 D-08). */
 export const RECENT_LOGOUTS_MAX = 10_000;
@@ -142,6 +146,12 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
   const absoluteMs = limits.absoluteTimeoutSeconds * 1000;
   const attemptMs = limits.loginAttemptTimeoutSeconds * 1000;
   const recentLogouts = createRecentLogouts(attemptMs, () => now().getTime());
+  /**
+   * The time up to which a completed housekeeping run discarded every expired session's tokens. A
+   * session's idle deadline only moves forward while it is live, so later runs read only the
+   * deadlines after it (with a margin) and use the idle-deadline index (review DATA-1).
+   */
+  let tokensSweptUntil: Date | undefined;
 
   const idleDeadline = (at: Date, absolute: Date) =>
     new Date(Math.min(at.getTime() + idleMs, absolute.getTime()));
@@ -322,12 +332,19 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       return store.recordBackchannelLogout({ ...event, clientId: options.clientId });
     },
 
-    housekeep() {
+    async housekeep() {
       const at = now();
-      return store.housekeep({
-        now: at,
-        purgeBefore: new Date(at.getTime() - limits.retentionDays * DAY_MS),
-      });
+      const purgeBefore = new Date(at.getTime() - limits.retentionDays * DAY_MS);
+      const tokensExpiredAfter =
+        tokensSweptUntil === undefined
+          ? purgeBefore
+          : new Date(Math.max(purgeBefore.getTime(), tokensSweptUntil.getTime() - SWEEP_MARGIN_MS));
+      const result = await store.housekeep({ now: at, tokensExpiredAfter, purgeBefore });
+      // A run that stopped at its batch bound left a backlog: the next run starts where this began.
+      if (result.sessionTokensDiscarded < HOUSEKEEPING_BATCH * HOUSEKEEPING_MAX_BATCHES) {
+        tokensSweptUntil = at;
+      }
+      return result;
     },
   };
   return Object.freeze(service);

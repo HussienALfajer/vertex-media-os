@@ -53,9 +53,10 @@ export async function createApp(
     requestIdHeader: false,
     genReqId: resolveRequestId,
     bodyLimit: BODY_LIMIT_BYTES,
-    // The API listens on loopback behind the local reverse proxy, so `request.ip` is the client
-    // address that proxy appended to `X-Forwarded-For`; addresses a client prepends are ignored.
-    // Rate limits key on it (IAM-R09 D-04).
+    // The API listens on loopback behind the local reverse proxy, so `request.ip` is the rightmost
+    // `X-Forwarded-For` address: the client address, provided that proxy appends it (production
+    // requirement, Master Plan Section 15). The Vite dev and preview proxies pass the header through
+    // unchanged, so locally it is whatever the client sends. Rate limits key on it (IAM-R09 D-04).
     trustProxy: 'loopback',
   });
 

@@ -134,12 +134,14 @@ export interface SessionStore {
   recordBackchannelLogout(event: BackchannelLogoutEvent): Promise<void>;
   /**
    * Bounded housekeeping (IAM-R09 D-06, D-07): deletes expired login attempts, discards the tokens
-   * of expired sessions (SECURITY Section 11) and deletes session rows whose idle deadline is
-   * before `purgeBefore`. Each statement repeats its predicate outside the batch subquery, so a row
-   * that a concurrent statement changed is re-checked after the lock wait (CP1-22).
+   * of sessions whose idle deadline lies after `tokensExpiredAfter` and at or before `now`
+   * (SECURITY Section 11), and deletes session rows whose idle deadline is at or before
+   * `purgeBefore`. Each statement repeats its predicate outside the batch subquery, so a row that a
+   * concurrent statement changed is re-checked after the lock wait (CP1-22).
    */
   housekeep(change: {
     readonly now: Date;
+    readonly tokensExpiredAfter: Date;
     readonly purgeBefore: Date;
   }): Promise<HousekeepingResult>;
 }
@@ -443,7 +445,7 @@ export function createSessionStore(
       return revokeWhere({ idpSessionId }, reason, now, attribution);
     },
 
-    async housekeep({ now, purgeBefore }) {
+    async housekeep({ now, tokensExpiredAfter, purgeBefore }) {
       // Each statement is small and outside any transaction. The outer predicates repeat the inner
       // ones: after a lock wait PostgreSQL re-checks only the outer WHERE (CP1-22). A session has
       // expired exactly when its idle deadline passed (auth_session_expiry_ck: idle <= absolute).
@@ -457,10 +459,11 @@ export function createSessionStore(
         () => client.$executeRaw`UPDATE auth_session
           SET id_token_ciphertext = NULL, id_token_key_version = NULL,
             refresh_token_ciphertext = NULL, refresh_token_key_version = NULL
-          WHERE id IN (SELECT id FROM auth_session WHERE idle_expires_at <= ${now}
+          WHERE id IN (SELECT id FROM auth_session
+              WHERE idle_expires_at > ${tokensExpiredAfter} AND idle_expires_at <= ${now}
               AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)
             LIMIT ${HOUSEKEEPING_BATCH})
-          AND idle_expires_at <= ${now}
+          AND idle_expires_at > ${tokensExpiredAfter} AND idle_expires_at <= ${now}
           AND (id_token_ciphertext IS NOT NULL OR refresh_token_ciphertext IS NOT NULL)`,
       );
       // Sessions are authentication state, not IAM entities; their establishment and revocation

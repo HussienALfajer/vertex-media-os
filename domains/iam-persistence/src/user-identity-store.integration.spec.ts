@@ -379,25 +379,30 @@ describe('UserIdentityStore against real PostgreSQL', () => {
     });
   });
 
-  it('keeps a suspension that meets an in-flight activation from overwriting it unseen', async () => {
+  it('applies a suspension that meets an in-flight activation on top of it, never unseen', async () => {
     const user = await boundUser();
     const hold = await holdWrite(
       `UPDATE iam_application_user SET access_state = 'ACTIVE', first_activated_at = now(),
          version = version + 1 WHERE id = '${user.id}' AND version = ${user.version}
          AND access_state = 'INVITED'`,
     );
-    // A version-checked suspension, as the lifecycle store writes it. Prisma runs a query only
-    // once it is awaited, so it is started explicitly.
-    const suspension = Promise.resolve(
-      postgres.client.$executeRawUnsafe(
-        `UPDATE iam_application_user SET access_state = 'SUSPENDED', version = version + 1
-         WHERE id = '${user.id}' AND version = ${user.version}`,
-      ),
-    );
+    // The lifecycle store's restriction path: lock the user row, then write at the version read
+    // under that lock (IAM-R06 D-06). The lock waits for the activation to commit.
+    const suspension = runner.run(async ({ lifecycle }) => {
+      const locked = await lifecycle.lockUser(user.id);
+      if (!locked) throw new Error('user missing');
+      return lifecycle.writeAccessRestriction({
+        id: user.id,
+        expectedVersion: locked.version,
+        accessState: 'SUSPENDED',
+      });
+    });
     await competitorsWaiting(1);
     await hold.done;
 
-    expect(await suspension).toBe(0);
-    expect(await row(user.id)).toMatchObject({ accessState: 'ACTIVE', version: user.version + 1 });
+    expect(await suspension).toMatchObject({ accessState: 'SUSPENDED', version: user.version + 2 });
+    const committed = await row(user.id);
+    expect(committed).toMatchObject({ accessState: 'SUSPENDED', version: user.version + 2 });
+    expect(committed.firstActivatedAt).toBeInstanceOf(Date);
   });
 });

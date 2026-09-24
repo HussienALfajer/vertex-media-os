@@ -24,7 +24,7 @@ export const HOUSEKEEPING_INTERVAL = Symbol('HOUSEKEEPING_INTERVAL');
 export class AuthHousekeeping implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger('AuthHousekeeping');
   private timer: NodeJS.Timeout | undefined;
-  private running = false;
+  private current: Promise<void> | undefined;
 
   constructor(
     @Inject(AUTH_RUNTIME) private readonly runtime: AuthRuntime,
@@ -38,15 +38,23 @@ export class AuthHousekeeping implements OnApplicationBootstrap, OnModuleDestroy
     this.timer.unref();
   }
 
-  onModuleDestroy(): void {
+  /** Stops the timer and lets a run in progress finish before the database pool closes. */
+  async onModuleDestroy(): Promise<void> {
     clearInterval(this.timer);
     this.timer = undefined;
+    await this.current;
   }
 
   /** One run; a run still in progress makes the next tick a no-op. */
-  async run(): Promise<void> {
-    if (this.running) return;
-    this.running = true;
+  run(): Promise<void> {
+    if (this.current !== undefined) return this.current;
+    this.current = this.runOnce().finally(() => {
+      this.current = undefined;
+    });
+    return this.current;
+  }
+
+  private async runOnce(): Promise<void> {
     try {
       const result = await this.runtime.sessions.housekeep();
       if (result.loginAttemptsDeleted + result.sessionTokensDiscarded + result.sessionsPurged > 0) {
@@ -59,8 +67,6 @@ export class AuthHousekeeping implements OnApplicationBootstrap, OnModuleDestroy
     } catch (error) {
       // The error serializer keeps a database error to its allowlisted description (A2-01).
       this.logger.warn(error);
-    } finally {
-      this.running = false;
     }
   }
 }

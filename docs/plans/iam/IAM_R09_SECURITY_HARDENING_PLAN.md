@@ -117,10 +117,21 @@ Only those of the Run Contract. If a Keycloak behavior makes D-13 or D-08 imposs
 - [x] M4 Back-channel logout racing a sign-in (D-08)
 - [x] M5 SA-2 and no-store; SEC-6; DC-4
 - [x] M6 Realm `delete_credential` and realm contract
-- [ ] M7 Test evidence: CP1-09, CP1-23 to CP1-25, CP1-11, T-8; Section 46.3 and 46.6 maps
-- [ ] M8 `pnpm verify` and integration suites; mutation checks
+- [x] M7 Test evidence: CP1-09, CP1-23 to CP1-25, CP1-11, T-8; Section 46.3 and 46.6 maps
+- [x] M8 `pnpm verify` and integration suites; mutation checks
 - [ ] M9 In-run review; fixes
 - [ ] M10 Master Plan ledger and hand-off; pull request; CI
+
+### 9.1 Deviations and discoveries
+
+- **Token-sweep window (review DATA-1).** Retention keeps expired rows whose tokens are already gone, so `idle_expires_at <= now` matches almost the whole table in the steady state and the planner scans it; the first `EXPLAIN` test used data that cannot occur then. The session service now remembers the time of its last complete sweep and later runs read only the idle deadlines after it, less one hour against clock steps. A deadline only moves forward while the session is live, so nothing is skipped. A run that stops at its batch bound keeps the previous window, and a restarted process sweeps the whole retention window once. A partial index would express this without state, but the Prisma schema cannot declare it, and the migration drift check compares the two. The test now builds the steady state (many expired rows without tokens) and checks the plan of the windowed statement and of the purge.
+- **Back-channel refusal evidence has one budget (review S-1).** D-04 keyed rejected logout tokens per address; anyone with many addresses could then append Audit records without bound. The budget is now process-wide; every refusal is still logged.
+- **Client-address key (review S-3).** Rate limits key an IPv6 client by its /64 and an IPv4-mapped address as its IPv4 address. The local Vite proxies pass `X-Forwarded-For` through unchanged; the production proxy must append the client address and be the only way in (Master Plan Section 15, review S-4).
+- **Denials beyond the evidence bound stay attributable (review S-2).** The denial log line and the evidence-limited line name the user.
+- **Shutdown waits for a housekeeping run in progress** before the database pool closes (review DATA-4).
+- **D-08 without a database.** `apps/api/src/auth/sessions.spec.ts` holds each side of the race open in turn; moving the memory check before the insert, or remembering after the revocation, each fails one test (review S-5).
+- **Suspension against an in-flight activation** now runs the lifecycle store's lock-then-write path instead of raw SQL, so removing the lock fails the test (review DATA-2).
+- **DC-4 evidence (review DATA-3).** The one-statement read is established by reading `readActorAuthority`; its tests prove the behavior, not the single snapshot, which no deterministic test can separate.
 
 ## 10. Hand-off
 

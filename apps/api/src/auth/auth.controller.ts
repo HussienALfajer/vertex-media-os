@@ -37,7 +37,7 @@ import {
 } from './cookies.js';
 import { AUTH_RUNTIME, Public } from './access.guard.js';
 import { logEvidenceLimited } from './evidence-log.js';
-import type { RateLimiter } from './rate-limit.js';
+import { clientAddressKey, type RateLimiter } from './rate-limit.js';
 import {
   requireSession,
   systemAttribution,
@@ -299,7 +299,7 @@ export class AuthController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<LogoutResponse> {
-    const limited = this.runtime.limits.logout.take(`logout:${request.ip}`);
+    const limited = this.runtime.limits.logout.take(`logout:${clientAddressKey(request.ip)}`);
     if (!limited.allowed) {
       if (limited.first) logLimited(request, 'logout');
       void reply.header('retry-after', String(limited.retryAfterSeconds));
@@ -374,8 +374,9 @@ export class AuthController {
         { auth: 'backchannel-logout-rejected', failure: verified.failure, code: verified.code },
         'back-channel logout rejected',
       );
-      // Anyone can post here, so the Audit evidence of refusals is bounded per address (D-04, D-05).
-      const evidence = this.runtime.limits.evidence.take(`backchannel-refused:${request.ip}`);
+      // Anyone can post here, from any number of addresses, so the Audit evidence of refusals has
+      // one budget for the whole process (D-04, D-05; review S-1). The log keeps every refusal.
+      const evidence = this.runtime.limits.evidence.take('backchannel-refused');
       if (evidence.allowed) {
         await this.recordBackchannelLogout(request, verified.failure);
       } else if (evidence.first) {
@@ -451,7 +452,7 @@ export class AuthController {
  * flood cannot flood the log.
  */
 function admit(request: FastifyRequest, limiter: RateLimiter, bucket: string): boolean {
-  const decision = limiter.take(`${bucket}:${request.ip}`);
+  const decision = limiter.take(`${bucket}:${clientAddressKey(request.ip)}`);
   if (!decision.allowed && decision.first) logLimited(request, bucket);
   return decision.allowed;
 }
