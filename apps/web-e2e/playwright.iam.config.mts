@@ -14,7 +14,7 @@ const isCI = process.env['CI'] !== undefined;
  * (D-06). Retries and flaky-test handling follow `playwright.config.mts`.
  */
 export default defineConfig({
-  testDir: './src/iam',
+  testDir: './iam',
   outputDir: './test-output/iam-results',
   globalSetup: './test-support/iam/stack.setup.ts',
   fullyParallel: true,

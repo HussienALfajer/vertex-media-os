@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { fetchFromPage } from '../../test-support/iam/browser-context.js';
-import { expect, test } from '../../test-support/iam/fixtures.js';
-import { runBootstrap, sql } from '../../test-support/iam/stack.js';
+import { fetchFromPage } from '../test-support/iam/browser-context.js';
+import { expect, test } from '../test-support/iam/fixtures.js';
+import { runBootstrap, sql } from '../test-support/iam/stack.js';
 
 /**
  * Protections that hold whatever the UI shows (IAM-R09B J-12, J-13; spec Sections 21, 46.7):
@@ -38,6 +38,13 @@ test('J-13 the last System Administrator cannot remove their own role or suspend
   ).toBeVisible();
 
   // Nothing changed: still ACTIVE, still holding the role, the session still valid.
+  expect(
+    sql(
+      stack,
+      `SELECT count(*) FROM iam_user_role_assignment a JOIN iam_role r ON r.id = a.role_id ` +
+        `WHERE a.user_id = '${adminId}' AND r.is_system`,
+    ),
+  ).toBe('1');
   expect(sql(stack, `SELECT access_state FROM iam_application_user WHERE id = '${adminId}'`)).toBe(
     'ACTIVE',
   );
@@ -78,18 +85,21 @@ test('J-13 bootstrap refuses a second administrator and recovery while one is AC
   stack,
 }) => {
   const email = `second-admin-${randomBytes(4).toString('hex')}@example.test`;
-  expect(runBootstrap(stack, ['--email', email, '--display-name', 'E2E second'])).toBe(2);
-  expect(
-    runBootstrap(stack, [
-      '--email',
-      email,
-      '--display-name',
-      'E2E second',
-      '--recovery',
-      '--reason',
-      'e2e refusal check',
-    ]),
-  ).toBe(2);
+  // Exit code 2 is a refusal; the logged reason says which (four reasons share the code).
+  const second = runBootstrap(stack, ['--email', email, '--display-name', 'E2E second']);
+  expect(second.status).toBe(2);
+  expect(second.output).toContain('"reason":"active-administrator-exists"');
+  const recovery = runBootstrap(stack, [
+    '--email',
+    email,
+    '--display-name',
+    'E2E second',
+    '--recovery',
+    '--reason',
+    'e2e refusal check',
+  ]);
+  expect(recovery.status).toBe(2);
+  expect(recovery.output).toContain('"reason":"active-administrator-exists"');
   expect(sql(stack, `SELECT count(*) FROM iam_application_user WHERE email = '${email}'`)).toBe(
     '0',
   );

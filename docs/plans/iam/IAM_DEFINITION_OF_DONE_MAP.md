@@ -8,7 +8,7 @@ This map names, for each statement of the specification's Definition of Done (Se
 
 **Classification.** **Satisfied**: the named evidence proves the statement in the committed code and configuration. **Satisfied, production item**: proven for the committed local realm and code; the production form is an open item of Master Plan Section 15 (production deployment design). **Blocker**: not satisfied; none is recorded.
 
-**Where the evidence runs.** Unit and API tests: `pnpm test`. Integration tests (PostgreSQL, real Keycloak 26.7.4): `pnpm test:integration`. Browser journeys against the real stack (J-nn): `pnpm test:e2e`, project `e2e-iam` (`apps/web-e2e/src/iam/`). All three run in CI through `pnpm verify:full`. Paths below are relative to the repository root; `api` is `apps/api/src`, `persistence` is `domains/iam-persistence/src`, `realm` is `api/keycloak/realm-contract.integration.spec.ts`.
+**Where the evidence runs.** Unit and API tests: `pnpm test`. Integration tests (PostgreSQL, real Keycloak 26.7.4): `pnpm test:integration`. Browser journeys against the real stack (J-nn): `pnpm test:e2e`, Nx target `@vertex-os/web-e2e:e2e-iam` (Playwright projects `iam-chromium`, `iam-firefox`, `iam-webkit`; specs in `apps/web-e2e/iam/`). All three run in CI through `pnpm verify:full`. Paths below are relative to the repository root; `api` is `apps/api/src`, `persistence` is `domains/iam-persistence/src`, `realm` is `api/keycloak/realm-contract.integration.spec.ts`.
 
 ## 1. Definition of Done (spec Section 56)
 
@@ -49,11 +49,11 @@ This map names, for each statement of the specification's Definition of Done (Se
 | Issuer, audience, signature and expiry are validated | `api/auth/oidc.spec.ts` (wrong issuer, an expired token); `auth-flow.integration.spec.ts` ("rejects ID tokens with a wrong nonce, audience or signature") | Satisfied |
 | The browser never receives Keycloak tokens | `keycloak-login.integration.spec.ts` ("gives the browser only the opaque session cookie"); D-12 check on every journey (`/api` headers and bodies, `document.cookie`, web storage); boundary probes V125–V133 (`scripts/check-architecture-boundaries.mjs`) | Satisfied |
 | Opaque application sessions are server-side and revocable | `api/auth/sessions.integration.spec.ts` ("stores only hashes and the encrypted tokens"); J-02, J-06, J-07, J-09 | Satisfied |
-| Cookies satisfy repository policy | `api/auth/primitives.spec.ts`; J-10 in Chromium and Firefox (host-only, `Secure`, `HttpOnly`, `SameSite=Strict`, no `Max-Age`); J-11 (WebKit keeps no `Secure` cookie over plain HTTP and fails closed) | Satisfied, production item (WebKit over the production HTTPS origin) |
+| Cookies satisfy repository policy | `api/auth/primitives.spec.ts`; J-10 in Chromium and Firefox (host-only, `Secure`, `HttpOnly`, `SameSite=Strict`, no `Max-Age`); J-11 (WebKit keeps no `Secure` cookie over plain HTTP and fails closed; its Linux run is this pull request's CI) | Satisfied when CI is green; production item (WebKit over the production HTTPS origin) |
 | Inactivity and absolute expiry satisfy repository policy | `api/config/auth-config.spec.ts` (bounds); `sessions.integration.spec.ts` ("expires at the idle deadline", "never past the absolute deadline"); J-07 expiry | Satisfied |
 | CSRF defense protects unsafe requests | `auth-flow.integration.spec.ts` ("CSRF (spec Section 46.6)"); `iam-http.integration.spec.ts` ("refuses every unsafe route without the session CSRF token, or with another session token") | Satisfied |
 | Logout revokes the server-side session | `keycloak-login.integration.spec.ts` ("requires the CSRF token, revokes the session and ends the Keycloak session"); J-02, J-10 | Satisfied |
-| Back-channel logout revokes applicable sessions | `auth-flow.integration.spec.ts` ("back-channel logout"); `keycloak-login.integration.spec.ts`; J-09 (Docker Desktop path locally, Linux path in CI; CP1-17) | Satisfied |
+| Back-channel logout revokes applicable sessions | `auth-flow.integration.spec.ts` ("back-channel logout"); `keycloak-login.integration.spec.ts`; J-09 (Docker Desktop path locally; the Linux path is this pull request's CI; CP1-17) | Satisfied when CI is green |
 | Protected endpoints are deny-by-default | `api/auth/access.api.spec.ts` ("protected by default") | Satisfied |
 
 ### Authorization

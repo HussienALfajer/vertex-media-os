@@ -1,8 +1,8 @@
 import { chromium } from '@playwright/test';
-import { vertexCookie } from '../../test-support/iam/browser-context.js';
-import { expect, test } from '../../test-support/iam/fixtures.js';
-import { completeInvitation, passKeycloakSignIn } from '../../test-support/iam/keycloak-pages.js';
-import { actionLink, sql, waitForMail } from '../../test-support/iam/stack.js';
+import { vertexCookie } from '../test-support/iam/browser-context.js';
+import { expect, test } from '../test-support/iam/fixtures.js';
+import { completeInvitation, passKeycloakSignIn } from '../test-support/iam/keycloak-pages.js';
+import { actionLink, recordSecret, sql, waitForMail } from '../test-support/iam/stack.js';
 
 /**
  * WebKit over plain HTTP (IAM-R09B J-11, D-06). WebKit keeps no `Secure` cookie for
@@ -30,6 +30,7 @@ test('J-11 WebKit cannot sign in over plain HTTP, and the sign-in fails closed',
     actionLink(await waitForMail(stack.mailpitUrl, email)),
   );
   await chromiumBrowser.close();
+  recordSecret(stack, device.secret);
 
   const context = await openContext();
   const page = await context.newPage();

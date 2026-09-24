@@ -1,11 +1,13 @@
 import { execFileSync, spawnSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 /**
  * What the IAM stack's global setup (`stack.setup.ts`) hands to the test workers through
- * `process.env` (D-03, D-05). Generated secrets stay in memory and in the operating system's
- * temporary directory, never in `test-output`, which CI uploads when a run fails.
+ * `process.env` (D-03, D-05). The stack's configured secrets stay in memory and in the operating
+ * system's temporary directory, never in `test-output`, which CI uploads when a run fails. A failed
+ * test's trace can hold its own throwaway session values, which die with the stack at teardown.
  */
 export interface IamStack {
   /** Keycloak as the browser and the API reach it, for example `http://127.0.0.1:32768`. */
@@ -25,6 +27,13 @@ export interface IamStack {
   readonly keycloakAdmin: { readonly username: string; readonly password: string };
   /** Environment of the operator commands (`iam-bootstrap`), without the process environment. */
   readonly commandEnv: Record<string, string>;
+  /** Where journeys record the secrets they handled, for the teardown's log scan (D-13). */
+  readonly handledFile: string;
+}
+
+/** Records a secret a journey handled (a session cookie value, a TOTP seed) for the log scan. */
+export function recordSecret(stack: IamStack, value: string): void {
+  appendFileSync(stack.handledFile, `${value}\n`);
 }
 
 export const STACK_VARIABLE = 'VERTEX_E2E_IAM_STACK';
@@ -152,10 +161,14 @@ export const TOKEN_FIELD =
   /"(access_token|id_token|refresh_token|idToken|accessToken|refreshToken)"/;
 
 /**
- * Runs the built `iam-bootstrap` operator command against the stack and returns its exit code
- * (D-15). Only the stack's command environment and what a process needs to start are passed.
+ * Runs the built `iam-bootstrap` operator command against the stack and returns its exit code and
+ * its log line (D-15). Only the stack's command environment and what a process needs to start are
+ * passed.
  */
-export function runBootstrap(stack: IamStack, args: readonly string[]): number {
+export function runBootstrap(
+  stack: IamStack,
+  args: readonly string[],
+): { readonly status: number; readonly output: string } {
   const apiRoot = fileURLToPath(new URL('../../../api/', import.meta.url));
   const result = spawnSync(
     process.execPath,
@@ -173,5 +186,5 @@ export function runBootstrap(stack: IamStack, args: readonly string[]): number {
     },
   );
   if (result.status === null) throw result.error ?? new Error('iam-bootstrap did not exit');
-  return result.status;
+  return { status: result.status, output: result.stdout };
 }

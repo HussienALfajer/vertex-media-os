@@ -172,7 +172,7 @@ is reported as 1.
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                                                                         |
 | `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                                                                           |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V106, C1–C14)                                                                            |
+| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V135, C1–C18)                                                                            |
 | `pnpm typecheck`        | TypeScript for every project                                                                                                               |
 | `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest                                                                |
 | `pnpm build`            | Production builds of every project with a build target                                                                                     |
@@ -199,7 +199,8 @@ The IAM journeys (`pnpm nx run @vertex-os/web-e2e:e2e-iam`, `apps/web-e2e/playwr
 run against a real stack that their global setup starts and stops with Docker: PostgreSQL with every
 migration, Mailpit and the pinned Keycloak with the committed realm, then the operator commands
 (`iam-sync-reference`, `iam-bootstrap`), the built API server entry (:3110) and the production web
-build (:4320). They read no `.env`. Every journey runs in Chromium; Firefox also proves the cookies,
+build (:4320). The API and the operator commands read no `.env`; the values the stack sets win over
+the `.env` fallbacks of the Prisma CLI and the Vite preview. Every journey runs in Chromium; Firefox also proves the cookies,
 rotation and sign-out, and WebKit that sign-in over plain HTTP fails closed (see Current limitations).
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same commands,
@@ -278,9 +279,11 @@ settings of `.env` (`KEYCLOAK_ISSUER_URL`, `KEYCLOAK_PROVISIONER_CLIENT_ID`,
 
 ## Current limitations
 
-- Local sign-in works in Chromium and Firefox only. WebKit (Safari) keeps no `Secure` cookie for
+- Local sign-in works in Chromium and Firefox only. Playwright's WebKit (on Windows and Linux; Safari is
+  expected to behave alike) keeps no `Secure` cookie for
   `http://127.0.0.1`, so the `__Host-vertex-*` cookies never return and sign-in ends with
-  `AUTH_LOGIN_FAILED`. A deployment serves the web app over HTTPS, where the cookies are valid.
+  `AUTH_LOGIN_FAILED`. The deployment must serve the web app over HTTPS, where the cookies are valid;
+  WebKit over that origin is verified with the production deployment design.
 - MOD-AUDIT appends immutable records for every IAM change and refusal, but has no read path.
   The `/dev/ui` proof scenarios (IAM, CRM, Projects,
   Finance) are static design fixtures.

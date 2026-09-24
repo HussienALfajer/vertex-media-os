@@ -1,6 +1,6 @@
-import { vertexCookie } from '../../test-support/iam/browser-context.js';
-import { expect, test } from '../../test-support/iam/fixtures.js';
-import { sql, WEB_ORIGIN } from '../../test-support/iam/stack.js';
+import { vertexCookie } from '../test-support/iam/browser-context.js';
+import { expect, test } from '../test-support/iam/fixtures.js';
+import { sql, WEB_ORIGIN } from '../test-support/iam/stack.js';
 
 /**
  * The `__Host-` cookies on `http://127.0.0.1` in Chromium and Firefox (IAM-R09B J-10; R08 D-03):
@@ -29,7 +29,14 @@ test('J-10 the session cookie is host-only, Secure, HttpOnly and Strict, rotates
 
   // Signing in again while signed in: Keycloak's session answers at once, and the callback
   // replaces the Vertex session (same site locally, so the Strict cookie reaches it; D-07).
-  await user.page.goto('/api/auth/login');
+  const [login] = await Promise.all([
+    user.page.waitForResponse((response) => response.url().endsWith('/api/auth/login')),
+    user.page.goto('/api/auth/login'),
+  ]);
+  // The login cookie: host-only, Secure, HttpOnly, Lax (the callback is a cross-origin navigation).
+  expect((await login.allHeaders())['set-cookie']).toMatch(
+    /^__Host-vertex-login=[\w-]+; Path=\/; Max-Age=\d+; Secure; HttpOnly; SameSite=Lax$/m,
+  );
   await user.page.waitForURL(`${WEB_ORIGIN}/`);
   await expect(user.page.getByRole('region', { name: 'Account' })).toContainText(user.displayName);
   const second = await vertexCookie(user.context, '__Host-vertex-session');

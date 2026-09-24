@@ -1,6 +1,14 @@
 import { execFileSync, execSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +41,8 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const apiRoot = join(root, 'apps/api');
 const webRoot = join(root, 'apps/web');
 const databaseRoot = join(root, 'packages/database');
+/** Scanned stack logs, kept where CI collects a failed run's diagnostics. */
+const logsDirectory = join(root, 'apps/web-e2e/test-output/iam-logs');
 
 const NAME = 'vertexos-e2e-iam';
 const containers = {
@@ -54,25 +64,55 @@ const sentinel = (label: string) => `sentinel_${label}_${randomBytes(18).toStrin
 
 const answers = async (url: string) => (await fetch(url)).ok;
 
+interface Started {
+  readonly child: ChildProcess;
+  /** Resolves once the log file holds everything the process wrote. */
+  readonly written: Promise<void>;
+}
+
 function start(
   command: string,
   args: string[],
   cwd: string,
   env: Record<string, string>,
   log: string,
-): ChildProcess {
+): Started {
   const output = createWriteStream(log);
+  const written = new Promise<void>((resolve) => output.once('close', () => resolve()));
   const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout?.pipe(output);
-  child.stderr?.pipe(output);
-  return child;
+  // One writer for both streams; the file closes when both have ended.
+  let open = 2;
+  const end = () => {
+    open -= 1;
+    if (open === 0) output.end();
+  };
+  for (const stream of [child.stdout, child.stderr]) {
+    stream?.on('data', (chunk: Buffer) => output.write(chunk));
+    stream?.once('end', end);
+  }
+  return { child, written };
 }
 
-async function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return;
-  const exited = new Promise((resolve) => child.once('exit', resolve));
-  child.kill();
-  await exited;
+async function stopProcess({ child, written }: Started): Promise<void> {
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    child.kill();
+    await exited;
+  }
+  await written;
+}
+
+const exited = ({ child }: Started) =>
+  child.exitCode === null ? undefined : `exited with code ${child.exitCode}`;
+
+/** The log scan of D-13: every token or handled secret the text holds. */
+function leaks(log: string, known: readonly string[]): string[] {
+  return [
+    ...(JWT.test(log) ? ['a JWT'] : []),
+    ...(/[?&](code|state)=/.test(log) ? ['an authorization response parameter'] : []),
+    ...(log.includes('__Host-vertex') ? ['a Vertex cookie'] : []),
+    ...(known.some((value) => log.includes(value)) ? ['a handled secret'] : []),
+  ];
 }
 
 /**
@@ -90,11 +130,57 @@ function baseEnvironment(): Record<string, string> {
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
-  const work = mkdtempSync(join(tmpdir(), 'vertex-e2e-iam-'));
-  // The temporary directory goes last: the log scan below still reads it.
+  // A fixed name, so a run removes what an interrupted run left (its generated secrets included).
+  const work = join(tmpdir(), NAME);
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  const handledFile = join(work, 'handled.txt');
+  writeFileSync(handledFile, '');
+  // Scanned logs are kept for CI's failure artifact; stale ones are removed first.
+  rmSync(logsDirectory, { recursive: true, force: true });
+  const apiLog = join(work, 'api.log');
+  const webLog = join(work, 'web.log');
+  const keycloakLog = join(work, 'keycloak.log');
+  const known: string[] = [TEST_PASSWORD];
+  let ready = false;
+
+  // D-13: once every process has stopped, the API and web logs must hold no token and no handled
+  // secret. Each clean log is then copied to `test-output` for diagnosis (review T-2).
+  const scanAndKeepLogs = () => {
+    const handled = readFileSync(handledFile, 'utf8')
+      .split('\n')
+      .filter((value) => value.length >= 8);
+    const secretsSeen = [...known, ...handled];
+    const found: string[] = [];
+    for (const [name, file] of [
+      ['api.log', apiLog],
+      ['web.log', webLog],
+      ['keycloak.log', keycloakLog],
+    ] as const) {
+      if (!existsSync(file)) continue;
+      const hits = leaks(readFileSync(file, 'utf8'), secretsSeen);
+      if (hits.length === 0) {
+        mkdirSync(logsDirectory, { recursive: true });
+        copyFileSync(file, join(logsDirectory, name));
+      } else if (name !== 'keycloak.log') found.push(`${name} holds ${hits.join(', ')}`);
+    }
+    if (found.length > 0)
+      throw new Error(`Secret material in the stack's logs: ${found.join('; ')}.`);
+    // A positive control: the scan read a log of the whole run, sign-in callbacks included.
+    if (ready && !readFileSync(apiLog, 'utf8').includes('/api/auth/callback'))
+      throw new Error('The API log holds no sign-in callback: the scan did not read a whole log.');
+  };
+  // The temporary directory goes last, after the scan.
   const cleanups: (() => Promise<void> | void)[] = [
     () => rmSync(work, { recursive: true, force: true }),
+    scanAndKeepLogs,
   ];
+  /** Writes an environment file, so secrets never appear on a command line or in its error. */
+  const secretFile = (name: string, lines: readonly string[]) => {
+    const file = join(work, name);
+    writeFileSync(file, `${lines.join('\n')}\n`, { mode: 0o600 });
+    return file;
+  };
   // Every step runs even when an earlier one fails; the first failure fails the run.
   const teardown = async () => {
     const failures: unknown[] = [];
@@ -124,6 +210,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       smtp: sentinel('smtp'),
       tokenEncryption: sentinel('token_encryption'),
     };
+    known.push(...Object.values(secrets));
 
     for (const container of Object.values(containers)) removeLeftover('container', container);
     removeLeftover('network', NAME);
@@ -144,12 +231,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       NAME,
       '--publish',
       '127.0.0.1::5432',
-      '--env',
-      `POSTGRES_USER=${postgresUser}`,
-      '--env',
-      `POSTGRES_PASSWORD=${secrets.postgres}`,
-      '--env',
-      `POSTGRES_DB=${database}`,
+      '--env-file',
+      secretFile('postgres.env', [
+        `POSTGRES_USER=${postgresUser}`,
+        `POSTGRES_PASSWORD=${secrets.postgres}`,
+        `POSTGRES_DB=${database}`,
+      ]),
       composeImage(root, 'postgres'),
     );
     // Over TCP: the image's initialisation server listens on its socket only.
@@ -244,10 +331,16 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       keycloakPort = 0;
       managementPort = 0;
     }
-    // Secrets reach the container through a file in the temporary directory, not the command line.
-    const envFile = join(work, 'keycloak.env');
-    writeFileSync(envFile, `${keycloakEnv.join('\n')}\n`, { mode: 0o600 });
+    const envFile = secretFile('keycloak.env', keycloakEnv);
     cleanups.push(() => removeLeftover('container', containers.keycloak));
+    // Before the container is removed: its log, for the failure artifact.
+    cleanups.push(() => {
+      try {
+        writeFileSync(keycloakLog, docker('logs', containers.keycloak));
+      } catch {
+        // No container, no log.
+      }
+    });
     docker(
       'run',
       '--detach',
@@ -267,7 +360,20 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       keycloakPort = publishedPort(containers.keycloak, 8080);
       managementPort = publishedPort(containers.keycloak, 9000);
     }
-    await until('Keycloak', () => answers(`http://127.0.0.1:${managementPort}/health/ready`));
+    await until(
+      'Keycloak',
+      () => answers(`http://127.0.0.1:${managementPort}/health/ready`),
+      240_000,
+      () => {
+        try {
+          docker('inspect', containers.keycloak);
+          return undefined;
+        } catch {
+          return 'the container stopped';
+        }
+      },
+    );
+
     // One host name for the browser and the API: one issuer, and one site with the web app (D-07).
     const keycloakUrl = `http://127.0.0.1:${keycloakPort}`;
     const issuer = `${keycloakUrl}/realms/vertex`;
@@ -293,7 +399,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     runCommand('iam-bootstrap.js', ['--email', adminEmail, '--display-name', 'E2E Administrator']);
 
     // The built API server entry, with every value it reads (no `.env`).
-    const apiLog = join(work, 'api.log');
     const api = start(
       process.execPath,
       ['--enable-source-maps', 'dist/main.js'],
@@ -316,11 +421,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     cleanups.push(() => stopProcess(api));
     await until(
       'the API',
-      async () => {
-        if (api.exitCode !== null) throw new Error(`the API exited with code ${api.exitCode}`);
-        return answers(`http://127.0.0.1:${API_PORT}/api/health/ready`);
-      },
+      () => answers(`http://127.0.0.1:${API_PORT}/api/health/ready`),
       120_000,
+      () => exited(api),
     );
 
     // The production web build, proxying `/api` to that API.
@@ -335,14 +438,20 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       ],
       webRoot,
       { ...baseEnvironment(), API_HOST: '127.0.0.1', API_PORT: String(API_PORT) },
-      join(work, 'web.log'),
+      webLog,
     );
     cleanups.push(() => stopProcess(web));
-    await until('the web preview', () => answers(WEB_ORIGIN), 120_000);
+    // Also ends when the preview exits, for example because another server holds the port.
+    await until(
+      'the web preview',
+      () => answers(WEB_ORIGIN),
+      120_000,
+      () => exited(web),
+    );
 
     // The bootstrap administrator completes the invitation and signs in once (D-05).
     const adminState = join(work, 'admin-state.json');
-    const handled: string[] = [];
+    const handled = known;
     const browser = await chromium.launch();
     try {
       const traffic = new ApiTraffic();
@@ -377,19 +486,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       postgres: { container: containers.postgres, user: postgresUser, database },
       keycloakAdmin,
       commandEnv,
+      handledFile,
     };
     process.env[STACK_VARIABLE] = JSON.stringify(stack);
+    ready = true;
 
-    // D-13: once the API has stopped, its whole log must hold no token and no handled secret.
-    cleanups.splice(1, 0, () => {
-      const log = readFileSync(apiLog, 'utf8');
-      const known = [...Object.values(secrets), TEST_PASSWORD, ...handled];
-      const leaks = [
-        ...(JWT.test(log) ? ['a JWT'] : []),
-        ...known.filter((value) => log.includes(value)).map(() => 'a handled secret'),
-      ];
-      if (leaks.length > 0) throw new Error(`The API log holds ${leaks.join(', ')}.`);
-    });
     return teardown;
   } catch (error) {
     await teardown();

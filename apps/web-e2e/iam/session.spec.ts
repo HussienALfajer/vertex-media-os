@@ -1,7 +1,7 @@
-import { fetchFromPage, vertexCookie } from '../../test-support/iam/browser-context.js';
-import { expect, test } from '../../test-support/iam/fixtures.js';
-import { signIn } from '../../test-support/iam/keycloak-pages.js';
-import { sql, WEB_ORIGIN } from '../../test-support/iam/stack.js';
+import { fetchFromPage, vertexCookie } from '../test-support/iam/browser-context.js';
+import { expect, test } from '../test-support/iam/fixtures.js';
+import { signIn } from '../test-support/iam/keycloak-pages.js';
+import { sql, WEB_ORIGIN } from '../test-support/iam/stack.js';
 
 /**
  * Sign-in, sign-out and the ends of a session in a real browser against the pinned Keycloak
@@ -21,6 +21,7 @@ test('J-01 a user signs in through Keycloak and reaches the signed-in shell', as
 test('J-02 sign-out ends the Vertex session and the Keycloak session', async ({
   activeUser,
   request,
+  stack,
 }) => {
   const user = await activeUser({ label: 'sign-out' });
   const before = await vertexCookie(user.context, '__Host-vertex-session');
@@ -36,6 +37,11 @@ test('J-02 sign-out ends the Vertex session and the Keycloak session', async ({
     headers: { cookie: `__Host-vertex-session=${before?.value ?? ''}` },
   });
   expect(replay.status()).toBe(401);
+  // Refused as a session the server ended, not as a request without a cookie.
+  expect(((await replay.json()) as { code: string }).code).toBe('AUTH_SESSION_INVALID');
+  expect(
+    sql(stack, `SELECT revocation_reason FROM auth_session WHERE user_id = '${user.id}'`),
+  ).toBe('LOGOUT');
 
   // Keycloak asks for the password again: its session ended too.
   await user.page.getByRole('button', { name: 'Sign in', exact: true }).click();

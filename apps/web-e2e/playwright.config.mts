@@ -42,7 +42,8 @@ const VISUAL_BROWSER = {
  *
  * `users-admin.spec.ts` and `privileges-admin.spec.ts` render the IAM administration screens of the
  * production build with the browser's `/api` requests answered in the page (IAM-R08B D-15,
- * IAM-R08C D-14); signed-in journeys through the real API and Keycloak belong to IAM-MP-15.
+ * IAM-R08C D-14); the signed-in journeys through the real API and Keycloak live in `iam/` and run
+ * under `playwright.iam.config.mts` (IAM-R09B), outside this configuration's `testDir`.
  *
  * The smoke journeys observe liveness, the signed-out entry (a session read without a cookie
  * is refused before any database access) and a sign-in start that cannot reach the identity

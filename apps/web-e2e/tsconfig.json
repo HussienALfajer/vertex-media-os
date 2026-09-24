@@ -8,6 +8,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "iam/**/*.ts",
     "test-support/**/*.ts",
     "playwright.config.mts",
     "playwright.iam.config.mts"

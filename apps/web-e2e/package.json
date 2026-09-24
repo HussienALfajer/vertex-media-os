@@ -2,7 +2,7 @@
   "name": "@vertex-os/web-e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Browser smoke test of the Vertex OS web -> API path (Playwright)",
+  "description": "Playwright: web -> API smoke, design-system lab, visual baselines and the IAM journeys",
   "type": "module",
   "nx": {
     "tags": [

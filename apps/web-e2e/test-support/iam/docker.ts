@@ -45,10 +45,20 @@ export function freePort(): Promise<number> {
   });
 }
 
-/** Polls `check` until it holds or `timeoutMs` passes. */
-export async function until(what: string, check: () => Promise<boolean>, timeoutMs = 240_000) {
+/**
+ * Polls `check` until it holds or `timeoutMs` passes. `failed` names a state that no waiting can
+ * repair, such as the process under test having exited; it ends the wait at once.
+ */
+export async function until(
+  what: string,
+  check: () => Promise<boolean>,
+  timeoutMs = 240_000,
+  failed: () => string | undefined = () => undefined,
+) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    const failure = failed();
+    if (failure !== undefined) throw new Error(`${what}: ${failure}`);
     try {
       if (await check()) return;
     } catch {

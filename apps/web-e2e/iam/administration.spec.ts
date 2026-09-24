@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { fetchFromPage } from '../../test-support/iam/browser-context.js';
-import { expect, test, type AdminApi } from '../../test-support/iam/fixtures.js';
+import { fetchFromPage } from '../test-support/iam/browser-context.js';
+import { expect, test, type AdminApi } from '../test-support/iam/fixtures.js';
 import {
   completeInvitation,
   submitKeycloakPassword,
   signIn,
-} from '../../test-support/iam/keycloak-pages.js';
-import { actionLink, sql, waitForMail } from '../../test-support/iam/stack.js';
+} from '../test-support/iam/keycloak-pages.js';
+import { actionLink, recordSecret, sql, waitForMail } from '../test-support/iam/stack.js';
 
 /**
  * Administration through the real API, Keycloak and PostgreSQL (IAM-R09B J-03 to J-06, J-08;
@@ -56,6 +56,7 @@ test('J-03 an administrator invites a user, who completes the invitation and act
     invitee,
     actionLink(await waitForMail(stack.mailpitUrl, email)),
   );
+  recordSecret(stack, device.secret);
   await signIn(invitee, email, device);
   await expect(invitee.getByRole('region', { name: 'Account' })).toContainText('E2E invited');
 

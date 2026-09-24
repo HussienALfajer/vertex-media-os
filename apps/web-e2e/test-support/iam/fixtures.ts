@@ -13,6 +13,7 @@ import { completeInvitation, signIn } from './keycloak-pages.js';
 import {
   actionLink,
   iamStack,
+  recordSecret,
   waitForMail,
   WEB_ORIGIN,
   type Authenticator,
@@ -103,7 +104,7 @@ export const test = base.extend<Fixtures, { stack: IamStack }>({
     expect(await traffic.settled()).toEqual([]);
   },
 
-  openContext: async ({ browser, traffic }, use) => {
+  openContext: async ({ browser, stack, traffic }, use) => {
     const contexts: BrowserContext[] = [];
     await use(async (options = {}) => {
       const context = await webContext(browser, traffic, options);
@@ -111,6 +112,9 @@ export const test = base.extend<Fixtures, { stack: IamStack }>({
       return context;
     });
     for (const context of contexts) {
+      for (const cookie of await context.cookies()) {
+        if (cookie.name.startsWith('__Host-vertex')) recordSecret(stack, cookie.value);
+      }
       expect(await scriptVisibleSecrets(context)).toEqual([]);
       await context.close();
     }
@@ -158,6 +162,7 @@ export const test = base.extend<Fixtures, { stack: IamStack }>({
         page,
         actionLink(await waitForMail(stack.mailpitUrl, email)),
       );
+      recordSecret(stack, device.secret);
       await signIn(page, email, device);
       await expect(page.getByRole('region', { name: 'Account' })).toContainText(displayName);
       return { id: created.user.id, email, displayName, device, context, page };
