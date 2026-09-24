@@ -741,14 +741,15 @@ describe('browser authentication against PostgreSQL and a fake provider', () => 
       expect(still.statusCode).toBe(200);
     });
 
-    it('bounds the evidence of refused logout tokens per address, logging the suppression once', async () => {
+    it('bounds the evidence of refused logout tokens for the whole process, logging the suppression once (review S-1)', async () => {
       const start = lines.length;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const token = await provider.logoutToken({}, 'stranger');
         const response = await limited.inject({
           method: 'POST',
           url: '/api/auth/backchannel-logout',
-          headers: from('198.51.100.30', {
+          // Each refusal comes from another address; one budget still bounds them all.
+          headers: from(`198.51.100.${30 + attempt}`, {
             'content-type': 'application/x-www-form-urlencoded',
           }),
           payload: `logout_token=${token}`,
