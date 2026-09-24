@@ -145,7 +145,7 @@ Policy: `docs/TESTING.md`.
 * Never claim a check passed unless it was actually executed successfully.
 * Use repository-defined scripts and tooling; do not invent verification commands. The root commands are defined in `package.json` and described in `README.md`:
   * `pnpm verify` — fast gate: format check, lint (including Nx module boundaries), boundary probes (`pnpm lint:boundaries`), typecheck, unit/API/frontend tests, builds.
-  * `pnpm verify:full` — `pnpm verify` plus Prisma validate/generate, Testcontainers PostgreSQL integration tests and the Playwright end-to-end tests: production smoke, design-system lab behaviour in Chromium/Firefox/WebKit and visual baselines (Docker required).
+  * `pnpm verify:full` — `pnpm verify` plus Prisma validate/generate, Testcontainers PostgreSQL integration tests and the Playwright end-to-end tests: production smoke, design-system lab behaviour in Chromium/Firefox/WebKit, visual baselines, and the IAM journeys against real Keycloak and PostgreSQL (Docker required).
   * `pnpm deps:audit` — dependency vulnerability audit; reviewed exceptions live in `pnpm-workspace.yaml`.
   * Narrower checks: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:integration`, `pnpm test:e2e`, or `pnpm nx run <project>:<target>`.
 * CI (GitHub Actions, `.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit` for every pull request to `main` and every push to `main`. Change what is verified in those root commands, not by duplicating steps in the workflow.
