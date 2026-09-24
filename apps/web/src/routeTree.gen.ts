@@ -9,15 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteRouteImport } from './routes/_app/route'
+import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as DevUiRouteRouteImport } from './routes/dev/ui/route'
 import { Route as DevUiIndexRouteImport } from './routes/dev/ui/index'
 import { Route as DevUiSectionRouteImport } from './routes/dev/ui/$section'
 
-const IndexRoute = IndexRouteImport.update({
+const AppRouteRoute = AppRouteRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const DevUiRouteRoute = DevUiRouteRouteImport.update({
   id: '/dev/ui',
@@ -36,20 +41,21 @@ const DevUiSectionRoute = DevUiSectionRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AppIndexRoute
   '/dev/ui': typeof DevUiRouteRouteWithChildren
   '/dev/ui/$section': typeof DevUiSectionRoute
   '/dev/ui/': typeof DevUiIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/': typeof AppIndexRoute
   '/dev/ui/$section': typeof DevUiSectionRoute
   '/dev/ui': typeof DevUiIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_app': typeof AppRouteRouteWithChildren
   '/dev/ui': typeof DevUiRouteRouteWithChildren
+  '/_app/': typeof AppIndexRoute
   '/dev/ui/$section': typeof DevUiSectionRoute
   '/dev/ui/': typeof DevUiIndexRoute
 }
@@ -58,22 +64,35 @@ export interface FileRouteTypes {
   fullPaths: '/' | '/dev/ui' | '/dev/ui/$section' | '/dev/ui/'
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/dev/ui/$section' | '/dev/ui'
-  id: '__root__' | '/' | '/dev/ui' | '/dev/ui/$section' | '/dev/ui/'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/dev/ui'
+    | '/_app/'
+    | '/dev/ui/$section'
+    | '/dev/ui/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AppRouteRoute: typeof AppRouteRouteWithChildren
   DevUiRouteRoute: typeof DevUiRouteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/': {
+      id: '/_app/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRouteRoute
     }
     '/dev/ui': {
       id: '/dev/ui'
@@ -99,6 +118,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppRouteRouteChildren {
+  AppIndexRoute: typeof AppIndexRoute
+}
+
+const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppIndexRoute: AppIndexRoute,
+}
+
+const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
+  AppRouteRouteChildren,
+)
+
 interface DevUiRouteRouteChildren {
   DevUiSectionRoute: typeof DevUiSectionRoute
   DevUiIndexRoute: typeof DevUiIndexRoute
@@ -114,7 +145,7 @@ const DevUiRouteRouteWithChildren = DevUiRouteRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AppRouteRoute: AppRouteRouteWithChildren,
   DevUiRouteRoute: DevUiRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport

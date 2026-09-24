@@ -8,7 +8,13 @@ await createProjectGraphAsync();
 const nxRule = '@nx/enforce-module-boundaries';
 const importsRule = 'no-restricted-imports';
 const syntaxRule = 'no-restricted-syntax';
-const boundaryRules = new Set([nxRule, importsRule, syntaxRule]);
+const boundaryRules = new Set([
+  nxRule,
+  importsRule,
+  syntaxRule,
+  'no-restricted-globals',
+  'no-restricted-properties',
+]);
 
 // Fragments of the `no-restricted-syntax` messages, so each case proves which selector fired.
 const privateSubpath = 'dynamic imports and type queries of subpaths';
@@ -23,6 +29,8 @@ const adaptersOnlyInRuntime = 'Only auth-runtime.ts';
 const iamHttpCapabilitiesOnly = 'IAM controllers use the bound capabilities';
 const iamHttpUserActorOnly = "session's USER actor";
 const approvedEntry = 'approved root entry points';
+const storage = 'keeps no state in browser storage';
+const httpOnly = 'The session cookie is HttpOnly';
 
 // [id, project, code, rule, message fragment?, virtual file relative to the project?]
 const violations = [
@@ -408,6 +416,21 @@ const violations = [
     iamHttpUserActorOnly,
     'src/iam/http/x.ts',
   ]),
+  // IAM-R08 D-14: web application code keeps nothing in browser storage or cookies, and the
+  // storage rule does not drop the root's import and environment selectors (review S-4, T-3).
+  ...[
+    ['V125', 'localStorage.getItem("x");', 'no-restricted-globals', storage],
+    ['V126', 'void sessionStorage;', 'no-restricted-globals', storage],
+    ['V127', 'void indexedDB;', 'no-restricted-globals', storage],
+    ['V128', 'void cookieStore;', 'no-restricted-globals', storage],
+    ['V129', 'void window.localStorage;', 'no-restricted-properties', storage],
+    ['V130', 'void globalThis.sessionStorage;', 'no-restricted-properties', storage],
+    ['V131', 'void self.indexedDB;', 'no-restricted-properties', storage],
+    ['V132', 'void document.cookie;', 'no-restricted-properties', httpOnly],
+    ['V133', 'void window.document.cookie;', syntaxRule, httpOnly],
+  ].map(([id, code, rule, fragment]) => [id, 'apps/web', code, rule, fragment]),
+  ['V134', 'apps/web', "process.env['X'];", syntaxRule, rawEnvironment],
+  ['V135', 'apps/web', 'const m = "x"; await import(m);', syntaxRule, computedImport],
 ];
 
 const imports = (...specifiers) => specifiers.map((specifier) => `import '${specifier}';`);
@@ -479,6 +502,8 @@ const controls = [
     ["export type { IamAdministration } from '../administration.js';"],
     'src/iam/http/capabilities.ts',
   ],
+  // Web tests may prepare UI preferences in browser storage (IAM-R08 D-14 covers application code).
+  ['C18', 'apps/web', ["localStorage.setItem('x', 'y');"], 'src/x.spec.ts'],
   // The black-box end-to-end project resolves installed packages with createRequire.
   [
     'C8',

@@ -1,6 +1,10 @@
 import nx from '@nx/eslint-plugin';
 import vertexUi from '../../packages/ui/lint/vertex-ui-plugin.mjs';
-import baseConfig from '../../eslint.config.mjs';
+import baseConfig, {
+  restrictedEnvSyntax,
+  restrictedImportSyntax,
+  restrictedRawSqlSyntax,
+} from '../../eslint.config.mjs';
 
 export default [
   ...nx.configs['flat/react'],
@@ -15,6 +19,47 @@ export default [
     rules: {
       'vertex-ui/no-raw-styling': 'error',
       'react/forbid-dom-props': ['error', { forbid: ['style'] }],
+    },
+  },
+  {
+    // Authentication state never enters browser storage (spec Section 40; IAM-R08 D-14). The
+    // only credential is the API's HttpOnly cookie; UI preferences live in @vertex-os/ui.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.spec.{ts,tsx}', 'src/test-setup.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['localStorage', 'sessionStorage', 'indexedDB', 'cookieStore'].map((name) => ({
+          name,
+          message: 'Application code keeps no state in browser storage (IAM-R08 D-14).',
+        })),
+      ],
+      // Replaces the root's options for these files, so the root's selectors are composed in.
+      'no-restricted-syntax': [
+        'error',
+        ...restrictedImportSyntax,
+        ...restrictedEnvSyntax,
+        ...restrictedRawSqlSyntax,
+        {
+          selector: "MemberExpression[property.name='cookie'][object.property.name='document']",
+          message: 'The session cookie is HttpOnly; browser code never reads or writes cookies.',
+        },
+      ],
+      'no-restricted-properties': [
+        'error',
+        ...['window', 'globalThis', 'self'].flatMap((object) =>
+          ['localStorage', 'sessionStorage', 'indexedDB', 'cookieStore'].map((property) => ({
+            object,
+            property,
+            message: 'Application code keeps no state in browser storage (IAM-R08 D-14).',
+          })),
+        ),
+        {
+          object: 'document',
+          property: 'cookie',
+          message: 'The session cookie is HttpOnly; browser code never reads or writes cookies.',
+        },
+      ],
     },
   },
   {

@@ -40,10 +40,11 @@ const VISUAL_BROWSER = {
  * §56): a test that passes only on retry still fails the run, is annotated on the GitHub run,
  * and keeps the failed attempt's trace and screenshot.
  *
- * The smoke journey only observes liveness, which does not touch PostgreSQL; readiness
- * against real PostgreSQL is proven by the Testcontainers integration tests. The API
- * still validates its configuration at startup, so it receives a syntactically valid,
- * non-production database URL that is never connected.
+ * The smoke journeys observe liveness, the signed-out entry (a session read without a cookie
+ * is refused before any database access) and a sign-in start that cannot reach the identity
+ * provider; none touches PostgreSQL. Readiness against real PostgreSQL is proven by the
+ * Testcontainers integration tests. The API still validates its configuration at startup, so it
+ * receives a syntactically valid, non-production database URL that is never connected.
  */
 export default defineConfig({
   testDir: './src',
@@ -124,7 +125,8 @@ export default defineConfig({
         API_PORT,
         LOG_LEVEL: 'warn',
         DATABASE_URL: 'postgresql://e2e:not-used@127.0.0.1:1/never_connected',
-        // Required by the API's sign-in configuration; no journey signs in, so none is contacted.
+        // Required by the API's sign-in configuration. The issuer is unreachable on purpose (port 1
+        // is refused by fetch), so a sign-in start returns IDENTITY_PROVIDER_UNAVAILABLE.
         KEYCLOAK_ISSUER_URL: 'http://127.0.0.1:1/realms/never-contacted',
         KEYCLOAK_WEB_CLIENT_SECRET: 'e2e-not-used-client-secret',
         KEYCLOAK_WEB_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/api/auth/callback`,
