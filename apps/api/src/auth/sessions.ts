@@ -1,6 +1,5 @@
 import { parseSystemProcess, type AuditAttribution } from '@vertex-os/audit';
 import type { AuthConfig } from '../config/auth-config.js';
-import type { OidcClient } from './oidc.js';
 import { csrfTokenFor, hashSecret, isSecretShaped, matchesHash, newSecret } from './secrets.js';
 import type {
   BackchannelLogoutEvent,
@@ -128,8 +127,22 @@ export interface SessionService {
 export interface SessionServiceOptions {
   readonly store: SessionStore;
   readonly ciphers: TokenCiphers;
-  /** Refreshes the identity provider's session (IAM-R03F D-01). */
-  readonly provider: Pick<OidcClient, 'refreshSession'>;
+  /** Only used to reject or retire sessions created before the local-auth migration. */
+  readonly provider?: {
+    refreshSession(input: {
+      readonly refreshToken: string;
+      readonly idpSessionId: string | undefined;
+      readonly idToken: string | undefined;
+    }): Promise<
+      | {
+          readonly ok: true;
+          readonly value: { readonly refreshToken: string; readonly idToken: string | undefined };
+        }
+      | { readonly ok: false; readonly failure: string }
+    >;
+  };
+  /** Local password sign-in: no identity-provider session or tokens exist. */
+  readonly local?: boolean;
   readonly limits: AuthConfig['session'];
   /** The `vertex-web` client the back-channel logout evidence names. */
   readonly clientId: string;
@@ -208,6 +221,14 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       if (!isSecretShaped(secret)) return { outcome: 'invalid' };
       const stored = await store.findByTokenHash(hashSecret(secret));
       if (stored === undefined || stored.revokedAt !== undefined) return { outcome: 'invalid' };
+      if (
+        options.local &&
+        (stored.idpSessionId !== undefined ||
+          stored.idToken !== undefined ||
+          stored.refreshToken !== undefined)
+      ) {
+        return { outcome: 'invalid' };
+      }
       const at = now();
       if (
         stored.idleExpiresAt.getTime() <= at.getTime() ||
@@ -235,6 +256,20 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       });
       if (at.getTime() - stored.lastSeenAt.getTime() < TOUCH_INTERVAL_MS) return valid('not-due');
 
+      if (options.local) {
+        const idleExpiresAt = idleDeadline(at, stored.absoluteExpiresAt);
+        const touched = await store.touchLocal({
+          id: stored.id,
+          now: at,
+          seenBefore: new Date(at.getTime() - TOUCH_INTERVAL_MS),
+          idleExpiresAt,
+        });
+        return valid(
+          touched ? 'refreshed' : 'not-due',
+          touched ? idleExpiresAt : stored.idleExpiresAt,
+        );
+      }
+
       // Claim, refresh, apply (IAM-R03F D-04, D-07): only the request that claims the interval
       // calls Keycloak, and no transaction is open while it does.
       const claimed = await store.claimRevalidation({
@@ -251,6 +286,7 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       // Without a usable refresh token the session cannot be re-validated, so it never slides.
       if (sealed === undefined || refreshToken === undefined) return valid('unsupported');
 
+      if (provider === undefined) throw new Error('Session provider is not configured.');
       const refreshed = await provider.refreshSession({
         refreshToken,
         idpSessionId: stored.idpSessionId,

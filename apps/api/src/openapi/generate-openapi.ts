@@ -10,9 +10,8 @@ import { createOpenApiDocument } from './openapi.js';
  * Writes the OpenAPI document to the path given as the first argument
  * (`pnpm openapi:generate` -> apps/api/generated/openapi.json).
  *
- * The application is created but never listens, the database client connects lazily on first
- * query, OIDC discovery happens on the first sign-in, and the Keycloak Admin adapter authenticates
- * on its first call, so the placeholders below are never contacted.
+ * The application is created but never listens. The database client connects lazily on its first
+ * query, so the placeholder database URL below is never contacted.
  */
 const GENERATION_CONFIG: AppConfig = {
   environment: 'development',
@@ -23,14 +22,6 @@ const GENERATION_CONFIG: AppConfig = {
 };
 
 const GENERATION_AUTH_CONFIG: AuthConfig = {
-  oidc: {
-    issuer: 'http://127.0.0.1:1/realms/never-contacted',
-    clientId: 'vertex-web',
-    clientSecret: 'openapi-generation-placeholder',
-    redirectUri: 'http://127.0.0.1:1/api/auth/callback',
-    postLogoutRedirectUri: 'http://127.0.0.1:1/',
-    allowInsecureRequests: true,
-  },
   session: {
     idleTimeoutSeconds: 1_800,
     absoluteTimeoutSeconds: 36_000,
@@ -42,11 +33,6 @@ const GENERATION_AUTH_CONFIG: AuthConfig = {
 };
 
 const GENERATION_PROVISIONING_CONFIG: IdentityProvisioningConfig = {
-  issuer: 'http://127.0.0.1:1/realms/never-contacted',
-  provisioner: {
-    clientId: 'vertex-provisioner',
-    clientSecret: 'openapi-generation-placeholder',
-  },
   invitationLifespanSeconds: 43_200,
 };
 

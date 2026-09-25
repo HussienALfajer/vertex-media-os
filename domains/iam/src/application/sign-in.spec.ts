@@ -105,12 +105,12 @@ describe('signIn', () => {
   });
 
   it.each(['SUSPENDED', 'DISABLED', 'TERMINATED'] as const)(
-    'denies a %s user and records the Keycloak mismatch as identitySyncState FAILED',
+    'denies a %s user without altering identity synchronization state',
     async (accessState) => {
       const { iam, dependencies, request } = setup(active({ accessState }));
       await expect(signIn(dependencies, request)).resolves.toEqual({ outcome: 'inactive' });
-      expect(iam.get()).toMatchObject({ accessState, identitySyncState: 'FAILED', version: 5 });
-      expect(iam.transactions).toEqual(['sync:FAILED']);
+      expect(iam.get()).toMatchObject({ accessState, identitySyncState: 'SYNCED', version: 4 });
+      expect(iam.transactions).toEqual(['']);
       expect(iam.audit).toHaveLength(1);
       expect(iam.audit[0]).toMatchObject({
         action: 'iam.user.sign-in-refused',
@@ -119,7 +119,7 @@ describe('signIn', () => {
         result: 'REFUSED',
         change: {
           before: { accessState, identitySyncState: 'SYNCED' },
-          after: { accessState, identitySyncState: 'FAILED' },
+          after: { accessState, identitySyncState: 'SYNCED' },
         },
       });
     },
@@ -176,7 +176,7 @@ describe('signIn', () => {
     expect(iam.get()).toMatchObject({
       accessState: 'SUSPENDED',
       firstActivatedAt: undefined,
-      identitySyncState: 'FAILED',
+      identitySyncState: 'SYNCED',
     });
     expect(iam.audit.map((entry) => entry.action)).toEqual(['iam.user.sign-in-refused']);
   });

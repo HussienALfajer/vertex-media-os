@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forgetCsrfToken } from './lib/http';
 import { leaveApplication } from './lib/navigation';
@@ -214,19 +214,35 @@ describe('session experience', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'تسجيل الدخول إلى Vertex OS' }),
     ).toBeTruthy();
-    // No notice for a first visit, no password or code field anywhere.
+    // The first visit offers email and password, without an extra verification step.
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(document.querySelector('input')).toBeNull();
+    expect(screen.getByLabelText(/البريد الإلكتروني/)).toBeTruthy();
+    expect(screen.getByLabelText(/كلمة المرور/)).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'الحساب' })).toBeNull();
   });
 
-  it('starts sign-in as a top-level navigation to the API', async () => {
-    routeFetch(signedOut());
+  it('submits email and password to the local login endpoint', async () => {
+    const fetch = routeFetch({
+      ...signedOut(),
+      'POST /api/auth/login': () => json(200, { user: USER, session: SESSION }),
+    });
 
     renderApp();
-
+    fireEvent.change(await screen.findByLabelText(/البريد الإلكتروني/), {
+      target: { value: USER.email },
+    });
+    fireEvent.change(screen.getByLabelText(/كلمة المرور/), {
+      target: { value: 'a long test password 4!' },
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'تسجيل الدخول' }));
-    expect(leaveApplication).toHaveBeenCalledWith('/api/auth/login');
+    await waitFor(() => expect(leaveApplication).toHaveBeenCalledWith('/'));
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/auth/login',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ email: USER.email, password: 'a long test password 4!' }),
+      }),
+    );
   });
 
   it.each([
@@ -270,10 +286,8 @@ describe('session experience', () => {
   });
 
   it.each([
-    ['AUTH_ACCESS_DENIED', 'تعذّر منح الوصول'],
     ['AUTH_LOGIN_FAILED', 'تعذّر إكمال تسجيل الدخول'],
     ['AUTH_RATE_LIMITED', 'محاولات تسجيل دخول كثيرة'],
-    ['IDENTITY_PROVIDER_UNAVAILABLE', 'خدمة الهوية غير متاحة'],
   ])('explains the failed sign-in %s and removes it from the address', async (code, title) => {
     routeFetch(signedOut());
 

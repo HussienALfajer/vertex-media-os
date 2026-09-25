@@ -22,7 +22,8 @@ test('the web shell loads in Arabic, offers sign-in and observes the live API th
     page.getByRole('heading', { level: 1, name: 'تسجيل الدخول إلى Vertex OS' }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'تسجيل الدخول' })).toBeVisible();
-  await expect(page.locator('input')).toHaveCount(0);
+  await expect(page.getByLabel('البريد الإلكتروني')).toBeVisible();
+  await expect(page.getByLabel('كلمة المرور')).toBeVisible();
   const livenessResponse = await liveness;
   expect(livenessResponse.status()).toBe(200);
   // The browser calls the web origin's /api path (Vite proxy), not a cross-origin API URL.
@@ -45,15 +46,14 @@ test('the same journey works in English', async ({ page }) => {
   );
 });
 
-test('a sign-in that cannot reach the identity provider returns to the app with an explanation', async ({
+test('the signed-out form accepts email and password without exposing them in a URL', async ({
   page,
 }) => {
   await page.goto('/');
-  // The test API's issuer is never reachable, so the backend flow answers IDENTITY_PROVIDER_UNAVAILABLE.
+  await page.getByLabel('البريد الإلكتروني').fill('nobody@example.test');
+  await page.getByLabel('كلمة المرور').fill('example-test-password-only');
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
-
-  await expect(page.getByText('خدمة الهوية غير متاحة')).toBeVisible();
+  await expect(page.getByText('تعذّر إكمال تسجيل الدخول')).toBeVisible();
   await expect(page).toHaveURL((url) => url.pathname === '/' && url.search === '');
-  // The browser holds no readable credential: the API's cookies are HttpOnly.
   expect(await page.evaluate(() => document.cookie)).toBe('');
 });

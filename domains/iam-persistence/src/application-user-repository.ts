@@ -31,7 +31,7 @@ export const userSelect = {
   version: true,
 } as const;
 
-export function mapUser(row: IamApplicationUser): ApplicationUser {
+export function mapUser(row: Omit<IamApplicationUser, 'passwordHash'>): ApplicationUser {
   return {
     id: row.id as UserId,
     email: row.email as NormalizedEmail,

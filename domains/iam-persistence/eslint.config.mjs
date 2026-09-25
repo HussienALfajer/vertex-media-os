@@ -7,7 +7,12 @@ const adapterPatterns = restrictedImportPatterns.map((pattern) =>
   pattern.group.includes('@vertex-os/iam/*')
     ? {
         ...pattern,
-        group: [...pattern.group, '!@vertex-os/iam/persistence', '!@vertex-os/database/iam'],
+        group: [
+          ...pattern.group,
+          '!@vertex-os/iam/persistence',
+          '!@vertex-os/iam/identity-provider',
+          '!@vertex-os/database/iam',
+        ],
       }
     : pattern,
 );

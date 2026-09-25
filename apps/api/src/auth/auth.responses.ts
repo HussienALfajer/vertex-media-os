@@ -40,10 +40,7 @@ export class CsrfTokenResponse {
 export class LogoutResponse {
   @ApiProperty({
     type: String,
-    format: 'uri',
-    description:
-      'The post-logout URI when the API ended the Keycloak session; otherwise the end-session ' +
-      'URL, without any token, where Keycloak asks the user to confirm. Never carries a token.',
+    description: 'The application route to show after the local session ends.',
   })
   readonly logoutUrl!: string;
 }

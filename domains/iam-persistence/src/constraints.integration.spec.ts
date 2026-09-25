@@ -947,6 +947,9 @@ describe('named IAM database constraints', () => {
       'iam_application_user_invited_ck',
       'iam_application_user_invitation_sent_ck',
       'iam_application_user_version_ck',
+      'iam_application_user_password_hash_ck',
+      'iam_legacy_identity_mapping_pkey',
+      'iam_legacy_identity_mapping_user_id_fkey',
       'iam_department_pkey',
       'iam_department_code_key',
       'iam_department_code_ck',
@@ -995,6 +998,7 @@ describe('named IAM database constraints', () => {
       [
         'iam_department_membership_department_id_fkey',
         'iam_department_membership_user_id_fkey',
+        'iam_legacy_identity_mapping_user_id_fkey',
         'iam_role_permission_permission_code_fkey',
         'iam_role_permission_role_id_fkey',
         'iam_user_role_assignment_role_id_fkey',

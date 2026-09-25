@@ -115,8 +115,8 @@ async function activeUser(roleIds: readonly string[] = []): Promise<string> {
   const id = await seedInvitedUser(postgres, `user-${suffix()}@example.test`);
   await postgres.sql(
     `UPDATE iam_application_user SET access_state = 'ACTIVE', first_activated_at = now(),
-       identity_issuer = '${testProvisioningConfig().issuer}',
-       identity_subject = gen_random_uuid()::text, identity_sync_state = 'SYNCED',
+       identity_issuer = 'vertex-local',
+       identity_subject = '${id}', identity_sync_state = 'SYNCED',
        invitation_delivery_state = 'SENT', invitation_sent_at = now()
        WHERE id = '${id}'`,
   );
@@ -137,7 +137,8 @@ async function sessionFor(userId: string): Promise<string> {
     ciphers: createTokenCiphers(TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET),
     provider: { refreshSession: async () => ({ ok: false, failure: 'unavailable' }) },
     limits: testAuthConfig().session,
-    clientId: 'vertex-web',
+    clientId: 'vertex-local',
+    local: true,
   });
   const { secret } = await sessions.establish({
     userId,
@@ -629,41 +630,31 @@ describe('user directory and profile', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// User lifecycle with Keycloak unreachable (spec Sections 12, 27, 31, 32)
+// User lifecycle with local credentials
 // ---------------------------------------------------------------------------------------------
 
-describe('user lifecycle when Keycloak is unreachable', () => {
-  it('commits local changes and reports the failed identity steps in the states', async () => {
+describe('user lifecycle with local credentials', () => {
+  it('creates an account with a password and refuses duplicate email', async () => {
     const admin = await administrator();
     const created = await call(admin, 'POST', '/api/iam/users', {
       email: `new-${suffix()}@example.test`,
-      displayName: 'New User',
+      password: 'new user password long enough 1!',
     });
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({
       user: {
         accessState: 'INVITED',
-        identitySyncState: 'FAILED',
-        invitationDeliveryState: 'NOT_SENT',
+        identitySyncState: 'SYNCED',
       },
     });
-    const newId = (created.json() as { user: { id: string } }).user.id;
     const conflict = await call(admin, 'POST', '/api/iam/users', {
       email: (created.json() as { user: { email: string } }).user.email.toUpperCase(),
-      displayName: 'Again',
+      password: 'another long user password 2!',
     });
     expect([conflict.statusCode, problemOf(conflict).code]).toEqual([409, 'IAM_EMAIL_CONFLICT']);
-
-    const resend = await call(admin, 'POST', `/api/iam/users/${newId}/resend-invitation`);
-    expect([resend.statusCode, problemOf(resend).code]).toEqual([
-      409,
-      'IAM_IDENTITY_SYNC_INCOMPLETE',
-    ]);
-    const sync = await call(admin, 'POST', `/api/iam/users/${newId}/sync-identity`);
-    expect([sync.statusCode, problemOf(sync).code]).toEqual([503, 'IDENTITY_PROVIDER_UNAVAILABLE']);
   });
 
-  it('suspends through the authentication sessions, then refuses reactivation without Keycloak', async () => {
+  it('suspends through the authentication sessions, then reactivates locally', async () => {
     const admin = await administrator();
     const target = await activeUser();
     const targetSession = await sessionFor(target);
@@ -675,7 +666,7 @@ describe('user lifecycle when Keycloak is unreachable', () => {
     });
     expect(suspended.statusCode).toBe(200);
     expect(suspended.json()).toMatchObject({
-      user: { accessState: 'SUSPENDED', identitySyncState: 'FAILED' },
+      user: { accessState: 'SUSPENDED', identitySyncState: 'SYNCED' },
       sessionsRevoked: 1,
     });
     // Revoked through AuthRuntime.sessions: the session no longer exists for the API (AB-1).
@@ -690,20 +681,17 @@ describe('user lifecycle when Keycloak is unreachable', () => {
     const reactivated = await call(admin, 'POST', `/api/iam/users/${target}/reactivate`, {
       expectedVersion: version,
     });
-    expect([reactivated.statusCode, problemOf(reactivated).code]).toEqual([
-      503,
-      'IDENTITY_PROVIDER_UNAVAILABLE',
-    ]);
+    expect(reactivated.statusCode).toBe(200);
+    expect(reactivated.json()).toMatchObject({ user: { accessState: 'ACTIVE' } });
     const stale = await call(admin, 'POST', `/api/iam/users/${target}/reactivate`, {
       expectedVersion: 1,
     });
-    expect(problemOf(stale).code).toBe('IAM_VERSION_CONFLICT');
+    expect(problemOf(stale).code).toBe('IAM_INVALID_ACCESS_TRANSITION');
     const again = await call(admin, 'POST', `/api/iam/users/${target}/suspend`);
-    expect(problemOf(again).code).toBe('IAM_INVALID_ACCESS_TRANSITION');
+    expect(again.statusCode).toBe(200);
 
     const revoked = await call(admin, 'POST', `/api/iam/users/${target}/revoke-sessions`, {});
-    // The Keycloak sessions could not be ended; the application sessions were already revoked.
-    expect(revoked.json()).toEqual({ sessionsRevoked: 0, providerSessions: 'FAILED' });
+    expect(revoked.json()).toEqual({ sessionsRevoked: 0 });
     const terminated = await call(admin, 'POST', `/api/iam/users/${target}/terminate`);
     expect(terminated.json()).toMatchObject({ user: { accessState: 'TERMINATED' } });
     const missing = await call(admin, 'POST', `/api/iam/users/${randomUUID()}/disable`);
@@ -842,12 +830,12 @@ describe('every operation and refusal', () => {
       }),
       await call(admin, 'POST', '/api/iam/users', {
         email: `x-${suffix()}@example.test`,
-        displayName: 'X',
+        password: 'long enough employee password 3!',
         roleIds: [inactiveRole],
       }),
       await call(admin, 'POST', '/api/iam/users', {
         email: `x-${suffix()}@example.test`,
-        displayName: 'X',
+        password: 'long enough employee password 4!',
         memberships: [{ departmentId: inactiveDepartment, isPrimary: true }],
       }),
       await call(admin, 'PUT', `/api/iam/roles/${await role([])}/permissions`, {
@@ -997,7 +985,7 @@ describe('accountability and contention', () => {
         () =>
           call(admin, 'POST', '/api/iam/users', {
             email: `sec-${suffix()}@example.test`,
-            displayName: 'New',
+            password: 'long enough employee password 5!',
           }),
       ],
       [
@@ -1006,7 +994,7 @@ describe('accountability and contention', () => {
       ],
       [200, () => call(admin, 'POST', `/api/iam/users/${user}/suspend`, { reason: 'Leave.' })],
       [
-        503,
+        200,
         async () =>
           call(admin, 'POST', `/api/iam/users/${user}/reactivate`, {
             expectedVersion: Number(
@@ -1014,7 +1002,6 @@ describe('accountability and contention', () => {
             ),
           }),
       ],
-      [503, () => call(admin, 'POST', `/api/iam/users/${user}/sync-identity`)],
       [200, () => call(admin, 'POST', `/api/iam/users/${user}/disable`)],
       [200, () => call(admin, 'POST', `/api/iam/users/${user}/terminate`)],
     ] as const) {

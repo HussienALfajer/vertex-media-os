@@ -24,6 +24,11 @@ const problems = {
     'The user does not hold the role.',
   ],
   'email-conflict': [409, 'IAM_EMAIL_CONFLICT', 'A user with this email already exists.'],
+  'password-already-configured': [
+    409,
+    'IAM_PASSWORD_ALREADY_CONFIGURED',
+    'This account already has a local password.',
+  ],
   'invalid-access-transition': [
     409,
     'IAM_INVALID_ACCESS_TRANSITION',

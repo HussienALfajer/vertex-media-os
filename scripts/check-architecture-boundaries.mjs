@@ -209,34 +209,14 @@ const violations = [
     syntaxRule,
     unsafeRawQuery,
   ],
-  // IAM-R02: the identity-provider adapter and IAM's private entry for it.
-  ['V63', 'domains/iam', "import '@vertex-os/iam-keycloak';", nxRule, 'Circular dependency'],
+  // IAM's private identity-provider entry stays inside its persistence adapter.
   ['V64', 'apps/api', "import '@vertex-os/iam/identity-provider';", importsRule],
-  ['V65', 'domains/iam-persistence', "import '@vertex-os/iam/identity-provider';", importsRule],
-  ['V66', 'domains/iam-keycloak', "import '@vertex-os/iam/persistence';", importsRule],
-  ['V67', 'domains/iam-keycloak', "import '@vertex-os/database';", importsRule, 'Keycloak only'],
-  ['V68', 'domains/iam-keycloak', "import '@nestjs/common';", nxRule, '@nestjs'],
-  ['V69', 'domains/iam-keycloak', "import '@prisma/client';", nxRule, '@prisma'],
-  ['V70', 'apps/api', "import '@vertex-os/iam-keycloak/src/index.js';", importsRule],
-  ['V71', 'domains/iam-keycloak', "process.env['X'];", syntaxRule, rawEnvironment],
-  [
-    'V72',
-    'domains/iam-keycloak',
-    "import { createRequire } from 'node:module';",
-    importsRule,
-    createRequireBan,
-  ],
-  ['V73', 'domains/iam-persistence', "import '@vertex-os/iam-keycloak';", nxRule, 'layer:adapter'],
-  ['V74', 'apps/web', "import '@vertex-os/iam-keycloak';", nxRule, 'scope:web'],
   // IAM-R03: the platform session entry stays inside the API's authentication area (D-01), and
   // the OIDC runtime libraries stay out of the domain core (A-04, D-19).
   ['V75', 'apps/api', "import '@vertex-os/database/auth';", importsRule],
   ['V76', 'apps/api', "import '@vertex-os/database/auth';", importsRule, undefined, 'src/iam/x.ts'],
   ['V77', 'domains/iam', "import '@vertex-os/database/auth';", importsRule],
   ['V78', 'domains/iam-persistence', "import '@vertex-os/database/auth';", importsRule],
-  ['V79', 'domains/iam', "import 'openid-client';", nxRule, 'openid-client'],
-  ['V80', 'domains/iam', "import 'jose';", nxRule, 'jose'],
-  ['V81', 'domains/iam', "import 'oauth4webapi';", nxRule, 'oauth4webapi'],
   ['V82', 'apps/api', "await import('@vertex-os/database/auth');", syntaxRule, privateSubpath],
   // Review F1: inside the authentication area only its composition root imports adapters.
   [
@@ -256,9 +236,6 @@ const violations = [
     'src/auth/x.ts',
   ],
   // Review F2: subpath exports of the OIDC libraries are banned in the domain core too.
-  ['V85', 'domains/iam', "import 'jose/jwt/verify';", nxRule, 'jose'],
-  ['V86', 'domains/iam', "import 'openid-client/passport';", nxRule, 'openid-client'],
-  ['V87', 'apps/web', "import 'openid-client';", nxRule, 'openid-client'],
   // IAM-R04 D-13 (CP1-03): dynamic imports and type queries of adapters in the authentication area.
   ...[
     "await import('@vertex-os/iam-persistence');",
@@ -276,7 +253,6 @@ const violations = [
   ]),
   // IAM-R04 D-14 (CP1-04): template specifiers, CommonJS and destructured environment access.
   ['V93', 'domains/iam', 'await import(`openid-client`);', syntaxRule, stringLiteralImport],
-  ['V94', 'domains/iam', "await import('openid-client');", nxRule, 'openid-client'],
   ['V95', 'domains/iam', "await import('@vertex-os/database');", nxRule, 'layer:domain'],
   ['V96', 'domains/iam', "import m = require('openid-client'); void m;", syntaxRule, commonJs],
   ['V97', 'apps/api', "require('@vertex-os/iam/persistence');", syntaxRule, commonJs],
@@ -455,7 +431,6 @@ const controls = [
       ...imports(
         '@vertex-os/iam',
         '@vertex-os/iam-persistence',
-        '@vertex-os/iam-keycloak',
         '@vertex-os/audit',
         '@vertex-os/audit-persistence',
         '@vertex-os/database',
@@ -469,7 +444,6 @@ const controls = [
     imports('@vertex-os/audit', '@vertex-os/database', '@vertex-os/database/audit'),
   ],
   ['C4', 'domains/iam', imports('@vertex-os/audit')],
-  ['C9', 'domains/iam-keycloak', imports('@vertex-os/iam', '@vertex-os/iam/identity-provider')],
   [
     'C10',
     'apps/api',

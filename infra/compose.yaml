@@ -1,25 +1,16 @@
-# Local development infrastructure for Vertex OS (Docker Compose).
-#
-# Start/stop with `pnpm infra:up` / `pnpm infra:down` from the repository root.
-# Credentials come from the ignored root `.env` (create it with `pnpm env:setup`);
-# nothing secret is committed here. The project name is deliberately distinct so
-# Compose never treats unrelated containers on the host as orphans of this project.
-
+# Local PostgreSQL for Vertex OS. Credentials come from the ignored root .env.
 name: vertexos
 
 services:
   postgres:
     image: postgres:18.6-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env (pnpm env:setup)}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (pnpm env:setup)}
-      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env (pnpm env:setup)}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     ports:
-      # Loopback only: the database is never exposed beyond the developer machine.
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
-      # PostgreSQL 18 images keep PGDATA under /var/lib/postgresql/<major>/…;
-      # mounting the parent directory is the documented persistent layout.
       - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
@@ -28,82 +19,5 @@ services:
       retries: 12
       start_period: 5s
 
-  # Keycloak identity provider for local development only (docs/modules/iam.md Sections 37-38).
-  # Development mode with its embedded database; never a production configuration. The `vertex`
-  # realm is imported from infra/keycloak/import on the first start of an empty volume and is
-  # never re-imported afterwards: apply realm changes with `pnpm infra:reset`.
-  keycloak:
-    # Tag and digest pinned; apps/api/test-support/keycloak.ts uses the same reference (a unit
-    # test fails if they differ), and the IAM browser journeys read it from here.
-    image: quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c
-    command: ['start-dev', '--import-realm']
-    env_file:
-      - ./keycloak/keycloak.env
-    environment:
-      # Deterministic local issuer: http://127.0.0.1:<port>/realms/vertex.
-      KC_HOSTNAME: http://127.0.0.1:${KEYCLOAK_PORT:-8080}
-      # Master-realm administrator, created only when the volume is empty. No committed default.
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:?set KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME in .env (pnpm env:setup)}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?set KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD in .env (pnpm env:setup)}
-      # Placeholders resolved by the realm import (infra/keycloak/import/vertex-realm.json).
-      KEYCLOAK_WEB_CLIENT_SECRET: ${KEYCLOAK_WEB_CLIENT_SECRET:?set KEYCLOAK_WEB_CLIENT_SECRET in .env (pnpm env:setup)}
-      KEYCLOAK_PROVISIONER_CLIENT_SECRET: ${KEYCLOAK_PROVISIONER_CLIENT_SECRET:?set KEYCLOAK_PROVISIONER_CLIENT_SECRET in .env (pnpm env:setup)}
-      KEYCLOAK_WEB_REDIRECT_URI: ${KEYCLOAK_WEB_REDIRECT_URI:?set KEYCLOAK_WEB_REDIRECT_URI in .env (pnpm env:setup)}
-      KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI: ${KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI:?set KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI in .env (pnpm env:setup)}
-      KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL: ${KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL:?set KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL in .env (pnpm env:setup)}
-      # Realm SMTP settings: the local mail sink below, reached on the Compose network.
-      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:?set KEYCLOAK_SMTP_HOST in .env (pnpm env:setup)}
-      KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:?set KEYCLOAK_SMTP_PORT in .env (pnpm env:setup)}
-      KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:?set KEYCLOAK_SMTP_FROM in .env (pnpm env:setup)}
-      KEYCLOAK_SMTP_USER: ${KEYCLOAK_SMTP_USER:?set KEYCLOAK_SMTP_USER in .env (pnpm env:setup)}
-      KEYCLOAK_SMTP_PASSWORD: ${KEYCLOAK_SMTP_PASSWORD:?set KEYCLOAK_SMTP_PASSWORD in .env (pnpm env:setup)}
-      KEYCLOAK_SMTP_STARTTLS: ${KEYCLOAK_SMTP_STARTTLS:?set KEYCLOAK_SMTP_STARTTLS in .env (pnpm env:setup)}
-      KEYCLOAK_SMTP_SSL: ${KEYCLOAK_SMTP_SSL:?set KEYCLOAK_SMTP_SSL in .env (pnpm env:setup)}
-    ports:
-      # Loopback only. The management port (9000, health) is not published.
-      - '127.0.0.1:${KEYCLOAK_PORT:-8080}:8080'
-    volumes:
-      # Embedded development database (data/h2) and runtime state; the image owns the directory.
-      - keycloak-data:/opt/keycloak/data
-      - ./keycloak/import:/opt/keycloak/data/import:ro
-    healthcheck:
-      # The image has no curl; bash /dev/tcp asks the management interface for readiness, which
-      # reports UP only after the realm import has finished.
-      test:
-        - CMD
-        - bash
-        - -c
-        - >-
-          exec 3<>/dev/tcp/127.0.0.1/9000 &&
-          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
-          grep -q '"status": "UP"' <&3
-      interval: 5s
-      timeout: 3s
-      retries: 36
-      start_period: 20s
-
-  # Local mail sink for invitation and password-reset email (IAM-R02 OD-1). It accepts any SMTP
-  # credentials and delivers nothing onward; messages live in memory until the container stops.
-  mailpit:
-    # Tag and digest pinned; apps/api/test-support/keycloak.ts uses the same reference, and the
-    # IAM browser journeys read it from here.
-    image: axllent/mailpit:v1.31.2@sha256:74d609a42ec279aa63c6b4622a6fa9b5408d1ad5b1d76a1c4be40a265ce0863d
-    environment:
-      MP_SMTP_AUTH_ACCEPT_ANY: 'true'
-      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
-      MP_DISABLE_VERSION_CHECK: 'true'
-    ports:
-      # Loopback only: the web UI. SMTP (1025) stays on the Compose network.
-      - '127.0.0.1:${MAILPIT_PORT:-8025}:8025'
-    healthcheck:
-      test: ['CMD', '/mailpit', 'readyz']
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
-
 volumes:
-  # Both survive `pnpm infra:down` and are removed together only by the explicit
-  # `pnpm infra:reset`, so IAM rows and Keycloak identities never drift apart.
   postgres-data:
-  keycloak-data:

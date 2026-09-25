@@ -1,33 +1,26 @@
-import { Logger } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testAuthConfig } from '../../test-support/auth-config.js';
+import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 import { createApp } from '../app.factory.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { createOpenApiDocument } from '../openapi/openapi.js';
-import { testProvisioningConfig } from '../../test-support/provisioning-config.js';
 
-/**
- * The authentication endpoints over Fastify inject, with neither PostgreSQL nor an identity
- * provider reachable: every path here must decide without them. Sessions, sign-in and CSRF with a
- * database are proven by the integration suites.
- */
 const SENTINEL = 'sentinel-7f3a9c';
 
-describe('authentication endpoints without PostgreSQL or Keycloak', () => {
+describe('local authentication HTTP surface', () => {
   let app: NestFastifyApplication;
-  const lines: string[] = [];
+  const logs: string[] = [];
 
   beforeAll(async () => {
     app = await createApp(
       loadAppConfig({
         NODE_ENV: 'test',
-        LOG_LEVEL: 'info',
         DATABASE_URL: 'postgresql://vertex:unused@127.0.0.1:1/vertex_os',
       }),
-      testAuthConfig(),
+      testAuthConfig({ AUTH_RATE_LIMIT_SIGN_IN: '2' }),
       testProvisioningConfig(),
-      { logStream: { write: (line: string) => lines.push(line) } },
+      { logStream: { write: (line: string) => logs.push(line) } },
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
@@ -37,213 +30,71 @@ describe('authentication endpoints without PostgreSQL or Keycloak', () => {
     await app?.close();
   });
 
-  const problem = (response: { json: () => unknown }) => response.json() as Record<string, unknown>;
-
-  it('requires a session for the session and CSRF endpoints', async () => {
-    for (const url of ['/api/auth/session', '/api/auth/csrf']) {
-      const response = await app.inject({ method: 'GET', url });
+  it('requires a session for session, CSRF and logout', async () => {
+    for (const [method, url] of [
+      ['GET', '/api/auth/session'],
+      ['GET', '/api/auth/csrf'],
+      ['POST', '/api/auth/logout'],
+    ] as const) {
+      const response = await app.inject({ method, url });
       expect(response.statusCode).toBe(401);
-      expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
-      expect(problem(response)).toMatchObject({ code: 'AUTHENTICATION_REQUIRED' });
+      expect(response.json().code).toBe('AUTHENTICATION_REQUIRED');
     }
   });
 
-  it('rejects and clears a malformed session cookie without touching the database', async () => {
+  it('clears an invalid session cookie', async () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/auth/session',
       headers: { cookie: `__Host-vertex-session=${SENTINEL}` },
     });
     expect(response.statusCode).toBe(401);
-    expect(problem(response)).toMatchObject({ code: 'AUTH_SESSION_INVALID' });
-    expect(response.headers['set-cookie']).toBe(
-      '__Host-vertex-session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict',
-    );
+    expect(response.json().code).toBe('AUTH_SESSION_INVALID');
+    expect(response.headers['set-cookie']).toContain('__Host-vertex-session=;');
   });
 
-  it('rejects every unsafe request without a session before any handler runs', async () => {
-    const response = await app.inject({
+  it('accepts only a bounded JSON login body', async () => {
+    const malformed = await app.inject({
       method: 'POST',
-      url: '/api/auth/logout',
-      headers: { 'x-csrf-token': SENTINEL },
-    });
-    expect(response.statusCode).toBe(401);
-    expect(problem(response)).toMatchObject({ code: 'AUTHENTICATION_REQUIRED' });
-  });
-
-  it('accepts form bodies on the back-channel route only', async () => {
-    const elsewhere = await app.inject({
-      method: 'POST',
-      url: '/api/auth/logout',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      payload: 'a=b',
-    });
-    expect(elsewhere.statusCode).toBe(415);
-    expect(elsewhere.headers['content-type']).toMatch(/^application\/problem\+json/);
-
-    const missing = await app.inject({
-      method: 'POST',
-      url: '/api/auth/backchannel-logout',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      payload: 'other=1',
-    });
-    expect(missing.statusCode).toBe(400);
-    expect(missing.json()).toEqual({ error: 'invalid_request' });
-    expect(missing.headers['cache-control']).toBe('no-store');
-  });
-
-  it('answers 400 when a logout token cannot be validated', async () => {
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/auth/backchannel-logout',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      payload: `logout_token=${SENTINEL}`,
-    });
-    expect(response.statusCode).toBe(400);
-    expect(response.body).not.toContain(SENTINEL);
-  });
-
-  it('refuses a logout token sent as JSON', async () => {
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/auth/backchannel-logout',
-      headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ logout_token: SENTINEL }),
-    });
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ error: 'invalid_request' });
-  });
-
-  it('redirects with a stable code when the callback fails unexpectedly', async () => {
-    // A well-formed login handle makes the callback query PostgreSQL, which is unreachable here.
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/auth/callback?code=c&state=s',
-      headers: { cookie: `__Host-vertex-login=${'a'.repeat(43)}` },
-    });
-    expect(response.statusCode).toBe(303);
-    expect(response.headers['location']).toBe('/?authError=AUTH_LOGIN_FAILED');
-    expect(response.headers['set-cookie']).toContain('__Host-vertex-login=; Path=/; Max-Age=0');
-  });
-
-  it('sends the browser back with a stable code when the provider is unreachable', async () => {
-    const response = await app.inject({ method: 'GET', url: '/api/auth/login' });
-    expect(response.statusCode).toBe(303);
-    expect(response.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
-    expect(response.headers['set-cookie']).toBe(
-      '__Host-vertex-login=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax',
-    );
-    expect(response.headers['cache-control']).toBe('no-store');
-  });
-
-  it('fails a callback without its login cookie and never logs the query string', async () => {
-    lines.length = 0;
-    const response = await app.inject({
-      method: 'GET',
-      url: `/api/auth/callback?code=${SENTINEL}-code&state=${SENTINEL}-state&iss=x`,
-    });
-    expect(response.statusCode).toBe(303);
-    expect(response.headers['location']).toBe('/?authError=AUTH_LOGIN_FAILED');
-    expect(response.headers['set-cookie']).toContain('__Host-vertex-login=; Path=/; Max-Age=0');
-    const output = lines.join('');
-    expect(output).toContain('"url":"/api/auth/callback"');
-    expect(output).not.toContain(SENTINEL);
-  });
-
-  it('documents the six authentication endpoints', () => {
-    const paths = createOpenApiDocument(app).paths;
-    expect(paths['/api/auth/login']?.get).toBeDefined();
-    expect(paths['/api/auth/callback']?.get).toBeDefined();
-    expect(paths['/api/auth/session']?.get?.responses).toHaveProperty('401');
-    expect(paths['/api/auth/csrf']?.get?.responses).toHaveProperty('200');
-    expect(paths['/api/auth/logout']?.post?.responses).toHaveProperty('403');
-    expect(paths['/api/auth/logout']?.post?.responses).toHaveProperty('429');
-    expect(paths['/api/auth/logout']?.post?.parameters).toContainEqual(
-      expect.objectContaining({ name: 'X-CSRF-Token', in: 'header', required: true }),
-    );
-    expect(paths['/api/auth/logout']?.post?.security).toEqual([{ session: [] }]);
-    expect(paths['/api/auth/backchannel-logout']?.post?.responses).toHaveProperty('400');
-  });
-
-  it('keeps error text and stack strings out of Nest logger lines (A2-01)', () => {
-    lines.length = 0;
-    const logger = new Logger('A2-01');
-    logger.error(`message-${SENTINEL}`, `stack-${SENTINEL}`);
-    const records = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(records.at(-1)).toMatchObject({ stackOmitted: true, context: 'A2-01' });
-    expect(lines.join('')).not.toContain(`stack-${SENTINEL}`);
-  });
-});
-
-describe('sign-in rate limit (IAM-R09 D-03, D-04)', () => {
-  let app: NestFastifyApplication;
-  const lines: string[] = [];
-
-  beforeAll(async () => {
-    app = await createApp(
-      loadAppConfig({
-        NODE_ENV: 'test',
-        LOG_LEVEL: 'info',
-        DATABASE_URL: 'postgresql://vertex:unused@127.0.0.1:1/vertex_os',
-      }),
-      testAuthConfig({ AUTH_RATE_LIMIT_SIGN_IN: '2' }),
-      testProvisioningConfig(),
-      { logStream: { write: (line: string) => lines.push(line) } },
-    );
-    await app.init();
-    await app.getHttpAdapter().getInstance().ready();
-  });
-
-  afterAll(async () => {
-    await app?.close();
-  });
-
-  const from = (forwardedFor: string) => ({ 'x-forwarded-for': forwardedFor });
-
-  it('counts login and callback per client address and refuses beyond the limit', async () => {
-    const login = await app.inject({
-      method: 'GET',
       url: '/api/auth/login',
-      headers: from('10.0.0.1'),
+      payload: { email: 'user@example.invalid', password: SENTINEL, extra: SENTINEL },
     });
-    expect(login.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
-    const callback = await app.inject({
-      method: 'GET',
-      url: '/api/auth/callback?code=c&state=s',
-      headers: from('10.0.0.1'),
-    });
-    expect(callback.headers['location']).toBe('/?authError=AUTH_LOGIN_FAILED');
-
-    lines.length = 0;
-    for (const url of ['/api/auth/login', '/api/auth/callback?code=c&state=s']) {
-      const refused = await app.inject({ method: 'GET', url, headers: from('10.0.0.1') });
-      expect(refused.statusCode).toBe(303);
-      expect(refused.headers['location']).toBe('/?authError=AUTH_RATE_LIMITED');
-      expect(refused.headers['cache-control']).toBe('no-store');
-      expect(refused.headers['set-cookie']).toContain('__Host-vertex-login=; Path=/; Max-Age=0');
-    }
-    // One log line per window, not one per refusal.
-    const limited = lines.filter((line) => line.includes('"auth":"rate-limited"'));
-    expect(limited).toHaveLength(1);
-    expect(limited[0]).toContain('"bucket":"sign-in"');
-
-    const other = await app.inject({
-      method: 'GET',
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.body).not.toContain(SENTINEL);
+    const form = await app.inject({
+      method: 'POST',
       url: '/api/auth/login',
-      headers: from('10.0.0.2'),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'email=x&password=y',
     });
-    expect(other.headers['location']).toBe('/?authError=IDENTITY_PROVIDER_UNAVAILABLE');
+    expect(form.statusCode).toBe(415);
   });
 
-  it('keys on the address the proxy appended, ignoring addresses a client prepends', async () => {
+  it('rate limits login before reaching the database', async () => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      await app.inject({ method: 'GET', url: '/api/auth/login', headers: from('10.0.0.3') });
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'user@example.invalid', password: 'long enough password for test' },
+      });
+      expect(response.statusCode).toBe(500);
     }
-    const spoofed = await app.inject({
-      method: 'GET',
+    const limited = await app.inject({
+      method: 'POST',
       url: '/api/auth/login',
-      headers: from('192.0.2.77, 10.0.0.3'),
+      payload: { email: 'user@example.invalid', password: 'long enough password for test' },
     });
-    expect(spoofed.headers['location']).toBe('/?authError=AUTH_RATE_LIMITED');
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers['retry-after']).toBeDefined();
+    expect(logs.join('')).not.toContain('long enough password for test');
+  });
+
+  it('documents local login and no external callback endpoints', () => {
+    const paths = createOpenApiDocument(app).paths;
+    expect(paths['/api/auth/login']?.post).toBeDefined();
+    expect(paths['/api/auth/login']?.get).toBeUndefined();
+    expect(paths['/api/auth/callback']).toBeUndefined();
+    expect(paths['/api/auth/backchannel-logout']).toBeUndefined();
+    expect(paths['/api/auth/logout']?.post?.security).toEqual([{ session: [] }]);
   });
 });

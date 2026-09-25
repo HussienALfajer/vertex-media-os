@@ -725,7 +725,7 @@ At minimum, review:
 - account disablement;
 - role/permission changes;
 - sensitive actions;
-- identity-provider configuration for password, MFA, and recovery policy;
+- local password hashing, login rate limits, and credential handling;
 - file access;
 - exports;
 - CSRF behavior where applicable.
@@ -734,24 +734,24 @@ Security policy is defined in `docs/SECURITY.md`; this document defines how corr
 
 ### Authentication and application-session verification
 
-Authentication follows the Keycloak + backend application-session (BFF) architecture (`docs/ARCHITECTURE.md`, Section 22). Tests prove Vertex OS behavior at that boundary rather than re-testing Keycloak:
+Authentication follows the local password and backend application-session architecture (`docs/ARCHITECTURE.md`, Section 22). Tests prove Vertex OS behavior at that boundary:
 
 - an unauthenticated request is denied with the stable error contract and no session is created;
 - an invalid, expired, or revoked application session is denied and is not silently re-accepted;
 - application logout invalidates the session server-side; the old session identifier no longer works;
-- a successful identity-provider authentication is mapped to exactly the correct Vertex application user;
-- a disabled or unmapped Vertex application user is denied even though identity-provider authentication succeeded;
-- state-changing cookie-authenticated requests without the required CSRF proof are rejected, and the OIDC callback rejects a mismatched `state`;
-- identity-provider tokens never appear in response bodies, headers, or browser-readable cookies;
+- a correct email and password resolve exactly one Vertex application user;
+- wrong passwords, unknown email addresses, and disabled users are denied without account enumeration;
+- state-changing cookie-authenticated requests without the required CSRF proof are rejected;
+- passwords and hashes never appear in response bodies, headers, logs, audit records, or browser-readable storage;
 - RBAC and resource-level authorization are enforced independently of authentication: an authenticated user without the required permission or scope is denied.
 
-Identity-provider behavior (password policy, MFA, recovery, brute-force protection) is verified as configuration against `docs/SECURITY.md`, not reimplemented in Vertex tests.
+Password hashing, policy, failed-login behavior and rate limits are verified against `docs/SECURITY.md`.
 
-### Identity provider in tests
+### Authentication in tests
 
-API and application tests MAY establish an application session directly through the backend's own session-establishment capability for a synthetic user, provided the identity-to-application-user mapping path is the production one.
+API and application tests MAY establish an application session directly through the backend's own session-establishment capability for a synthetic user. Separate integration tests MUST exercise the real credential verification path.
 
-Browser E2E authentication journeys (login, logout, session expiry) SHOULD run against a local Keycloak instance, for example via Testcontainers, with a reproducible test realm, so the real OIDC redirect and callback path is exercised.
+Browser E2E authentication journeys (login, logout, session expiry and employee creation) SHOULD run against disposable PostgreSQL with the production credential and session paths.
 
 Authentication MUST NOT be bypassed or stubbed out of the build under test, and test-only authentication hooks MUST NOT exist in production code paths.
 

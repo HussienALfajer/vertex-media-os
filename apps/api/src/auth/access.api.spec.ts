@@ -21,13 +21,7 @@ const config = () =>
   });
 
 /** The only routes that may answer without an application session (D-02). */
-const PUBLIC_ROUTES = [
-  'GET /api/auth/callback',
-  'GET /api/auth/login',
-  'GET /api/health/live',
-  'GET /api/health/ready',
-  'POST /api/auth/backchannel-logout',
-];
+const PUBLIC_ROUTES = ['GET /api/health/live', 'GET /api/health/ready', 'POST /api/auth/login'];
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
@@ -89,8 +83,6 @@ describe('protected by default', () => {
       }
     }
     expect(marked.sort()).toEqual([
-      'AuthController.backchannelLogout',
-      'AuthController.callback',
       'AuthController.login',
       'HealthController.live',
       'HealthController.ready',

@@ -42,12 +42,11 @@ const VISUAL_BROWSER = {
  *
  * `users-admin.spec.ts` and `privileges-admin.spec.ts` render the IAM administration screens of the
  * production build with the browser's `/api` requests answered in the page (IAM-R08B D-15,
- * IAM-R08C D-14); the signed-in journeys through the real API and Keycloak live in `iam/` and run
- * under `playwright.iam.config.mts` (IAM-R09B), outside this configuration's `testDir`.
+ * IAM-R08C D-14); the signed-in journeys through the real API and PostgreSQL live in `iam/` and run
+ * under `playwright.iam.config.mts`, outside this configuration's `testDir`.
  *
- * The smoke journeys observe liveness, the signed-out entry (a session read without a cookie
- * is refused before any database access) and a sign-in start that cannot reach the identity
- * provider; none touches PostgreSQL. Readiness against real PostgreSQL is proven by the
+ * The smoke journeys observe liveness and the signed-out entry (a session read without a cookie
+ * is refused before any database access). Readiness against real PostgreSQL is proven by the
  * Testcontainers integration tests. The API still validates its configuration at startup, so it
  * receives a syntactically valid, non-production database URL that is never connected.
  */
@@ -124,7 +123,7 @@ export default defineConfig({
   webServer: [
     {
       name: 'api',
-      command: 'pnpm exec nx run @vertex-os/api:serve',
+      command: 'node ./node_modules/nx/dist/bin/nx.js run @vertex-os/api:serve',
       cwd: workspaceRoot,
       url: `http://127.0.0.1:${API_PORT}/api/health/live`,
       reuseExistingServer: false,
@@ -135,35 +134,27 @@ export default defineConfig({
         API_PORT,
         LOG_LEVEL: 'warn',
         DATABASE_URL: 'postgresql://e2e:not-used@127.0.0.1:1/never_connected',
-        // Required by the API's sign-in configuration. The issuer is unreachable on purpose (port 1
-        // is refused by fetch), so a sign-in start returns IDENTITY_PROVIDER_UNAVAILABLE.
-        KEYCLOAK_ISSUER_URL: 'http://127.0.0.1:1/realms/never-contacted',
-        KEYCLOAK_WEB_CLIENT_SECRET: 'e2e-not-used-client-secret',
-        KEYCLOAK_WEB_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/api/auth/callback`,
-        KEYCLOAK_WEB_POST_LOGOUT_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/`,
-        AUTH_TOKEN_ENCRYPTION_SECRET: 'e2e-not-used-token-encryption-secret',
-        // Required by IAM identity provisioning; no journey provisions, so none is contacted.
-        KEYCLOAK_PROVISIONER_CLIENT_ID: 'e2e-not-used-provisioner',
-        KEYCLOAK_PROVISIONER_CLIENT_SECRET: 'e2e-not-used-provisioner-secret',
+        AUTH_TOKEN_ENCRYPTION_SECRET: 'local-e2e-legacy-session-key-not-used',
+        NX_DAEMON: 'false',
       },
     },
     {
       name: 'web',
-      command: 'pnpm exec nx run @vertex-os/web:preview',
+      command: 'node ./node_modules/nx/dist/bin/nx.js run @vertex-os/web:preview',
       cwd: workspaceRoot,
       url: `http://127.0.0.1:${WEB_PORT}`,
       reuseExistingServer: false,
       timeout: 180_000,
-      env: { API_HOST: '127.0.0.1', API_PORT },
+      env: { API_HOST: '127.0.0.1', API_PORT, NX_DAEMON: 'false' },
     },
     {
       name: 'lab',
-      command: 'pnpm exec nx run @vertex-os/web:preview-lab',
+      command: 'node ./node_modules/nx/dist/bin/nx.js run @vertex-os/web:preview-lab',
       cwd: workspaceRoot,
       url: `http://127.0.0.1:${LAB_PORT}/dev/ui`,
       reuseExistingServer: false,
       timeout: 180_000,
-      env: { API_HOST: '127.0.0.1', API_PORT },
+      env: { API_HOST: '127.0.0.1', API_PORT, NX_DAEMON: 'false' },
     },
   ],
 });

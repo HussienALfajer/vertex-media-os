@@ -56,7 +56,7 @@ The system consists primarily of:
 * a backend application,
 * business-domain modules,
 * a relational database,
-* an external identity provider,
+* IAM-owned local credentials and backend-owned application sessions,
 * and supporting runtime components introduced only when a demonstrated requirement justifies them.
 
 Primary architecture characteristics:
@@ -188,9 +188,7 @@ Tailwind CSS is the styling foundation for Vertex UI.
 
 ### AC-13
 
-Authentication is delegated to Keycloak through OpenID Connect.
-
-The Vertex OS backend integrates with Keycloak as a confidential OIDC client using the Authorization Code Flow with PKCE and acts as the browser-facing backend-for-frontend (BFF). The browser holds only an opaque, `Secure`, `HttpOnly` application session cookie issued by the backend; identity-provider tokens never reach browser application code.
+Authentication uses local IAM email and password credentials as accepted in ADR 0001. The backend verifies the password and issues an opaque, `Secure`, `HttpOnly` application session cookie. The browser never stores a session secret or credential hash.
 
 Responsibilities are defined in Section 22.
 
@@ -230,11 +228,8 @@ At the current architecture baseline, the system context is intentionally small.
 flowchart LR
     Staff["Vertex Media Staff & Management"]
     VertexOS["Vertex OS"]
-    IdP["Keycloak Identity Provider"]
 
     Staff -->|Uses| VertexOS
-    Staff -.->|Sign-in UI via browser redirect| IdP
-    VertexOS -->|OIDC as confidential client| IdP
 ```
 
 External integrations MUST NOT be represented as active architecture until they are actually approved and introduced.
@@ -335,16 +330,14 @@ flowchart LR
     Web["Vertex Web Application"]
     API["Vertex Backend API"]
     DB[("PostgreSQL")]
-    IdP["Keycloak"]
 
     Browser --> Web
     Web -->|HTTPS / REST with application session cookie| API
-    Browser -.->|Sign-in redirect to IdP login UI| IdP
-    API -->|OIDC Authorization Code with PKCE, confidential client| IdP
+    Web -->|Email and password sign-in| API
     API -->|Transactional persistence| DB
 ```
 
-The browser is redirected to Keycloak only for the sign-in user interface. The backend exchanges the authorization code for tokens, keeps them server-side, and issues its own application session to the browser.
+The browser submits credentials to the Vertex OS login form. The backend verifies them and issues its own application session to the browser.
 
 Additional runtime components MUST have a documented reason for existence.
 
@@ -917,45 +910,22 @@ Third-party low-level primitives MAY be considered when they provide a meaningfu
 
 ## 22. Identity and Authentication Boundary
 
-Authentication uses one topology:
+Authentication follows [ADR 0001](adr/0001-local-password-authentication.md):
 
 ```text
+Browser / React email and password form
+        | POST /api/auth/login (same origin)
+        v
+Vertex OS API — IAM credential verification and authorization
+        | salted scrypt hash, users, roles and permissions
+        v
+PostgreSQL
+        ^
+        | opaque Secure / HttpOnly / SameSite=Strict application session cookie
 Browser / React
-        |
-        | Secure + HttpOnly application session cookie
-        v
-Vertex OS API / BFF
-        |
-        | OIDC Authorization Code Flow + PKCE
-        | confidential client
-        v
-Keycloak
 ```
 
-Keycloak owns identity-provider concerns:
-
-* primary identity and user credentials,
-* password hashing, credential storage, and password policy,
-* MFA credential factors,
-* identity-provider credential recovery,
-* the IdP/SSO authentication session,
-* OIDC/OAuth2 token issuance and authentication-protocol behavior.
-
-The Vertex OS backend, acting as BFF, owns:
-
-* the browser-facing application session and its opaque session cookie,
-* the server-side association between the application session and OIDC state/tokens,
-* CSRF protection for cookie-authenticated application requests,
-* application logout and session termination,
-* mapping the authenticated identity into the Vertex OS application context.
-
-Vertex IAM owns application-specific access concepts:
-
-* the application user record and its mapping to the identity-provider identity,
-* organizational membership and department relationships,
-* application roles, permissions, and scopes/capabilities where applicable,
-* application account/access state,
-* application-level authorization primitives.
+The API verifies credentials, applies generic failure responses and rate limits, issues and revokes application sessions, and enforces CSRF on authenticated writes. IAM owns the local account, password hash, access state, roles, permissions and organizational memberships. Business domains own resource-level decisions. The frontend never stores credentials or session secrets. No Keycloak, OIDC, MFA or TOTP service participates in the active sign-in path.
 
 Business domains own resource-level and domain-specific authorization decisions.
 
@@ -963,21 +933,21 @@ Business domains own resource-level and domain-specific authorization decisions.
 
 Successful authentication MUST NOT imply unrestricted application access.
 
-Identity-provider authentication establishes identity only. Access additionally requires an active Vertex application user mapped to that identity, and every business operation requires Vertex authorization.
+Password verification establishes identity only. Access additionally requires an eligible Vertex application user, and every business operation requires Vertex authorization.
 
 ### AR-035 — Application Authorization
 
 Vertex OS MUST enforce business authorization independently of client-side interface visibility.
 
-### AR-036 — External Identity References
+### AR-036 — Local Identity
 
-Application data MAY reference external identity identifiers, but business-domain models SHOULD NOT become coupled to Keycloak's internal persistence model.
+The IAM user UUID is the local identity subject. Legacy external identifiers are retained only as migration history and MUST NOT be used for new authentication.
 
 ### AR-041 — Backend-Owned Application Session
 
 The browser authenticates to Vertex OS only through the backend-issued application session.
 
-Identity-provider tokens are held server-side and MUST NOT be delivered to, stored by, or handled in browser application code.
+The browser holds no bearer token. The server stores only a hash of each session secret; credential hashes never appear in public API responses.
 
 Detailed authentication, session, credential, and authorization security requirements belong to `docs/SECURITY.md`; IAM ownership belongs to `docs/MODULES.md`.
 
@@ -1365,10 +1335,9 @@ Major decisions SHOULD be recorded as ADRs.
 
 Expected foundational ADRs include:
 
-* `ADR-0001` — Modular Monolith.
+* `ADR-0001` — Local Password Authentication (accepted; see `docs/adr/0001-local-password-authentication.md`).
 * `ADR-0002` — PostgreSQL as Primary Transactional Store.
 * `ADR-0003` — NestJS + Fastify Backend Platform.
-* `ADR-0004` — Keycloak OIDC Authentication with Backend-Owned Application Sessions (BFF).
 * `ADR-0005` — Custom Vertex UI System.
 * `ADR-0006` — Local-First Development.
 * `ADR-0007` — REST + OpenAPI External API.
