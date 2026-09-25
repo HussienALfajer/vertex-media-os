@@ -1,9 +1,10 @@
 # IAM-R10 — Local password authentication
 
-**Status:** IN_PROGRESS  
+**Status:** IN_REVIEW  
 **Master Plan stage:** Owner-directed IAM-R10 amendment  
 **Risk tier:** A — Critical  
 **Branch:** `codex/local-auth`  
+**Pull request:** [#23](https://github.com/HussienALfajer/vertex-media-os/pull/23)  
 **Baseline commit:** `a5c8e633512afb1f16e06881adb0fb55bf5cc3fb`
 
 ## 1. Objective
@@ -56,7 +57,7 @@ Replacing an already configured password requires a separate future recovery wor
 - [x] Browser end-to-end gate passes.
 - [x] Canonical documentation and OpenAPI route definitions reflect the new behavior.
 - [x] Tier A review findings are resolved.
-- [ ] A pull request is opened.
+- [x] A pull request is opened.
 
 ## 7. Stop conditions
 
