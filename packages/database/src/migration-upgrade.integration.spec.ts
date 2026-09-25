@@ -14,6 +14,7 @@ const AUTH_SESSIONS = '20260923190000_auth_sessions';
 const AUTH_REFRESH_TOKEN = '20260923210000_auth_session_refresh_token';
 const AUTH_SESSION_LIFECYCLE = '20260924020000_auth_session_lifecycle';
 const AUTH_SESSION_HOUSEKEEPING = '20260924200000_auth_session_housekeeping';
+const LOCAL_PASSWORD_CREDENTIALS = '20260925060000_local_password_credentials';
 const migrationsRoot = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
 const schemaRoot = fileURLToPath(new URL('../prisma/schema', import.meta.url));
 
@@ -107,12 +108,48 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
         { name: AUTH_REFRESH_TOKEN, finished: true, rolledBack: false },
         { name: AUTH_SESSION_LIFECYCLE, finished: true, rolledBack: false },
         { name: AUTH_SESSION_HOUSEKEEPING, finished: true, rolledBack: false },
+        { name: LOCAL_PASSWORD_CREDENTIALS, finished: true, rolledBack: false },
       ]);
       expect(await hasSystemCodeCheck(client)).toBe(true);
       expect(await roles(client)).toEqual(before);
       const [mapping] = await client.$queryRaw<Array<{ count: number }>>`
         SELECT count(*)::int AS count FROM iam_role_permission`;
       expect(mapping?.count).toBe(1);
+    });
+  }, 180_000);
+
+  it('preserves existing users and legacy identity values while requiring a local password', async () => {
+    await withIam01Database(async (postgres, client) => {
+      await client.$executeRaw`INSERT INTO iam_application_user
+        (email, display_name, access_state, identity_issuer, identity_subject,
+         identity_sync_state, invitation_delivery_state)
+        VALUES ('legacy@example.invalid', 'Legacy User', 'INVITED',
+                'https://identity.example.invalid/realm', 'previous-subject', 'SYNCED', 'NOT_SENT')`;
+      await postgres.prisma(['migrate', 'deploy']);
+      const rows = await client.$queryRaw<
+        Array<{
+          email: string;
+          identityIssuer: string;
+          identitySubject: string;
+          passwordHash: string | null;
+          previousIssuer: string;
+          previousSubject: string;
+        }>
+      >`SELECT u.email, u.identity_issuer AS "identityIssuer",
+          u.identity_subject AS "identitySubject", u.password_hash AS "passwordHash",
+          m.identity_issuer AS "previousIssuer", m.identity_subject AS "previousSubject"
+        FROM iam_application_user u
+        JOIN iam_legacy_identity_mapping m ON m.user_id = u.id`;
+      expect(rows).toEqual([
+        {
+          email: 'legacy@example.invalid',
+          identityIssuer: 'vertex-local',
+          identitySubject: expect.any(String),
+          passwordHash: null,
+          previousIssuer: 'https://identity.example.invalid/realm',
+          previousSubject: 'previous-subject',
+        },
+      ]);
     });
   }, 180_000);
 
@@ -126,7 +163,7 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
       // With the atomic wrapper, Prisma 7.10 reports the secondary error for the failed migration
       // (IAM-01 D-09's accepted cost); the root cause is found as IAM-01 Section 16.5 describes.
       expect(failed.output).toContain('current transaction is aborted');
-      expect(failed.output).toContain(`migration_name="${IAM_SYSTEM_ROLE_CODE}"`);
+      expect(failed.output).toContain(`Applying migration \`${IAM_SYSTEM_ROLE_CODE}\``);
 
       expect(await hasSystemCodeCheck(client)).toBe(false);
       expect(await roles(client)).toEqual([
@@ -164,10 +201,11 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
 
         await postgres.prisma(['migrate', 'deploy']);
 
-        expect((await history(client)).slice(-3)).toEqual([
+        expect((await history(client)).slice(-4)).toEqual([
           { name: AUTH_REFRESH_TOKEN, finished: true, rolledBack: false },
           { name: AUTH_SESSION_LIFECYCLE, finished: true, rolledBack: false },
           { name: AUTH_SESSION_HOUSEKEEPING, finished: true, rolledBack: false },
+          { name: LOCAL_PASSWORD_CREDENTIALS, finished: true, rolledBack: false },
         ]);
         // The housekeeping index is built over the existing rows (IAM-R09 D-06).
         const [index] = await client.$queryRaw<Array<{ count: number }>>`

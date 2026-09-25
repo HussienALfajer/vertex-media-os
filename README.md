@@ -1,289 +1,142 @@
 # Vertex OS
 
-Internal operating platform of Vertex Media: a TypeScript modular monolith (pnpm + Nx) with a
-NestJS-on-Fastify API, a React/Vite web application and PostgreSQL through Prisma ORM 7.
+Vertex Media's internal operating platform is a TypeScript modular monolith: NestJS on Fastify,
+React with Vite, PostgreSQL through Prisma 7, pnpm and Nx. The IAM module owns accounts, password
+hashes, roles, permissions, departments and access state. The API owns opaque application sessions.
+Sign-in is an email and password form in the Vertex UI. There is no external identity provider or
+second authentication factor. The accepted change is recorded in
+[ADR-0001](docs/adr/0001-local-password-authentication.md).
 
-This repository contains the **Phase 0 technical foundation**, the **Vertex Design System
-Foundation** (`packages/ui`, specified in [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)), the IAM
-persistence foundation (`domains/iam` and `domains/iam-persistence`), and the IAM reference data
-with the minimal MOD-AUDIT foundation (`domains/audit` and `domains/audit-persistence`). IAM
-tables, the permission catalog and the protected System Administrator role exist. A local Keycloak
-with the Vertex realm (`infra/keycloak`) and a local mail sink run next to PostgreSQL. The API signs
-users in through Keycloak as a backend-for-frontend (`apps/api/src/auth`): OIDC with PKCE, an
-opaque server-side session in PostgreSQL, CSRF protection, logout and Keycloak back-channel logout.
-Every API route requires that session unless it is one of the five public routes (health, login,
-callback, back-channel logout), and a route can require an IAM permission code, checked against the
-user's current roles, permissions and departments on every request.
-IAM identity provisioning (reconciling users with Keycloak and sending invitations, in
-`domains/iam`, through the Keycloak Admin adapter `domains/iam-keycloak`) runs behind the IAM
-administration API, the web app's administration screens and `pnpm iam:bootstrap`.
-The product and architecture are defined in the canonical documents: [product](docs/PRODUCT.md),
-[architecture](docs/ARCHITECTURE.md), [modules](docs/MODULES.md),
-[engineering](docs/ENGINEERING.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md) and
-[design system](docs/DESIGN_SYSTEM.md). Coding agents start with [AGENTS.md](AGENTS.md).
+Canonical product and engineering documents are in [docs](docs/); agents follow [AGENTS.md](AGENTS.md).
 
 ## Prerequisites
 
-- **Node.js 24 LTS** — `.node-version` pins `24.21.0`; `package.json` requires `>=24 <25`.
-- **pnpm 12.5.1** — pinned in `package.json` (`packageManager`). A globally installed pnpm switches
-  to the pinned version automatically.
-- **Docker** with Compose v2 and a running daemon — for local PostgreSQL, Keycloak and Mailpit, the
-  Testcontainers integration tests and the visual baselines (rendered in the pinned Playwright
-  Linux image).
+- Node.js 24 (see `.node-version`) and pnpm 12.5.1 (see `package.json`).
+- Docker with Compose v2 for PostgreSQL, database integration tests and Playwright visual tests.
 
-## First-time setup
+## Local setup
 
 ```sh
-pnpm install                           # installs exactly what pnpm-lock.yaml records
-pnpm env:setup                         # creates the ignored .env with generated local secrets
-pnpm infra:up                          # starts PostgreSQL 18, Keycloak 26.7.4 and Mailpit on 127.0.0.1, waits until healthy
-pnpm db:migrate                        # applies forward-only database migrations
-pnpm iam:sync-reference                # synchronizes the IAM permission catalog and system role
-pnpm iam:bootstrap --email <address> --display-name "<name>"  # invites the first System Administrator
-pnpm exec playwright install chromium firefox webkit  # browsers for the end-to-end tests
+pnpm install
+pnpm env:setup
+pnpm infra:up
+pnpm db:migrate
+pnpm iam:sync-reference
 ```
 
-`pnpm env:setup` generates the local database password, the Keycloak administrator credentials,
-the two Keycloak client secrets, the realm's SMTP password and the API's ID-token encryption
-secret, and never prints them. It never rewrites an existing `.env`: run
-again after `.env.example` gains keys (for example after pulling a new service), it appends only
-the missing keys. It refuses to generate a value while the Docker volume that keeps it exists,
-because PostgreSQL and Keycloak keep the credentials they were initialised with. To rotate the
-local credentials, delete the local data first (all of it is lost): `pnpm infra:reset`, then
-`pnpm env:setup -- --force`, then re-apply local overrides such as `POSTGRES_PORT` and
-`pnpm infra:up`.
-If port 5432 is already taken, change `POSTGRES_PORT` and the port in `DATABASE_URL` in `.env`;
-for Keycloak change `KEYCLOAK_PORT` and the port in `KEYCLOAK_ISSUER_URL`; for the mail sink change
-`MAILPIT_PORT`. Never put production values in `.env`, and do not add
-`NODE_ENV` to it (see `.env.example`).
+`env:setup` creates the ignored `.env` with a generated local PostgreSQL password and preserves
+existing values. The default database and API listen on loopback. If PostgreSQL port 5432 is taken,
+change `POSTGRES_PORT` and `DATABASE_URL` in `.env`. Never use production secrets in this file.
 
-## Running locally
+The first administrator is created by an explicit operator command. Set a strong password in the
+process environment, then run:
 
 ```sh
-pnpm dev        # API (rebuilds and restarts on change) and web dev server together
-pnpm dev:api    # API only
-pnpm dev:web    # web only
+pnpm iam:bootstrap --email info@vertexmedia.pro
 ```
 
-| URL                                         | What                                                                         |
-| ------------------------------------------- | ---------------------------------------------------------------------------- |
-| http://127.0.0.1:4200                       | Web shell; it calls the API through `/api` (Vite proxy)                      |
-| http://127.0.0.1:4200/dev/ui                | Design-system lab (development and the `lab` build only; synthetic data)     |
-| http://127.0.0.1:3000/api/health/live       | Liveness: `200 {"status":"ok"}`, independent of PostgreSQL                   |
-| http://127.0.0.1:3000/api/health/ready      | Readiness: `200` when PostgreSQL answers, otherwise a `503` within about 3 s |
-| http://127.0.0.1:4200/api/auth/login        | Sign in through Keycloak (password and TOTP); back to `/` with a session     |
-| http://127.0.0.1:3000/api/docs              | Swagger UI (off by default when `NODE_ENV=production`)                       |
-| http://127.0.0.1:3000/api/docs/openapi.json | OpenAPI document                                                             |
-| http://127.0.0.1:8080/realms/vertex         | Local Keycloak `vertex` realm (issuer); `/.well-known/openid-configuration`  |
-| http://127.0.0.1:8080/admin                 | Keycloak admin console: `KEYCLOAK_BOOTSTRAP_ADMIN_*` from `.env`             |
-| http://127.0.0.1:8025                       | Mailpit: every invitation and password-reset email the local realm sends     |
+`IAM_BOOTSTRAP_PASSWORD` must be present in that process environment; it is never a CLI argument,
+logged value, committed default or generated account. On PowerShell, set it only for the command
+session and remove it afterward. Bootstrap requires `iam:sync-reference` to have created the
+protected System Administrator role. The command refuses an existing email; it does not reset or
+overwrite an account. The current owner administrator was provisioned in the local development
+database during the local-auth migration. Deploying elsewhere requires running the migrations,
+reference synchronization and bootstrap against that environment.
 
-Errors use RFC 9457 Problem Details (`application/problem+json`) with a stable `code` and the
-request's `traceId`; every response carries an `x-request-id` header.
+Start the application with `pnpm dev` (or `pnpm dev:api` and `pnpm dev:web`). Open
+`http://127.0.0.1:4200/`, enter the administrator email and password, then use **Users → Add user**
+to create employee accounts. Each employee gets an email and password. The administrator can
+select roles on the creation screen; the backend enforces the actor's grant ceiling. Role mappings
+control permissions, and the account becomes active on its first successful sign-in.
 
-## Database and infrastructure
+| Address                                  | Purpose                                        |
+| ---------------------------------------- | ---------------------------------------------- |
+| `http://127.0.0.1:4200/`                 | Application and sign-in form                   |
+| `http://127.0.0.1:3000/api/health/live`  | API liveness                                   |
+| `http://127.0.0.1:3000/api/health/ready` | PostgreSQL readiness                           |
+| `http://127.0.0.1:3000/api/docs`         | OpenAPI UI (disabled by default in production) |
 
-```sh
-pnpm db:validate   # validate the Prisma schema
-pnpm db:generate   # generate the Prisma client into packages/database/src/generated (ignored)
-pnpm db:migrate    # apply pending migrations; safe to run again (no reset)
-pnpm iam:sync-reference  # synchronize IAM reference data (after db:migrate); safe to run again
-pnpm iam:bootstrap --email <address> --display-name "<name>"  # first System Administrator; safe to run again
-pnpm infra:down    # stop local PostgreSQL, Keycloak and Mailpit; both data volumes are kept
-pnpm infra:reset   # stop them AND delete both local data volumes (destructive)
-```
+## Authentication and IAM
 
-Keycloak runs in development mode (never a production configuration) with its embedded database
-in the `keycloak-data` volume. The `vertex` realm is imported from
-`infra/keycloak/import/vertex-realm.json` only when that volume is empty; client secrets and the
-environment-specific URIs in it are placeholders filled from `.env`. Realm changes therefore take
-effect only after `pnpm infra:reset`, which deletes the Keycloak and PostgreSQL data together so
-IAM users and Keycloak identities never drift apart. Do not change the realm in the admin console:
-the committed file is the source of truth. Non-secret server options (health, Argon2id password
-hashing) live in `infra/keycloak/keycloak.env`, shared with the integration tests.
+`POST /api/auth/login` accepts JSON email and password and sets an opaque, `Secure`, `HttpOnly`,
+`SameSite=Strict` cookie. The password is held only long enough to verify the salted scrypt hash.
+The browser never stores a password or session secret. Unknown accounts and incorrect passwords
+receive the same failed-login response; attempts are rate-limited. `GET /api/auth/session` reads
+the current user, `GET /api/auth/csrf` provides the token required for unsafe authenticated
+requests, and `POST /api/auth/logout` revokes the session. Sessions expire after 30 minutes idle
+and 10 hours total by default. Access state and effective permissions are checked on each request.
 
-The realm sends email (invitations, verification and self-service password reset) through
-Mailpit, a local mail sink that accepts any credentials and delivers nothing onward; its messages
-are kept in memory and are gone when the container stops. Self-service reset asks for the enrolled
-one-time code before a new password, so a mailbox alone cannot replace both factors. A Keycloak
-volume created before the SMTP settings existed has no email configuration and still has reset
-off: `pnpm infra:reset` imports the current realm (and `pnpm env:setup` refuses to add the new
-SMTP password while that volume exists). `pnpm infra:down` and `pnpm infra:reset` read only
-`.env.example`, so they work even when `.env` still lacks keys added since it was created.
+The `/api/iam` routes provide the user directory, creation, role assignments, departments, role
+management, access restriction, session revocation and the permission catalog. They require a
+session and the route's IAM permission; writes require the CSRF token. Problem responses follow
+RFC 9457 and include a stable code and trace ID. The OpenAPI document is available at
+`/api/docs/openapi.json` and via `pnpm openapi:generate`.
 
-There are four migrations: `20260923013708_iam_persistence_foundation` creates seven IAM tables
-and their structural constraints; `20260923035742_audit_foundation` creates MOD-AUDIT's
-append-only `audit_record` table; `20260923041312_iam_system_role_code` adds
-`iam_role_system_code_ck`, which reserves the code `system-administrator` for the one system role;
-`20260923190000_auth_sessions` creates the API's `auth_session` and `auth_login_attempt` tables
-(platform authentication state, not IAM domain state).
-The schema lives in `packages/database/prisma/schema/` (one file per owning module); migrations
-live in `packages/database/prisma/migrations/`. The API does not apply migrations on startup.
+Existing users from the previous identity-provider schema retain their IAM data. The local-auth
+migration copies old issuer and subject identifiers into a legacy mapping table, then sets the
+active identity to the local user ID. Old provider-backed sessions cannot authenticate. Existing
+users without a local password cannot sign in until an administrator with
+`iam.users.manage-access` sets their initial password using
+`POST /api/iam/users/:userId/password` with the current `expectedVersion`, a 15–128 character
+password and a CSRF token. The action is audited and can be used only once per legacy account.
+The new administrator account and all new staff accounts have local passwords.
 
-If `pnpm db:migrate` fails, its explicit transaction wrapper leaves no partial schema, but Prisma
-records a failed `_prisma_migrations` row (P3018, or the message `current transaction is aborted`
-naming the migration); the next deploy then refuses with P3009. The transaction-aborted message
-hides the original SQL error: reproduce the migration against a **disposable database only** with
-`psql -v ON_ERROR_STOP=1 -f <migration.sql>`. Correct the environment, privileges or data rather
-than editing an already committed migration. Then run
-`pnpm --filter @vertex-os/database exec prisma migrate resolve --rolled-back <migration_name>`
-and retry `pnpm db:migrate`. Prisma refuses a nonempty schema without migration history (P3005);
-do not bypass that check. `iam_role_system_code_ck` fails on a database where a custom role already
-uses the reserved code; such data is never changed by tooling and must be resolved deliberately.
+## Database and commands
 
-`pnpm iam:sync-reference` is an explicit operator command; it never runs on API start or in a
-migration. In one transaction serialized by an advisory lock, it registers or updates the
-code-defined IAM permissions (spec Section 19), creates the protected `system-administrator` role
-if missing, repairs its name and description, and maps it to exactly the ACTIVE permissions. Every
-change gets an Audit record in the same transaction: the first run on an empty database writes 12
-permissions, 1 role, 12 mappings and 14 Audit records; a second run writes nothing. It refuses,
-changing nothing, if the database holds a permission code that no manifest declares, if a RETIRED
-permission would become active again, or if the system role is inconsistent. It logs one JSON
-result line (`iam reference data synchronized`, `… refused` or `… failed`, with a `traceId` that
-also appears on the Audit records) and never logs the connection string. The command process
-exits 0 (synchronized, with or without changes), 2 (refused) or 1 (configuration or unexpected
-failure); through `pnpm`/Nx any non-zero exit is reported as 1, so read the result line. Run it
-after every `pnpm db:migrate`; `pnpm iam:bootstrap` refuses until reference data is synchronized.
+| Command                                 | Purpose                                                             |
+| --------------------------------------- | ------------------------------------------------------------------- |
+| `pnpm infra:up` / `pnpm infra:down`     | Start / stop the local PostgreSQL service; data is retained         |
+| `pnpm infra:reset`                      | Delete the local PostgreSQL volume (destructive)                    |
+| `pnpm db:validate` / `pnpm db:generate` | Validate the schema / generate the Prisma client                    |
+| `pnpm db:migrate`                       | Apply forward-only migrations; API startup never migrates           |
+| `pnpm iam:sync-reference`               | Synchronize permission catalog and protected system role            |
+| `pnpm iam:bootstrap --email <address>`  | Create the first local administrator using `IAM_BOOTSTRAP_PASSWORD` |
 
-`pnpm iam:bootstrap --email <address> --display-name "<name>"` is the only way to create the first
-System Administrator (spec Section 21); no user is ever seeded and there is no HTTP endpoint for it.
-It needs the database and the Keycloak provisioner settings of `.env` (`DATABASE_URL`,
-`KEYCLOAK_ISSUER_URL`, `KEYCLOAK_PROVISIONER_CLIENT_ID`, `KEYCLOAK_PROVISIONER_CLIENT_SECRET`), and
-runs the same way locally and in production. It decides only from committed state: with no
-candidate it creates an INVITED user holding the `system-administrator` role, then creates the
-Keycloak identity and sends the invitation (locally to Mailpit), through which the administrator
-sets a password and enrolls TOTP; Vertex never sees or sets credentials. Run again with the same
-email, it resumes an interrupted run and otherwise changes nothing; `--resend-invitation` sends a
-new invitation email. It refuses while an ACTIVE System Administrator exists (further
-administrators are managed in IAM), for a different email, or with more than one candidate.
-`--recovery --reason "<text>"` is for a lost bootstrap when no ACTIVE System Administrator exists:
-it terminates INVITED candidates, removes the role from SUSPENDED or DISABLED ones without changing
-their access, and creates one new candidate for a new email. An ACTIVE administrator who lost a
-password or TOTP is recovered in Keycloak, not here. Every run is audited as the `iam.bootstrap`
-system process. Its own JSON result line carries the user ID and outcomes, never the email, name,
-reason or a secret; `pnpm` and Nx do echo the command line with its arguments before it runs,
-so the email, name and reason appear in that terminal or CI output. It exits 0 (complete), 2 (refused), 3 (a Keycloak step did not complete; run
-it again to resume), 64 (usage) or 1 (unexpected failure); through `pnpm`/Nx any non-zero exit
-is reported as 1.
+The Prisma schema lives under `packages/database/prisma/schema/`; migrations live under
+`packages/database/prisma/migrations/`. `iam:sync-reference` runs in one transaction and audits
+changes. If Prisma reports a failed migration, investigate the database and use its documented
+`migrate resolve` flow only after correcting the cause; do not edit an already applied migration.
 
 ## Verification
 
-| Command                 | Runs                                                                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm format`           | Prettier (writes); `pnpm format:check` only checks                                                                                         |
-| `pnpm lint`             | ESLint for every project, including the Nx module-boundary rules                                                                           |
-| `pnpm lint:boundaries`  | Virtual negative and positive boundary probes (V1–V135, C1–C18)                                                                            |
-| `pnpm typecheck`        | TypeScript for every project                                                                                                               |
-| `pnpm test`             | Unit, API (Fastify inject) and frontend (Testing Library) tests with Vitest                                                                |
-| `pnpm build`            | Production builds of every project with a build target                                                                                     |
-| `pnpm test:integration` | Tests against real, ephemeral PostgreSQL and Keycloak (Testcontainers; Docker)                                                             |
-| `pnpm test:e2e`         | Playwright: production smoke, design-system lab in 3 engines, visual baselines, then the IAM journeys against real Keycloak and PostgreSQL |
-| `pnpm verify`           | Fast gate: format check → lint → lint:boundaries → typecheck → test → build                                                                |
-| `pnpm verify:full`      | `verify` + Prisma validate/generate + integration tests + end-to-end tests                                                                 |
-| `pnpm deps:audit`       | Dependency vulnerability audit (reviewed exceptions are in `pnpm-workspace.yaml`)                                                          |
-| `pnpm openapi:generate` | Writes the OpenAPI document to `apps/api/generated/openapi.json` (ignored)                                                                 |
+| Command                              | Runs                                                                       |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `pnpm format:check`                  | Prettier check                                                             |
+| `pnpm lint` / `pnpm lint:boundaries` | ESLint and architecture boundary probes                                    |
+| `pnpm typecheck`                     | TypeScript checks                                                          |
+| `pnpm test`                          | Unit, API and frontend tests                                               |
+| `pnpm build`                         | Production builds                                                          |
+| `pnpm test:integration`              | Disposable PostgreSQL integration tests (Docker required)                  |
+| `pnpm test:e2e`                      | Production smoke, design-system visual tests and local IAM browser journey |
+| `pnpm verify`                        | Fast gate: formatting, lint, boundaries, types, tests, builds              |
+| `pnpm verify:full`                   | Fast gate plus Prisma, integration and Playwright                          |
+| `pnpm deps:audit`                    | Dependency vulnerability audit                                             |
 
-Single project targets run with `pnpm nx run <project>:<target>`, for example
-`pnpm nx run @vertex-os/api:test`.
-
-`pnpm test:e2e` starts the real API (:3100), the production web build (:4300, which must not
-contain the lab) and the separate lab build (:4310, `vite build --mode lab`). Visual baselines are
-rendered by Chromium inside the digest-pinned `mcr.microsoft.com/playwright` Linux image, so every
-platform compares against the same reviewed images. They change only deliberately:
-`pnpm nx run @vertex-os/web-e2e:e2e -- --project=visual --update-snapshots`, then review every
-changed file under `apps/web-e2e/src/visual/__screenshots__/` before committing; CI never writes
-baselines. Design tokens are edited in `packages/ui/src/tokens/tokens.json` and regenerated with
-`pnpm nx run @vertex-os/ui:tokens` (a stale generated file fails `pnpm test`).
-
-The IAM journeys (`pnpm nx run @vertex-os/web-e2e:e2e-iam`, `apps/web-e2e/playwright.iam.config.mts`)
-run against a real stack that their global setup starts and stops with Docker: PostgreSQL with every
-migration, Mailpit and the pinned Keycloak with the committed realm, then the operator commands
-(`iam-sync-reference`, `iam-bootstrap`), the built API server entry (:3110) and the production web
-build (:4320). The API and the operator commands read no `.env`; the values the stack sets win over
-the `.env` fallbacks of the Prisma CLI and the Vite preview. Every journey runs in Chromium; Firefox also proves the cookies,
-rotation and sign-out, and WebKit that sign-in over plain HTTP fails closed (see Current limitations).
-
-GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same commands,
-`pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit`, for every pull request
-to `main` and every push to `main`. It needs no secrets. CI retries a failed Playwright test once
-only to classify it: a test that passes only on retry is flaky and still fails the run. Failed and
-flaky tests are annotated on the run, and when `verify:full` fails the Playwright traces,
-screenshots and report are kept as a run artifact for 7 days.
+CI runs `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit` on pull requests
+to `main`. Playwright's IAM stack starts its own disposable PostgreSQL container and bootstraps a
+synthetic administrator; it does not read the development database or its credentials.
 
 ## Repository layout
 
 ```text
-apps/api          NestJS on Fastify: configuration, health, browser sign-in (src/auth), IAM HTTP (src/iam), errors, logging, OpenAPI
-apps/web          React + Vite + TanStack Router/Query + Tailwind CSS shell and the /dev/ui lab
-apps/web-e2e      Playwright: browser -> web -> API smoke, design-system lab, visual baselines and IAM journeys
-domains/iam       @vertex-os/iam: backend IAM domain core and private persistence contract
-domains/iam-persistence @vertex-os/iam-persistence: IAM-owned Prisma adapters and transaction runner
-domains/iam-keycloak @vertex-os/iam-keycloak: IAM-owned Keycloak Admin REST adapter (provisioning)
-domains/audit     @vertex-os/audit: MOD-AUDIT core (Audit entry contract and append capability)
-domains/audit-persistence @vertex-os/audit-persistence: MOD-AUDIT-owned append-only recorder
-packages/database Backend-only PostgreSQL/Prisma 7 client boundary
-packages/ui       @vertex-os/ui: business-neutral design system (tokens, fonts, components)
-infra/compose.yaml Local PostgreSQL, Keycloak and the Mailpit mail sink for development
-infra/keycloak    Vertex realm import (no secrets) and shared Keycloak server options
-scripts/          Local environment setup and the lint:boundaries probes
-docs/             Canonical documentation and execution plans
+apps/api                   Fastify API, local sign-in and IAM HTTP
+apps/web                   React application and Vertex UI
+apps/web-e2e               Playwright browser journeys
+domains/iam                IAM domain rules
+domains/iam-persistence    IAM-owned Prisma adapters
+domains/audit              Audit contracts and behavior
+domains/audit-persistence  Append-only Audit recorder
+packages/database          PostgreSQL and Prisma boundary
+packages/ui                Vertex design system
+infra/compose.yaml         Local PostgreSQL
+docs/                      Canonical documents and plans
 ```
-
-## Sign-in
-
-The browser signs in at `/api/auth/login` and comes back to `/` with the `__Host-vertex-session`
-cookie; it never receives a Keycloak token. `GET /api/auth/session` returns the signed-in user,
-`GET /api/auth/csrf` the token every unsafe request must send as `X-CSRF-Token`, and
-`POST /api/auth/logout` ends the session and the Keycloak session, and returns where the browser
-goes next: the post-logout URI, or Keycloak's end-session URL (without any token) when the API could
-not end the Keycloak session itself.
-A failed sign-in returns to `/?authError=` with `AUTH_ACCESS_DENIED`, `AUTH_LOGIN_FAILED`,
-`AUTH_RATE_LIMITED` or `IDENTITY_PROVIDER_UNAVAILABLE`. Only a Keycloak identity bound to an active or invited Vertex user
-may sign in; a local sign-in ends in `AUTH_ACCESS_DENIED` until `pnpm iam:bootstrap` (or an
-administrator) has created the user. Sessions expire after 30 minutes idle and 10 hours in total
-(`AUTH_SESSION_*` in `.env`). While a session is used, the API refreshes its Keycloak session at
-most once a minute and extends the idle deadline only when Keycloak agrees; when Keycloak refuses
-(the Keycloak session ended, or the identity was disabled) the session is revoked, and while
-Keycloak is unreachable the session keeps its current deadline without extending it.
-
-Sign-in (`/api/auth/login` and the callback) and logout are rate-limited per client address, and the
-Audit records written for repeatable input (authorization denials per user, refused back-channel
-logout tokens per address) are bounded; the values are `AUTH_RATE_LIMIT_*` and
-`AUTH_EVIDENCE_LIMIT` in `.env`. The API counts the address that the local reverse proxy appends to
-`X-Forwarded-For`, so a deployment must put such a proxy in front of it. Once a minute the server
-deletes expired login attempts, discards the tokens of expired sessions and deletes session rows
-`AUTH_SESSION_RETENTION_DAYS` (default 30) after their idle deadline; the Audit records of each
-session stay.
-
-Keycloak calls `KEYCLOAK_WEB_BACKCHANNEL_LOGOUT_URL` (`host.docker.internal:3000`) from its
-container when a user's Keycloak session ends. Docker Desktop forwards that name to the host's
-loopback, where the API listens; on Docker Engine for Linux the name does not exist by default and
-back-channel logout does not reach a loopback-only API. Locally, Keycloak (port 8080) and the web
-origin (port 4200) share the host `127.0.0.1`, and cookies are not port-scoped, so the browser also
-sends the `__Host-vertex-*` cookies to the local Keycloak, which ignores them.
-
-## IAM API
-
-`/api/iam` exposes the IAM administration of `docs/modules/iam.md` Section 25: `GET /api/iam/me`
-(the signed-in user's profile, active departments and effective permission codes), the user
-directory and detail, user creation, display-name update, suspension, disablement, termination,
-reactivation, identity synchronization, invitation resend and session revocation, department
-memberships, role assignments, departments, roles with their permission mappings, and the read-only
-permission catalog. Every route needs a session and, except `/me`, the permission the
-specification assigns to it; unsafe methods also need `X-CSRF-Token`. Request bodies are strict
-(an unknown field is `400 VALIDATION_FAILED` with the offending `fields`), every refusal is a
-Problem Details response with a stable `code`, and collections take `page`, `pageSize` (at most 100) and `search`. The OpenAPI document (`/api/docs/openapi.json`, `pnpm openapi:generate`)
-describes every route, body and answer. The HTTP server therefore also needs the provisioner
-settings of `.env` (`KEYCLOAK_ISSUER_URL`, `KEYCLOAK_PROVISIONER_CLIENT_ID`,
-`KEYCLOAK_PROVISIONER_CLIENT_SECRET`), as `pnpm iam:bootstrap` does.
 
 ## Current limitations
 
-- Local sign-in works in Chromium and Firefox only. Playwright's WebKit (on Windows and Linux; Safari is
-  expected to behave alike) keeps no `Secure` cookie for
-  `http://127.0.0.1`, so the `__Host-vertex-*` cookies never return and sign-in ends with
-  `AUTH_LOGIN_FAILED`. The deployment must serve the web app over HTTPS, where the cookies are valid;
-  WebKit over that origin is verified with the production deployment design.
-- MOD-AUDIT appends immutable records for every IAM change and refusal, but has no read path.
-  The `/dev/ui` proof scenarios (IAM, CRM, Projects,
-  Finance) are static design fixtures.
+- The one-time password initialization for migrated users is available through the API; its
+  form has not yet been added to the user detail screen.
+- Local HTTP development uses `Secure` cookies on loopback; production must serve the application
+  through HTTPS. WebKit may reject secure cookies on HTTP loopback.
+- MOD-AUDIT writes immutable records but has no read interface yet. `/dev/ui` proof scenarios use
+  synthetic design data.

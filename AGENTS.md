@@ -52,7 +52,7 @@ The authoritative constraint list, including the ORM major-version baseline, is 
 * Backend: NestJS on Fastify; REST with OpenAPI; Zod for contracts/validation where appropriate.
 * Persistence: PostgreSQL with Prisma (major-version baseline pinned in `docs/ARCHITECTURE.md`).
 * Frontend: React with Vite, TanStack Router/Query/Table, Tailwind CSS, and the in-house Vertex UI design system. No shadcn.
-* Authentication: Keycloak via OIDC Authorization Code Flow with PKCE, integrated by the backend as a confidential client acting as BFF. The browser holds only an opaque `Secure`/`HttpOnly` application session cookie, never identity-provider tokens. Keycloak owns credentials, MFA, and recovery; Vertex IAM owns application users, roles, permissions, and access state. Details: `docs/ARCHITECTURE.md` Section 22 and `docs/SECURITY.md`.
+* Authentication: email and password entered in the Vertex OS interface and verified by the backend against salted scrypt hashes held by IAM. The browser holds only an opaque `Secure`/`HttpOnly` application session cookie. IAM owns users, credentials, roles, permissions, and access state. No MFA or external identity provider is in the active sign-in flow. Details: `docs/adr/0001-local-password-authentication.md`, `docs/ARCHITECTURE.md` Section 22, and `docs/SECURITY.md`.
 * Temporal only where durable, long-running orchestration is genuinely required. No message broker, cache, queue, or search infrastructure without a demonstrated need.
 
 Development is local-first. Production deployment for the Vertex Media Contabo server is designed separately.
@@ -145,7 +145,7 @@ Policy: `docs/TESTING.md`.
 * Never claim a check passed unless it was actually executed successfully.
 * Use repository-defined scripts and tooling; do not invent verification commands. The root commands are defined in `package.json` and described in `README.md`:
   * `pnpm verify` — fast gate: format check, lint (including Nx module boundaries), boundary probes (`pnpm lint:boundaries`), typecheck, unit/API/frontend tests, builds.
-  * `pnpm verify:full` — `pnpm verify` plus Prisma validate/generate, Testcontainers PostgreSQL integration tests and the Playwright end-to-end tests: production smoke, design-system lab behaviour in Chromium/Firefox/WebKit, visual baselines, and the IAM journeys against real Keycloak and PostgreSQL (Docker required).
+  * `pnpm verify:full` — `pnpm verify` plus Prisma validate/generate, Testcontainers PostgreSQL integration tests and the Playwright end-to-end tests: production smoke, design-system lab behaviour in Chromium/Firefox/WebKit, visual baselines, and local IAM journeys against PostgreSQL (Docker required).
   * `pnpm deps:audit` — dependency vulnerability audit; reviewed exceptions live in `pnpm-workspace.yaml`.
   * Narrower checks: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:integration`, `pnpm test:e2e`, or `pnpm nx run <project>:<target>`.
 * CI (GitHub Actions, `.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, `pnpm verify:full` and `pnpm deps:audit` for every pull request to `main` and every push to `main`. Change what is verified in those root commands, not by duplicating steps in the workflow.
@@ -165,7 +165,7 @@ Read only the documentation relevant to the task.
 * `docs/ARCHITECTURE.md` — system structure, technical constraints and version baselines, dependency rules, authentication topology, transactions, audit vs. activity.
 * `docs/MODULES.md` — module ownership, public capabilities, cross-module rules, open ownership questions.
 * `docs/ENGINEERING.md` — implementation rules, transactions, validation, concurrency, idempotency, Definition of Done, forbidden patterns.
-* `docs/SECURITY.md` — authentication and session security, authorization policy, credentials/MFA/recovery, web security, secrets, logging and alerting.
+* `docs/SECURITY.md` — authentication and session security, authorization policy, credentials and recovery, web security, secrets, logging and alerting.
 * `docs/TESTING.md` — verification policy, test layers, migration/concurrency/idempotency/security testing, CI gates.
 * `docs/DESIGN_SYSTEM.md` — visual, interaction, content and accessibility language of the application UI; implemented by `packages/ui` (`@vertex-os/ui`).
 * `docs/modules/*.md` — module-specific behavior, created when a module approaches implementation.

@@ -1,5 +1,4 @@
 import helmet from '@fastify/helmet';
-import { UnsupportedMediaTypeException } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { FastifyLoggerOptions } from 'fastify';
@@ -19,10 +18,6 @@ export const API_PREFIX = 'api';
 
 /** Fastify's default request body limit (1 MiB), stated explicitly so it is a reviewed choice. */
 const BODY_LIMIT_BYTES = 1_048_576;
-
-/** The one route that takes a form body: Keycloak's back-channel logout (spec Section 33). */
-const FORM_BODY_ROUTE = `/${API_PREFIX}/auth/backchannel-logout`;
-const FORM_BODY_LIMIT_BYTES = 32_768;
 
 export interface CreateAppOptions extends AppModuleOptions {
   /** Destination of the JSON log records; standard output when omitted. Tests inspect logs through it. */
@@ -77,18 +72,6 @@ export async function createApp(
       done(null, value);
     });
   });
-  // Form bodies are accepted by the back-channel logout route only; any other route answers 415.
-  fastify.addContentTypeParser(
-    'application/x-www-form-urlencoded',
-    { parseAs: 'string', bodyLimit: FORM_BODY_LIMIT_BYTES },
-    (request, body, done) => {
-      if (request.url.split('?', 1)[0] !== FORM_BODY_ROUTE) {
-        done(new UnsupportedMediaTypeException('Form bodies are not accepted here.'), undefined);
-        return;
-      }
-      done(null, Object.fromEntries(new URLSearchParams(String(body))));
-    },
-  );
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.forRoot(config, auth, provisioning, moduleOptions),

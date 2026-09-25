@@ -116,15 +116,13 @@ test('the user directory and detail are accessible in Arabic RTL, including a co
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.getByRole('heading', { level: 1, name: 'المستخدمون' })).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: 'sara@example.test' });
-  await expect(row).toContainText('مدعو');
-  await expect(row).toContainText('تمت المزامنة');
-  await expect(row).toContainText('أُرسلت الدعوة');
+  await expect(row).toContainText('بانتظار أول دخول');
   await expectAccessible(page);
 
   await row.getByRole('link', { name: 'سارة' }).click();
   await expect(page).toHaveURL(`/users/${TARGET}`);
   await expect(page.getByRole('heading', { level: 1, name: 'سارة' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'حالة الحساب' })).toContainText('أُرسلت الدعوة');
+  await expect(page.getByRole('region', { name: 'حالة الحساب' })).toContainText('بانتظار أول دخول');
   await expectAccessible(page);
 
   await page.getByRole('button', { name: 'إجراءات المستخدم' }).click();
@@ -146,7 +144,7 @@ test('the user detail is accessible in English LTR', async ({ page }) => {
   await page.goto(`/users/${TARGET}`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('region', { name: 'Account status' })).toContainText(
-    'Invitation sent',
+    'Awaiting first sign-in',
   );
   await expectAccessible(page);
 });

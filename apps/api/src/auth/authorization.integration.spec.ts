@@ -65,7 +65,7 @@ describe('authorization context against PostgreSQL', () => {
     const id = created.user.id;
     await postgres.sql(
       `UPDATE iam_application_user SET access_state = 'ACTIVE', first_activated_at = now(),
-         identity_issuer = 'http://127.0.0.1:1/realms/vertex', identity_subject = '${randomUUID()}',
+         identity_issuer = 'vertex-local', identity_subject = '${id}',
          identity_sync_state = 'SYNCED' WHERE id = '${id}'`,
     );
     const config = testAuthConfig();
@@ -74,7 +74,8 @@ describe('authorization context against PostgreSQL', () => {
       ciphers: createTokenCiphers(TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET),
       provider: { refreshSession: async () => ({ ok: false, failure: 'unavailable' }) },
       limits: config.session,
-      clientId: config.oidc.clientId,
+      clientId: 'vertex-local',
+      local: true,
     });
     const { secret } = await sessions.establish({
       userId: id,

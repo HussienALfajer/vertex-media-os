@@ -1,5 +1,6 @@
-import { Alert, Button, Page, PageHeader, type Tone } from '@vertex-os/ui';
-import { useState } from 'react';
+import { Alert, Button, Field, Input, Page, PageHeader, type Tone } from '@vertex-os/ui';
+import { useState, type FormEvent } from 'react';
+import { isApiProblem, signInWithPassword } from '../../lib/http';
 import { leaveApplication } from '../../lib/navigation';
 import { ApiStatus } from '../system-status/api-status';
 import { useAuthMessages, type AuthMessages } from './auth-messages';
@@ -9,31 +10,18 @@ import type { SignedOutReason } from './auth-state';
  * Failure codes the API's sign-in endpoints return to the app as `/?authError=` (IAM-R03 D-23,
  * IAM-R09 D-03).
  */
-export const SIGN_IN_FAILURES = [
-  'AUTH_ACCESS_DENIED',
-  'AUTH_LOGIN_FAILED',
-  'AUTH_RATE_LIMITED',
-  'IDENTITY_PROVIDER_UNAVAILABLE',
-] as const;
+export const SIGN_IN_FAILURES = ['AUTH_LOGIN_FAILED', 'AUTH_RATE_LIMITED'] as const;
 export type SignInFailure = (typeof SIGN_IN_FAILURES)[number];
 
 export function isSignInFailure(value: unknown): value is SignInFailure {
   return SIGN_IN_FAILURES.some((code) => code === value);
 }
 
-const SIGN_IN_PATH = '/api/auth/login';
-
 type Notice = { tone: Tone; title: keyof AuthMessages; detail: keyof AuthMessages };
 
 const FAILURE_NOTICES: Record<SignInFailure, Notice> = {
-  AUTH_ACCESS_DENIED: { tone: 'danger', title: 'accessDeniedTitle', detail: 'accessDeniedDetail' },
   AUTH_LOGIN_FAILED: { tone: 'danger', title: 'loginFailedTitle', detail: 'loginFailedDetail' },
   AUTH_RATE_LIMITED: { tone: 'warning', title: 'rateLimitedTitle', detail: 'rateLimitedDetail' },
-  IDENTITY_PROVIDER_UNAVAILABLE: {
-    tone: 'warning',
-    title: 'providerUnavailableTitle',
-    detail: 'providerUnavailableDetail',
-  },
 };
 
 const STATE_NOTICES: Record<Exclude<SignedOutReason, 'required'> | 'inactive', Notice> = {
@@ -54,10 +42,14 @@ export interface SignedOutPageProps {
  */
 export function SignedOutPage({ reason, authError }: SignedOutPageProps) {
   const messages = useAuthMessages();
-  const [leaving, setLeaving] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [failure, setFailure] = useState<SignInFailure | undefined>();
+  const reportedFailure = failure ?? authError;
   const notice =
-    authError !== undefined
-      ? FAILURE_NOTICES[authError]
+    reportedFailure !== undefined
+      ? FAILURE_NOTICES[reportedFailure]
       : reason === 'required'
         ? undefined
         : STATE_NOTICES[reason];
@@ -71,20 +63,52 @@ export function SignedOutPage({ reason, authError }: SignedOutPageProps) {
             {messages[notice.detail]}
           </Alert>
         )}
-        <div>
-          <Button
-            variant="primary"
-            size="large"
-            pending={leaving}
-            pendingLabel={messages.signingIn}
-            onClick={() => {
-              setLeaving(true);
-              leaveApplication(SIGN_IN_PATH);
-            }}
-          >
-            {messages.signIn}
-          </Button>
-        </div>
+        <form
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            if (pending) return;
+            setPending(true);
+            setFailure(undefined);
+            void signInWithPassword(email, password)
+              .then(() => leaveApplication('/'))
+              .catch((error: unknown) => {
+                setPassword('');
+                setFailure(isApiProblem(error, 429) ? 'AUTH_RATE_LIMITED' : 'AUTH_LOGIN_FAILED');
+                setPending(false);
+              });
+          }}
+          className="flex flex-col gap-actions"
+        >
+          <Field label={messages.email} required>
+            <Input
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.currentTarget.value)}
+            />
+          </Field>
+          <Field label={messages.password} required>
+            <Input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.currentTarget.value)}
+            />
+          </Field>
+          <div>
+            <Button
+              type="submit"
+              variant="primary"
+              size="large"
+              pending={pending}
+              pendingLabel={messages.signingIn}
+            >
+              {messages.signIn}
+            </Button>
+          </div>
+        </form>
         <ApiStatus />
       </div>
     </Page>

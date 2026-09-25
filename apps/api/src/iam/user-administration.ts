@@ -6,6 +6,7 @@ import type {
   BootstrapResult,
   CreateUserRequest,
   CreateUserResult,
+  InitializePasswordResult,
   ReactivateUserRequest,
   ReactivateUserResult,
   ResendUserInvitationResult,
@@ -20,6 +21,7 @@ import {
   bootstrapSystemAdministrator,
   createUser,
   disableUser,
+  initializePassword,
   reactivateUser,
   resendUserInvitation,
   revokeUserSessions,
@@ -30,12 +32,13 @@ import {
   type SessionRevocationReason,
   type UserAdministrationDependencies,
 } from '@vertex-os/iam/composition';
-import { createKeycloakIdentityProvider } from '@vertex-os/iam-keycloak';
 import {
   createApplicationUserRepository,
   createIamTransactionRunner,
+  createLocalIdentityProvider,
 } from '@vertex-os/iam-persistence';
 import type { RevocationReason } from '../auth/session-store.js';
+import { hashPassword, validPassword } from '../auth/passwords.js';
 import type { IdentityProvisioningConfig } from '../config/identity-provisioning-config.js';
 
 /**
@@ -44,11 +47,21 @@ import type { IdentityProvisioningConfig } from '../config/identity-provisioning
  * is not here: it is an operator command, never an HTTP capability (spec Section 21).
  */
 export interface IamUserAdministration {
-  createUser(r: CreateUserRequest, a: AuditAttribution): Promise<CreateUserResult>;
+  createUser(
+    r: Omit<CreateUserRequest, 'displayName' | 'passwordHash'> & {
+      readonly displayName?: string;
+      readonly password?: string;
+    },
+    a: AuditAttribution,
+  ): Promise<CreateUserResult>;
   updateDisplayName(
     r: UpdateDisplayNameRequest,
     a: AuditAttribution,
   ): Promise<UpdateDisplayNameResult>;
+  initializePassword(
+    r: { readonly userId: string; readonly expectedVersion: number; readonly password: string },
+    a: AuditAttribution,
+  ): Promise<InitializePasswordResult>;
   suspendUser(r: UserRequest, a: AuditAttribution): Promise<RestrictUserResult>;
   disableUser(r: UserRequest, a: AuditAttribution): Promise<RestrictUserResult>;
   terminateUser(r: UserRequest, a: AuditAttribution): Promise<RestrictUserResult>;
@@ -95,12 +108,7 @@ function userAdministrationDependencies(
     runner: createIamTransactionRunner(database, {
       auditRecorderFor: options.auditRecorderFor ?? createAuditRecorder,
     }),
-    identityProvider: createKeycloakIdentityProvider({
-      issuer: config.issuer,
-      clientId: config.provisioner.clientId,
-      clientSecret: config.provisioner.clientSecret,
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-    }),
+    identityProvider: createLocalIdentityProvider(database),
     invitationLifespanSeconds: config.invitationLifespanSeconds,
     sessions: {
       revokeUserSessions: (userId, reason, attribution) =>
@@ -117,8 +125,36 @@ export function createIamUserAdministration(
 ): IamUserAdministration {
   const dependencies = userAdministrationDependencies(config, database, options);
   return Object.freeze({
-    createUser: (r, a) => createUser(dependencies, r, a),
+    createUser: async (r, a) => {
+      if (r.password !== undefined && !validPassword(r.password)) {
+        return { outcome: 'invalid', field: 'password' };
+      }
+      const passwordHash = r.password === undefined ? undefined : await hashPassword(r.password);
+      return createUser(
+        dependencies,
+        {
+          email: r.email,
+          displayName: r.displayName ?? r.email,
+          ...(r.memberships === undefined ? {} : { memberships: r.memberships }),
+          ...(r.roleIds === undefined ? {} : { roleIds: r.roleIds }),
+          ...(passwordHash === undefined ? {} : { passwordHash }),
+        },
+        a,
+      );
+    },
     updateDisplayName: (r, a) => updateDisplayName(dependencies, r, a),
+    initializePassword: async (r, a) => {
+      if (!validPassword(r.password)) return { outcome: 'invalid', field: 'password' };
+      return initializePassword(
+        dependencies,
+        {
+          userId: r.userId,
+          expectedVersion: r.expectedVersion,
+          passwordHash: await hashPassword(r.password),
+        },
+        a,
+      );
+    },
     suspendUser: (r, a) => suspendUser(dependencies, r, a),
     disableUser: (r, a) => disableUser(dependencies, r, a),
     terminateUser: (r, a) => terminateUser(dependencies, r, a),

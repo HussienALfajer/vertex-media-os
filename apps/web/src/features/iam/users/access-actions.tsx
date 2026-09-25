@@ -11,16 +11,7 @@ import {
 } from '@vertex-os/ui';
 import { useState } from 'react';
 import { useAccess } from '../../auth/use-access';
-import {
-  reactivateUser,
-  resendInvitation,
-  restrictUser,
-  revokeSessions,
-  syncIdentity,
-  type InvitationOutcome,
-  type ProviderSessions,
-  type UserDetail,
-} from '../iam-api';
+import { reactivateUser, restrictUser, revokeSessions, type UserDetail } from '../iam-api';
 import { useIamMessages, type IamMessages } from '../iam-messages';
 import { describeMutationFailure } from '../iam-problems';
 import { IAM_PERMISSIONS, refreshUser } from '../iam-queries';
@@ -88,7 +79,7 @@ export function AccessActions({
         }
         case 'revoke': {
           const result = await revokeSessions(user.id, reason);
-          return revokedOutcome(result.sessionsRevoked, result.providerSessions, messages);
+          return revokedOutcome(result.sessionsRevoked, messages);
         }
       }
     },
@@ -105,45 +96,8 @@ export function AccessActions({
     },
   });
 
-  const direct = useMutation({
-    mutationFn: async (action: 'sync' | 'resend') => {
-      const result =
-        action === 'sync' ? await syncIdentity(user.id) : await resendInvitation(user.id);
-      return {
-        tone: result.invitation === 'FAILED' ? 'warning' : 'success',
-        title: action === 'sync' ? messages.syncedOutcome : messages.resentOutcome,
-        detail: invitationMessage(result.invitation, messages),
-      } satisfies Outcome;
-    },
-    onSuccess: (outcome) => {
-      onOutcome(outcome);
-      void refreshUser(client, user.id);
-    },
-    onError: (error) => {
-      const described = describeMutationFailure(error, messages);
-      onOutcome({ tone: 'danger', title: described.message });
-      if (described.reload) void refreshUser(client, user.id);
-    },
-  });
-
   const state = user.accessState;
   const items: MenuItemSpec[] = [];
-  if (access.can(IAM_PERMISSIONS.usersManageAccess)) {
-    items.push({
-      id: 'sync',
-      label: messages.syncIdentity,
-      icon: 'refresh',
-      onSelect: () => direct.mutate('sync'),
-    });
-  }
-  if (access.can(IAM_PERMISSIONS.usersCreate) && state === 'INVITED') {
-    items.push({
-      id: 'resend',
-      label: messages.resendInvitation,
-      icon: 'arrow-end',
-      onSelect: () => direct.mutate('resend'),
-    });
-  }
   const manage = access.can(IAM_PERMISSIONS.usersManageAccess);
   if (manage && ADMITTED.reactivate.includes(state)) {
     items.push({
@@ -181,15 +135,10 @@ export function AccessActions({
       {items.length > 0 && (
         <DropdownMenu
           trigger={
-            <IconButton icon="more" label={messages.userActions} disabled={direct.isPending} />
+            <IconButton icon="more" label={messages.userActions} disabled={confirmed.isPending} />
           }
           items={items}
         />
-      )}
-      {direct.isPending && (
-        <InlineMessage tone="info" announce>
-          {messages.working}
-        </InlineMessage>
       )}
       <AlertDialog
         open={dialog !== undefined}
@@ -273,43 +222,17 @@ function restrictedOutcome(
       : action === 'disable'
         ? messages.disabledOutcome
         : messages.terminatedOutcome;
-  // A failed Keycloak follow-up is still a success; the identity state shows it (spec 27).
   return {
     tone: 'success',
     title,
-    detail: `${messages.sessionsEnded(sessionsRevoked)} ${messages.checkIdentityBelow}`,
+    detail: messages.sessionsEnded(sessionsRevoked),
   };
 }
 
-function revokedOutcome(
-  sessionsRevoked: number,
-  providerSessions: ProviderSessions,
-  messages: IamMessages,
-): Outcome {
-  const provider =
-    providerSessions === 'TERMINATED'
-      ? messages.providerTerminated
-      : providerSessions === 'NO_IDENTITY'
-        ? messages.providerNoIdentity
-        : messages.providerFailed;
+function revokedOutcome(sessionsRevoked: number, messages: IamMessages): Outcome {
   return {
-    tone: providerSessions === 'FAILED' ? 'warning' : 'success',
+    tone: 'success',
     title: messages.sessionsRevokedOutcome,
-    detail: `${messages.sessionsEnded(sessionsRevoked)} ${provider}`,
+    detail: messages.sessionsEnded(sessionsRevoked),
   };
-}
-
-export function invitationMessage(outcome: InvitationOutcome, messages: IamMessages): string {
-  switch (outcome) {
-    case 'SENT':
-      return messages.invitationSent;
-    case 'FAILED':
-      return messages.invitationFailed;
-    case 'NO_ACTION_REQUIRED':
-      return messages.invitationNoAction;
-    case 'NOT_APPLICABLE':
-      return messages.invitationNotApplicable;
-    case 'SUPERSEDED':
-      return messages.invitationSuperseded;
-  }
 }

@@ -21,7 +21,7 @@ import { isApiProblem } from '../../../lib/http';
 import { useAccess } from '../../auth/use-access';
 import { useIamMessages } from '../iam-messages';
 import { IAM_PERMISSIONS, userQuery } from '../iam-queries';
-import { AccessStatus, IdentityStatus, InvitationStatus } from '../iam-states';
+import { AccessStatus } from '../iam-states';
 import { AccessActions } from './access-actions';
 import { EditNameDialog } from './edit-name-dialog';
 import type { Outcome } from './outcome';
@@ -94,22 +94,6 @@ export function UserDetailPage({ userId, created }: { userId: string; created: b
   const detail = user.data;
   const facts: DescriptionItem[] = [
     { term: messages.columnAccess, details: <AccessStatus state={detail.accessState} /> },
-    { term: messages.columnIdentity, details: <IdentityStatus state={detail.identitySyncState} /> },
-    // Invitation delivery is an outstanding fact only while the user is INVITED (spec 11.3).
-    ...(detail.accessState === 'INVITED'
-      ? [
-          {
-            term: messages.columnInvitation,
-            details: (
-              <InvitationStatus
-                accessState={detail.accessState}
-                state={detail.invitationDeliveryState}
-                sentAt={detail.invitationSentAt}
-              />
-            ),
-          },
-        ]
-      : []),
   ];
 
   return (

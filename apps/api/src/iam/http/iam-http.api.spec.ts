@@ -136,19 +136,19 @@ describe('IAM HTTP contract', () => {
     });
   });
 
-  it('documents the back-channel logout body and its 400 answer (CP1-18)', () => {
-    const operation = createOpenApiDocument(app).paths['/api/auth/backchannel-logout']?.post;
+  it('documents email and password sign-in without an identity provider callback', () => {
+    const paths = createOpenApiDocument(app).paths;
+    const operation = paths['/api/auth/login']?.post;
     expect(operation?.requestBody).toMatchObject({
       required: true,
       content: {
-        'application/x-www-form-urlencoded': {
-          schema: { required: ['logout_token'], properties: { logout_token: { type: 'string' } } },
+        'application/json': {
+          schema: { required: ['email', 'password'] },
         },
       },
     });
-    expect(operation?.responses['400']).toMatchObject({
-      content: { 'application/json': { schema: { required: ['error'] } } },
-    });
+    expect(paths['/api/auth/callback']).toBeUndefined();
+    expect(paths['/api/auth/backchannel-logout']).toBeUndefined();
   });
 
   it('answers every refusal with one status and code, spelled as spec Section 27 spells it', () => {

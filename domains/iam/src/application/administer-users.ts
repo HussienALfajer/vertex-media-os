@@ -70,6 +70,8 @@ export type InvitationOutcome =
 export interface CreateUserRequest {
   readonly email: string;
   readonly displayName: string;
+  /** Prepared credential material; plaintext never enters the IAM domain or audit. */
+  readonly passwordHash?: string;
   readonly memberships?: readonly { readonly departmentId: string; readonly isPrimary: boolean }[];
   readonly roleIds?: readonly string[];
 }
@@ -90,7 +92,7 @@ export type CreateUserResult =
         | 'department-inactive'
         | 'grant-exceeds-actor';
     }
-  | Invalid<'email' | 'displayName' | 'memberships' | 'roleIds'>;
+  | Invalid<'email' | 'displayName' | 'password' | 'memberships' | 'roleIds'>;
 
 export interface UpdateDisplayNameRequest {
   readonly userId: string;
@@ -102,6 +104,24 @@ export type UpdateDisplayNameResult =
   | { readonly outcome: 'updated' | 'unchanged'; readonly user: UserView }
   | { readonly outcome: 'user-not-found' | 'version-conflict' }
   | Invalid<'userId' | 'expectedVersion' | 'displayName'>;
+
+/** A legacy account can receive its first local password exactly once. */
+export interface InitializePasswordRequest {
+  readonly userId: string;
+  readonly expectedVersion: number;
+  readonly passwordHash: string;
+}
+
+export type InitializePasswordResult =
+  | { readonly outcome: 'initialized'; readonly user: UserView; readonly sessionsRevoked: number }
+  | {
+      readonly outcome:
+        | 'user-not-found'
+        | 'version-conflict'
+        | 'password-already-configured'
+        | 'grant-exceeds-actor';
+    }
+  | Invalid<'userId' | 'expectedVersion' | 'password'>;
 
 export interface UserRequest {
   readonly userId: string;
@@ -328,6 +348,7 @@ export async function createUser(
       const inserted = await lifecycle.insertUser({
         email: values.email,
         displayName: values.displayName,
+        ...(input.passwordHash === undefined ? {} : { passwordHash: input.passwordHash }),
       });
       if (inserted.outcome === 'email-taken') return { outcome: 'email-conflict' as const };
       const user = inserted.user;
@@ -391,6 +412,66 @@ export async function updateDisplayName(
     });
     return { outcome: 'updated', user: toUserView(updated) };
   });
+}
+
+/** Initializes a migrated account's local credential without ever replacing a configured hash. */
+export async function initializePassword(
+  dependencies: UserAdministrationDependencies,
+  input: InitializePasswordRequest,
+  attribution: AuditAttribution,
+): Promise<InitializePasswordResult> {
+  const userId = typeof input.userId === 'string' ? parseUserId(input.userId) : undefined;
+  if (!userId?.ok) return { outcome: 'invalid', field: 'userId' };
+  const expectedVersion = parseExpectedVersion(input.expectedVersion);
+  if (expectedVersion === undefined) return { outcome: 'invalid', field: 'expectedVersion' };
+  if (typeof input.passwordHash !== 'string' || !input.passwordHash.startsWith('scrypt$')) {
+    return { outcome: 'invalid', field: 'password' };
+  }
+  const changed = await dependencies.runner.run(async ({ lifecycle, roles, audit }) => {
+    const user = await lifecycle.lockUser(userId.value);
+    if (user === undefined) return { outcome: 'user-not-found' as const };
+    if (user.version !== expectedVersion) return { outcome: 'version-conflict' as const };
+    const grant = await roles.readUserGrant(user.id);
+    if (
+      await grantExceedsActor(
+        roles,
+        attribution,
+        grant.holdsSystemAdministratorRole
+          ? { kind: 'system-role' }
+          : { kind: 'permissions', codes: grant.activePermissionCodes },
+      )
+    ) {
+      await recordGrantRefusal(audit, attribution, 'iam.user.password-initialized', {
+        type: 'iam.user',
+        id: user.id,
+      });
+      return { outcome: 'grant-exceeds-actor' as const };
+    }
+    const updated = await lifecycle.initializePasswordHash({
+      id: user.id,
+      expectedVersion,
+      passwordHash: input.passwordHash,
+    });
+    if (updated === undefined) return { outcome: 'password-already-configured' as const };
+    await appendUserAudit(
+      audit,
+      attribution,
+      updated,
+      'iam.user.password-initialized',
+      'SUCCEEDED',
+      { after: { localSignInEnabled: true } },
+    );
+    return { outcome: 'initialized' as const, user: toUserView(updated) };
+  });
+  if (changed.outcome !== 'initialized') return changed;
+  // Accounts with no local hash cannot have a valid local session. Any preserved provider
+  // sessions are already refused by the local session service; revoke their rows as well.
+  const sessionsRevoked = await dependencies.sessions.revokeUserSessions(
+    userId.value,
+    'administrator',
+    attribution,
+  );
+  return { ...changed, sessionsRevoked };
 }
 
 const restriction: Readonly<

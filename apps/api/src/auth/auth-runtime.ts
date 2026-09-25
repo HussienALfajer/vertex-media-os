@@ -4,7 +4,6 @@ import type { DatabaseClient, DatabaseTransaction } from '@vertex-os/database';
 import type { AuthConfig } from '../config/auth-config.js';
 import { createIamAuthorization, type IamAuthorization } from '../iam/authorization.js';
 import { createIamSignIn, type IamSignIn } from '../iam/sign-in.js';
-import { createOidcClient, type OidcClient } from './oidc.js';
 import { createRateLimiter, type RateLimiter } from './rate-limit.js';
 import { createSessionStore } from './session-store.js';
 import { createSessionService, type SessionService } from './sessions.js';
@@ -14,7 +13,6 @@ import { createTokenCiphers } from './token-cipher.js';
 export interface AuthRuntime {
   readonly config: AuthConfig;
   readonly sessions: SessionService;
-  readonly oidc: OidcClient;
   /** IAM's sign-in capabilities, bound; never IAM's repositories or transaction runner. */
   readonly iam: IamSignIn;
   /** IAM's authorization-context capabilities, bound (IAM-R04 D-11). */
@@ -28,8 +26,6 @@ export interface AuthRuntime {
 }
 
 export interface AuthRuntimeOptions {
-  /** Replaces `fetch` for identity-provider requests (tests run a fake provider through it). */
-  readonly oidcFetch?: typeof fetch;
   /** The current time for session deadlines; tests move it. */
   readonly now?: () => Date;
   /** Binds MOD-AUDIT's append capability to a transaction; the Audit adapter by default. */
@@ -54,21 +50,16 @@ export function createAuthRuntime(
       windowSeconds: config.rateLimits.windowSeconds,
       ...(clock === undefined ? {} : { now: () => clock().getTime() }),
     });
-  const oidc = createOidcClient(
-    config.oidc,
-    options.oidcFetch === undefined ? {} : { fetch: options.oidcFetch },
-  );
   return Object.freeze({
     config,
     sessions: createSessionService({
       store: createSessionStore(database, { auditRecorderFor }),
       ciphers: createTokenCiphers(config.tokenEncryptionSecret),
-      provider: oidc,
+      local: true,
       limits: config.session,
-      clientId: config.oidc.clientId,
+      clientId: 'vertex-local',
       ...(options.now === undefined ? {} : { now: options.now }),
     }),
-    oidc,
     iam: createIamSignIn(database, { auditRecorderFor }),
     authorization: createIamAuthorization(database, { auditRecorderFor }),
     limits: Object.freeze({

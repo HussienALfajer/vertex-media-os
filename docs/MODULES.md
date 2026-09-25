@@ -320,7 +320,7 @@ Represent Vertex OS application users, organizational membership, departments, r
 **Owns:**
 
 * application user/profile record,
-* the mapping between an identity-provider identity and the application user (external identity reference),
+* the local credential hash and identity subject of the application user,
 * departments,
 * organizational membership,
 * application roles,
@@ -329,13 +329,11 @@ Represent Vertex OS application users, organizational membership, departments, r
 * user-role or membership relationships,
 * application access state.
 
-User credentials, password policy, authentication factors, credential recovery, and the identity-provider session belong to Keycloak. The browser-facing application session and its cookie belong to the Vertex OS backend acting as BFF; they are platform infrastructure, not IAM domain state. IAM owns which identity-provider identity maps to which application user and whether that user may currently access Vertex OS (`docs/ARCHITECTURE.md`, Section 22).
-
-Whether IAM provisions identity-provider accounts through the identity provider's administrative API or links identities created there is decided in `docs/modules/iam.md`; either way, identity-provider authentication alone MUST NOT grant Vertex OS access.
+IAM owns the local password hash, account and access state. The browser-facing application session and its cookie belong to the Vertex OS backend as platform infrastructure. Password verification alone does not grant access; backend authorization still checks access state and effective permissions (`docs/ARCHITECTURE.md`, Section 22).
 
 **Does not own:**
 
-* user credentials, MFA factors, or identity-provider sessions,
+* browser application sessions,
 * the application session mechanism,
 * client contacts,
 * project membership as delivery state,
@@ -346,7 +344,7 @@ Whether IAM provisions identity-provider accounts through the identity provider'
 
 **Public capabilities include:**
 
-* resolve the application user and access state for an authenticated identity-provider identity,
+* verify local credentials and resolve the application user's access state,
 * determine organizational membership,
 * resolve roles and permissions,
 * manage authorized application access,

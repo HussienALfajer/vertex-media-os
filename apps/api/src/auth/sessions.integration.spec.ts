@@ -5,7 +5,8 @@ import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
 import { authPersistenceOf } from '@vertex-os/database/auth';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
-import type { OidcResult, RefreshedSession } from './oidc.js';
+type RefreshedSession = { refreshToken: string; idToken: string | undefined };
+type OidcResult<T> = { ok: true; value: T } | { ok: false; failure: string; code?: string };
 import { csrfTokenFor, hashSecret, newSecret } from './secrets.js';
 import { createSessionStore, HOUSEKEEPING_BATCH } from './session-store.js';
 import { createSessionService, type SessionService } from './sessions.js';
@@ -61,7 +62,11 @@ describe('application sessions against real PostgreSQL', () => {
       store,
       ciphers: createTokenCiphers(ENCRYPTION_SECRET),
       provider: {
-        refreshSession: async (input) => {
+        refreshSession: async (input: {
+          refreshToken: string;
+          idpSessionId: string | undefined;
+          idToken: string | undefined;
+        }) => {
           refreshes.push(input);
           return answer(refreshes.length);
         },

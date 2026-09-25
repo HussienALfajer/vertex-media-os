@@ -178,8 +178,7 @@ type TextValue =
       readonly defaultValue?: string;
     };
 
-/** Vertex never collects passwords or MFA secrets (§35, SECURITY.md), so there is no password type. */
-export type InputType = 'text' | 'email' | 'url' | 'tel' | 'search';
+export type InputType = 'text' | 'email' | 'password' | 'url' | 'tel' | 'search';
 
 export type InputProps = Omit<
   ComponentPropsWithRef<'input'>,

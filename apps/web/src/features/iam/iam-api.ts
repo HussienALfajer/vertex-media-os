@@ -97,11 +97,6 @@ export interface Permission {
   readonly sensitivity: string;
 }
 
-export type InvitationOutcome =
-  'SENT' | 'FAILED' | 'NO_ACTION_REQUIRED' | 'NOT_APPLICABLE' | 'SUPERSEDED';
-
-export type ProviderSessions = 'TERMINATED' | 'NO_IDENTITY' | 'FAILED';
-
 export interface UserListParams {
   readonly page: number;
   readonly pageSize: number;
@@ -222,7 +217,7 @@ export async function listPermissions(
 
 export interface CreateUserInput {
   readonly email: string;
-  readonly displayName: string;
+  readonly password: string;
   readonly memberships: readonly { readonly departmentId: string; readonly isPrimary: boolean }[];
   readonly roleIds: readonly string[];
 }
@@ -232,7 +227,7 @@ export async function createUser(input: CreateUserInput): Promise<User> {
     method: 'POST',
     body: {
       email: input.email,
-      displayName: input.displayName,
+      password: input.password,
       ...(input.memberships.length > 0 ? { memberships: input.memberships } : {}),
       ...(input.roleIds.length > 0 ? { roleIds: input.roleIds } : {}),
     },
@@ -283,37 +278,16 @@ export async function reactivateUser(
   return { user: userOf(body['user']), target: body['target'] };
 }
 
-export async function syncIdentity(userId: string) {
-  return invitationResult(
-    await apiRequest(`${userPath(userId)}/sync-identity`, { method: 'POST', body: {} }),
-  );
-}
-
-export async function resendInvitation(userId: string) {
-  return invitationResult(
-    await apiRequest(`${userPath(userId)}/resend-invitation`, { method: 'POST', body: {} }),
-  );
-}
-
 export async function revokeSessions(
   userId: string,
   reason: string | undefined,
-): Promise<{ readonly sessionsRevoked: number; readonly providerSessions: ProviderSessions }> {
+): Promise<{ readonly sessionsRevoked: number }> {
   const body = await apiRequest(`${userPath(userId)}/revoke-sessions`, {
     method: 'POST',
     body: reasonBody(reason),
   });
-  const providerSessions = isRecord(body) ? body['providerSessions'] : undefined;
-  if (
-    !isRecord(body) ||
-    typeof body['sessionsRevoked'] !== 'number' ||
-    (providerSessions !== 'TERMINATED' &&
-      providerSessions !== 'NO_IDENTITY' &&
-      providerSessions !== 'FAILED')
-  ) {
-    throw unexpected();
-  }
-  return { sessionsRevoked: body['sessionsRevoked'], providerSessions };
+  if (!isRecord(body) || typeof body['sessionsRevoked'] !== 'number') throw unexpected();
+  return { sessionsRevoked: body['sessionsRevoked'] };
 }
 
 export async function addMembership(
@@ -506,24 +480,6 @@ function reasonBody(reason: string | undefined): { reason?: string } {
 
 function unexpected(): NetworkFailure {
   return new NetworkFailure('Unexpected IAM response from the API');
-}
-
-function invitationResult(body: unknown): {
-  readonly user: User;
-  readonly invitation: InvitationOutcome;
-} {
-  const invitation = isRecord(body) ? body['invitation'] : undefined;
-  if (
-    !isRecord(body) ||
-    (invitation !== 'SENT' &&
-      invitation !== 'FAILED' &&
-      invitation !== 'NO_ACTION_REQUIRED' &&
-      invitation !== 'NOT_APPLICABLE' &&
-      invitation !== 'SUPERSEDED')
-  ) {
-    throw unexpected();
-  }
-  return { user: userOf(body['user']), invitation };
 }
 
 function pageOf<Item>(body: unknown, item: (value: unknown) => Item): Page<Item> {

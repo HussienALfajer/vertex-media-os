@@ -37,7 +37,7 @@ import {
 import { PickerNote } from './picker-note';
 
 const EMAIL_ID = 'create-user-email';
-const NAME_ID = 'create-user-display-name';
+const PASSWORD_ID = 'create-user-password';
 
 /**
  * Creates (invites) a user (spec Section 12): the account starts INVITED, the backend creates
@@ -50,7 +50,7 @@ export function CreateUser() {
   const navigate = useNavigate();
   const client = useQueryClient();
   const [email, setEmail] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
   const [departmentIds, setDepartmentIds] = useState<ReadonlySet<string>>(new Set());
   const [primaryId, setPrimaryId] = useState('');
   const [roleIds, setRoleIds] = useState<ReadonlySet<string>>(new Set());
@@ -70,7 +70,7 @@ export function CreateUser() {
     mutationFn: () =>
       createUser({
         email: email.trim(),
-        displayName: displayName.trim(),
+        password,
         memberships: [...departmentIds].map((departmentId) => ({
           departmentId,
           isPrimary: departmentId === primaryId,
@@ -91,8 +91,8 @@ export function CreateUser() {
       const failure = describeMutationFailure(error, messages);
       const fieldIssues: FormIssue[] = failure.fields.flatMap((field): FormIssue[] => {
         if (field === 'email') return [{ fieldId: EMAIL_ID, message: messages.emailInvalid }];
-        if (field === 'displayName')
-          return [{ fieldId: NAME_ID, message: messages.displayNameInvalid }];
+        if (field === 'password')
+          return [{ fieldId: PASSWORD_ID, message: messages.passwordInvalid }];
         return [];
       });
       const known = fieldIssues.length === failure.fields.length && fieldIssues.length > 0;
@@ -111,8 +111,8 @@ export function CreateUser() {
     event.preventDefault();
     const found: FormIssue[] = [];
     if (email.trim() === '') found.push({ fieldId: EMAIL_ID, message: messages.emailRequired });
-    if (displayName.trim() === '')
-      found.push({ fieldId: NAME_ID, message: messages.displayNameRequired });
+    if (password.length < 15 || password.length > 128)
+      found.push({ fieldId: PASSWORD_ID, message: messages.passwordInvalid });
     setIssues(found);
     if (found.length > 0) {
       setAttempt((value) => value + 1);
@@ -170,12 +170,13 @@ export function CreateUser() {
               onChange={(event) => setEmail(event.currentTarget.value)}
             />
           </Field>
-          <Field id={NAME_ID} label={messages.displayName} error={errorFor(NAME_ID)} required>
+          <Field id={PASSWORD_ID} label={messages.password} error={errorFor(PASSWORD_ID)} required>
             <Input
-              autoComplete="off"
-              value={displayName}
+              type="password"
+              autoComplete="new-password"
+              value={password}
               readOnly={create.isPending}
-              onChange={(event) => setDisplayName(event.currentTarget.value)}
+              onChange={(event) => setPassword(event.currentTarget.value)}
             />
           </Field>
         </FormSection>
@@ -293,7 +294,7 @@ export function CreateUser() {
         onConfirm={() => create.mutate()}
       >
         <p>
-          <Bdi>{displayName.trim()}</Bdi> — <LtrText>{email.trim()}</LtrText>
+          <LtrText>{email.trim()}</LtrText>
         </p>
       </AlertDialog>
     </Page>

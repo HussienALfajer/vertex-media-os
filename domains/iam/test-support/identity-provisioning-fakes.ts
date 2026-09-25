@@ -231,6 +231,9 @@ export class InMemoryIam implements IamTransactionRunner {
         staged.set(id, updated);
         return updated;
       },
+      initializePasswordHash: async () => {
+        throw new Error('Local credential initialization runs against PostgreSQL');
+      },
       readRoleHolders: async () => [],
     };
   }

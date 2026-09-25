@@ -30,6 +30,7 @@ export type {
   ResolveAuthorizationContextResult,
 } from './application/authorization.js';
 export type { DepartmentId, RoleId, UserId } from './domain/identifiers.js';
+export { normalizeEmail } from './domain/email.js';
 export type { DepartmentView } from './domain/organization.js';
 export type { RoleView } from './domain/roles.js';
 export type {
@@ -62,6 +63,8 @@ export type {
   CreateUserRequest,
   CreateUserResult,
   IdentitySyncOutcome,
+  InitializePasswordRequest,
+  InitializePasswordResult,
   InvitationOutcome,
   ProviderSessionsOutcome,
   ReactivateUserRequest,

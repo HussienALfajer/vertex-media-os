@@ -88,6 +88,13 @@ export interface SessionStore {
     readonly now: Date;
     readonly seenBefore: Date;
   }): Promise<boolean>;
+  /** Slides an authenticated local session without external tokens or an identity-provider call. */
+  touchLocal(change: {
+    readonly id: string;
+    readonly now: Date;
+    readonly seenBefore: Date;
+    readonly idleExpiresAt: Date;
+  }): Promise<boolean>;
   /**
    * Applies a successful re-validation: the slid idle deadline and the rotated tokens, only while
    * the session is still valid at `now`, still holds the claim made at `claimedAt` and still holds
@@ -390,6 +397,23 @@ export function createSessionStore(
           lastSeenAt: { lte: seenBefore },
         },
         data: { lastSeenAt: now },
+      });
+      return count === 1;
+    },
+
+    async touchLocal({ id, now, seenBefore, idleExpiresAt }) {
+      const { count } = await client.authSession.updateMany({
+        where: {
+          id,
+          revokedAt: null,
+          idleExpiresAt: { gt: now },
+          absoluteExpiresAt: { gt: now },
+          lastSeenAt: { lte: seenBefore },
+          idpSessionId: null,
+          idTokenCiphertext: null,
+          refreshTokenCiphertext: null,
+        },
+        data: { lastSeenAt: now, idleExpiresAt },
       });
       return count === 1;
     },

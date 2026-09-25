@@ -562,7 +562,7 @@ Construct localized messages with placeholders, never ad hoc string concatenatio
 | Synthetic specimen | Required handling |
 | --- | --- |
 | `المشروع: VX-2026-014` | Arabic sentence; isolated LTR ID; colon remains part of Arabic label |
-| `تم إرسال الدعوة إلى user@example.test` | Isolated LTR email with unambiguous copy behavior |
+| `أُضيف الحساب user@example.test` | Isolated LTR email with unambiguous copy behavior |
 | `ملف الحملة Campaign-v2.pdf` | Isolate whole filename; retain extension and internal order |
 | `الهاتف: +90 555 010 0200` | One LTR phone run; localized label outside |
 | `التقدم: 37.5%` | Localized formatted percent unit isolated; never mirror digits |
@@ -815,7 +815,7 @@ Tones are global presentation categories, not domain state machines. Each module
 | Archived / terminal historical | neutral | Archive + label | Preserve readable history |
 | Destructive action | danger action intent | Named verb and consequence | Action treatment, not a persisted status |
 
-IAM-specific baseline from [its specification](modules/iam.md): INVITED → info/`مدعو`; ACTIVE → success/`نشط`; SUSPENDED → warning/`موقوف مؤقتًا`; DISABLED → danger/`معطّل`; TERMINATED → neutral/`منتهي الوصول`. Provisioning PENDING → info/`بانتظار المزامنة`; SYNCED → success/`تمت المزامنة`; FAILED → danger/`فشلت المزامنة`. Access and provisioning MUST be separately labeled. Invitation delivery failure is a third operational outcome with its own message and authorized resend action; it MUST NOT imply that identity creation was rolled back.
+IAM-specific baseline after [ADR-0001](adr/0001-local-password-authentication.md): INVITED → info/`بانتظار أول دخول`; ACTIVE → success/`نشط`; SUSPENDED → warning/`موقوف مؤقتًا`; DISABLED → danger/`معطّل`; TERMINATED → neutral/`منتهي الوصول`. The directory and user detail show the access state. Historical identity synchronization and invitation-delivery columns are not shown in the current administration interface.
 
 Do not color every project stage differently. Stages such as proposed, contracted, or in review remain neutral/info unless the domain's actual condition requires success, warning, or danger. Deadline, risk, and lifecycle state may coexist as separately labeled facts. A task's “complete” badge does not automatically mean its project is complete.
 
@@ -830,7 +830,7 @@ Do not color every project stage differently. Stages such as proposed, contracte
 | No records yet | Short title, purpose, and one permitted first action |
 | No filter matches | Retain query/filters; offer clear filters; do not offer unrelated setup |
 | No permission | Clear access-limited message and allowed navigation; do not reveal protected record names/counts |
-| Signed out / session expired | Sign-in action via backend flow; explain safe recovery; no Vertex password/MFA fields |
+| Signed out / session expired | Vertex email and password form; explain safe recovery |
 | Record not found | Safe explanation and parent destination; respect API policy on existence disclosure |
 | Load failure | Explain affected scope; retry read safely; retain existing content only if still authorized |
 | Mutation failure | Preserve input/selection and show actionable error in context |
@@ -849,7 +849,7 @@ A confirmation MUST show the specific action, exact target identity, scope/count
 
 IAM requires confirmation for suspend, disable, terminate, revoke sessions, adding/removing System Administrator, role-permission edits, role deactivation, and department deactivation affecting scope. The reason field is offered where IAM supports it; it MUST NOT block urgent security revocation. User termination preserves the record and MUST NOT be presented as hard deletion or offer an unsupported restore.
 
-Typed-name confirmation SHOULD NOT be routine; it may be justified for a large irreversible bulk action when it materially reduces risk, with paste and assistive technology support. Re-authentication, if required, follows the existing backend/Keycloak flow. A second password prompt inside Vertex is forbidden.
+Typed-name confirmation SHOULD NOT be routine; it may be justified for a large irreversible bulk action when it materially reduces risk, with paste and assistive technology support. Any re-authentication uses the local backend session and credential policy.
 
 After confirmation, show pending and reconcile actual results. Backend authorization or concurrency rejection is explained without discarding context. “Undo” MUST correspond to a valid backend capability, time window, and known outcome; removing a toast cannot undo a mutation.
 
@@ -1043,7 +1043,7 @@ Deprecation requires a replacement, migration instructions, affected-consumer in
 - Whole-component opacity for disabled states, read-only values made unreadable, spinners for ordinary business “pending,” or success before authoritative confirmation.
 - Silent form overwrites, automatic retry of uncertain privileged/financial mutations, fake progress, fabricated totals, and unsupported undo.
 - Routine autosave of permissions, approvals, financial posting, or contracts; local browser persistence of authentication or business drafts.
-- Hard deletion presented as ordinary IAM termination, password/MFA forms in Vertex, or treating UI permission checks as authorization.
+- Hard deletion presented as ordinary IAM termination, second-factor forms, or treating UI permission checks as authorization.
 - Dialog stacks for navigation, uncontrolled z-index escalation, unrelated popups above modals, toasts as the only record of a critical outcome.
 - Default bounce/squish/parallax, arbitrary animation values, endlessly pulsing skeletons, and motion that ignores reduced-motion preferences.
 - Hidden essential table columns as the sole responsive strategy; unauthorized data preserved as “stale”; audit evidence conflated with an activity feed.

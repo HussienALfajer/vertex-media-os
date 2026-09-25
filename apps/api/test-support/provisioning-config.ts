@@ -12,9 +12,6 @@ export function testProvisioningConfig(
 ): IdentityProvisioningConfig {
   return loadIdentityProvisioningConfig({
     NODE_ENV: 'test',
-    KEYCLOAK_ISSUER_URL: 'http://127.0.0.1:1/realms/vertex',
-    KEYCLOAK_PROVISIONER_CLIENT_ID: 'vertex-provisioner',
-    KEYCLOAK_PROVISIONER_CLIENT_SECRET: 'sentinel-provisioner-secret-0000',
     ...overrides,
   });
 }

@@ -46,6 +46,8 @@ export interface BootstrapRequest {
   readonly mode: 'normal' | 'recovery';
   readonly email: string;
   readonly displayName: string;
+  /** Prepared local credential; absent for historical provider-driven bootstrap tests. */
+  readonly passwordHash?: string;
   /** Required in recovery mode, accountability text otherwise ignored (spec Section 21.3). */
   readonly reason?: string;
   /** Re-dispatch an invitation that was already sent (spec Section 21.2, explicit request only). */
@@ -193,13 +195,38 @@ export async function bootstrapSystemAdministrator(
         };
       };
 
-      if (decision.kind === 'resume') return succeed('resumed', decision.candidate);
+      if (decision.kind === 'resume') {
+        if (input.passwordHash !== undefined) {
+          const candidate = candidates.find((item) => item.id === decision.candidate);
+          const current = candidate && (await lifecycle.lockUser(candidate.id));
+          if (current === undefined) throw new Error('A bootstrap candidate disappeared.');
+          const initialized = await lifecycle.initializePasswordHash({
+            id: current.id,
+            expectedVersion: current.version,
+            passwordHash: input.passwordHash,
+          });
+          if (initialized !== undefined) {
+            await appendUserAudit(
+              audit,
+              attribution,
+              initialized,
+              'iam.user.password-initialized',
+              'SUCCEEDED',
+              {
+                after: { localSignInEnabled: true },
+              },
+            );
+          }
+        }
+        return succeed('resumed', decision.candidate);
+      }
       if (decision.kind === 'recover') {
         await supersede(scope, attribution, roleId, decision.terminate, decision.strip);
       }
       const inserted = await lifecycle.insertUser({
         email: email.value,
         displayName: displayName.value,
+        ...(input.passwordHash === undefined ? {} : { passwordHash: input.passwordHash }),
       });
       // A concurrent ordinary creation of the same email committed after the check above.
       if (inserted.outcome === 'email-taken') throw new EmailTaken();

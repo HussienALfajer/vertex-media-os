@@ -57,11 +57,13 @@ enum IamPermissionSensitivity {
 /// Database-only checks: iam_application_user_email_normalized_ck,
 /// iam_application_user_display_name_ck, iam_application_user_identity_pair_ck,
 /// iam_application_user_active_ck, iam_application_user_invited_ck,
-/// iam_application_user_invitation_sent_ck, iam_application_user_version_ck.
+/// iam_application_user_invitation_sent_ck, iam_application_user_version_ck,
+/// iam_application_user_password_hash_ck.
 model IamApplicationUser {
   id                       String                     @id(map: "iam_application_user_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email                    String                     @unique(map: "iam_application_user_email_key") @db.Text
   displayName              String                     @map("display_name") @db.Text
+  passwordHash             String?                    @map("password_hash") @db.Text
   accessState              IamUserAccessState         @map("access_state")
   identityIssuer           String?                    @map("identity_issuer") @db.Text
   identitySubject          String?                    @map("identity_subject") @db.Text
@@ -75,9 +77,19 @@ model IamApplicationUser {
   version                  Int                        @default(1)
   memberships              IamDepartmentMembership[]
   roleAssignments          IamUserRoleAssignment[]
+  legacyIdentity           IamLegacyIdentityMapping?
 
   @@unique([identityIssuer, identitySubject], map: "iam_application_user_identity_key")
   @@map("iam_application_user")
+}
+
+model IamLegacyIdentityMapping {
+  userId          String             @id(map: "iam_legacy_identity_mapping_pkey") @map("user_id") @db.Uuid
+  identityIssuer  String             @map("identity_issuer") @db.Text
+  identitySubject String             @map("identity_subject") @db.Text
+  user            IamApplicationUser @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "iam_legacy_identity_mapping_user_id_fkey")
+
+  @@map("iam_legacy_identity_mapping")
 }
 
 /// Database-only checks: iam_department_code_ck, iam_department_name_ck,

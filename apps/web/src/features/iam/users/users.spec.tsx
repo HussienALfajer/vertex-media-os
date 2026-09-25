@@ -238,7 +238,7 @@ describe('navigation', () => {
 });
 
 describe('the user directory', () => {
-  it('lists operational fields with three separate facts; invitation only while INVITED', async () => {
+  it('lists each user, their role and local access state', async () => {
     fakeApi({
       'GET /api/iam/users': () =>
         json(
@@ -269,14 +269,10 @@ describe('the user directory', () => {
     expect(active.textContent).toContain('sara@example.test');
     expect(active.textContent).toContain('العمليات · رئيسي');
     expect(active.textContent).toContain('نشط');
-    expect(active.textContent).toContain('تمت المزامنة');
-    // After INVITED, invitation delivery is history, not an outstanding condition (spec 11.3).
-    expect(active.textContent).toContain('لا ينطبق');
-    expect(active.textContent).not.toContain('أُرسلت الدعوة');
-    expect(invited.textContent).toContain('مدعو');
-    expect(invited.textContent).toContain('فشلت المزامنة');
-    expect(invited.textContent).toContain('تعذّر تأكيد إرسال الدعوة');
-    expect(screen.getByRole('button', { name: 'دعوة مستخدم' })).toBeTruthy();
+    expect(active.textContent).not.toContain('الدعوة');
+    expect(invited.textContent).toContain('بانتظار أول دخول');
+    expect(invited.textContent).not.toContain('مزامنة');
+    expect(screen.getByRole('button', { name: 'إضافة مستخدم' })).toBeTruthy();
   });
 
   it('shows an unknown state value as unknown, never as success', async () => {
@@ -320,7 +316,7 @@ describe('the user directory', () => {
     renderAt('/users?accessState=DISABLED');
     expect(await screen.findByRole('heading', { name: 'لا توجد نتائج مطابقة' })).toBeTruthy();
     expect(screen.queryByText('لا يوجد مستخدمون بعد')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'دعوة مستخدم' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'إضافة مستخدم' })).toBeNull();
   });
 
   it('shows an empty directory with no invitation action to a reader without iam.users.create', async () => {
@@ -328,7 +324,7 @@ describe('the user directory', () => {
     renderAt('/users');
     expect(await screen.findByText('لا يوجد مستخدمون بعد')).toBeTruthy();
     expect(screen.getByText('لم يُضف أي مستخدم بعد.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'دعوة مستخدم' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'إضافة مستخدم' })).toBeNull();
   });
 
   it('keeps paging in the address and returns to the first page when the filter changes', async () => {
@@ -366,14 +362,14 @@ describe('the user directory', () => {
 });
 
 describe('creating a user', () => {
-  it('asks for the required fields and has no password or verification field', async () => {
+  it('requires email and password without another verification field', async () => {
     const api = fakeApi({});
     renderAt('/users/new');
-    fireEvent.click(await screen.findByRole('button', { name: 'دعوة المستخدم' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'إضافة المستخدم' }));
     expect(await screen.findByText('أدخل البريد الإلكتروني.', { selector: 'a' })).toBeTruthy();
     expect(api.unsafe()).toEqual([]);
-    expect(document.querySelector('input[type="password"]')).toBeNull();
-    expect(screen.queryByLabelText(/كلمة المرور/)).toBeNull();
+    expect(document.querySelector('input[type="password"]')).toBeTruthy();
+    expect(screen.getByLabelText(/كلمة المرور/)).toBeTruthy();
   });
 
   it('does not offer the form without iam.users.create (review AB-1)', async () => {
@@ -412,15 +408,17 @@ describe('creating a user', () => {
     fireEvent.change(await screen.findByLabelText(/البريد الإلكتروني/), {
       target: { value: ' sara@example.test ' },
     });
-    fireEvent.change(screen.getByLabelText(/الاسم المعروض/), { target: { value: 'سارة' } });
+    fireEvent.change(screen.getByLabelText(/كلمة المرور/), {
+      target: { value: 'a secure employee password 4!' },
+    });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'العمليات' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'القسم الرئيسي' }), {
       target: { value: OPS },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'محرر' }));
-    fireEvent.click(screen.getByRole('button', { name: 'دعوة المستخدم' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المستخدم' }));
 
-    expect(await screen.findByText('تمت دعوة المستخدم')).toBeTruthy();
+    expect(await screen.findByText('أُضيف المستخدم')).toBeTruthy();
     const [create] = api.unsafe();
     expect(create).toMatchObject({
       method: 'POST',
@@ -428,7 +426,7 @@ describe('creating a user', () => {
       csrf: 'csrf-token',
       body: {
         email: 'sara@example.test',
-        displayName: 'سارة',
+        password: 'a secure employee password 4!',
         memberships: [{ departmentId: OPS, isPrimary: true }],
         roleIds: [EDITOR],
       },
@@ -436,10 +434,9 @@ describe('creating a user', () => {
     expect(router.state.location.pathname).toBe(detailPath);
     // The one-time flag leaves the address.
     await waitFor(() => expect(router.state.location.search).toEqual({}));
-    // The facts are the API's: the Keycloak step failed after the local commit (spec 27).
     const facts = screen.getByRole('region', { name: 'حالة الحساب' });
-    expect(facts.textContent).toContain('فشلت المزامنة');
-    expect(facts.textContent).toContain('لم تُرسل الدعوة');
+    expect(facts.textContent).toContain('بانتظار أول دخول');
+    expect(facts.textContent).not.toContain('الدعوة');
   });
 
   it('asks for deliberate confirmation before creating a System Administrator', async () => {
@@ -448,9 +445,11 @@ describe('creating a user', () => {
     fireEvent.change(await screen.findByLabelText(/البريد الإلكتروني/), {
       target: { value: 'sara@example.test' },
     });
-    fireEvent.change(screen.getByLabelText(/الاسم المعروض/), { target: { value: 'سارة' } });
+    fireEvent.change(screen.getByLabelText(/كلمة المرور/), {
+      target: { value: 'a secure employee password 5!' },
+    });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'مسؤول النظام' }));
-    fireEvent.click(screen.getByRole('button', { name: 'دعوة المستخدم' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المستخدم' }));
 
     const dialog = await screen.findByRole('alertdialog', { name: 'إسناد دور مسؤول النظام' });
     expect(dialog.textContent).toContain('sara@example.test');
@@ -468,16 +467,15 @@ describe('creating a user', () => {
 });
 
 describe('the user detail', () => {
-  it('shows invitation delivery with its sending time only while INVITED', async () => {
+  it('shows first sign-in pending without invitation or identity-provider status', async () => {
     fakeApi({
       [detailRoute]: () => json(200, detail({ accessState: 'INVITED', firstActivatedAt: null })),
     });
     renderAt(detailPath);
     const facts = await screen.findByRole('region', { name: 'حالة الحساب' });
-    expect(facts.textContent).toContain('مدعو');
-    expect(facts.textContent).toContain('تمت المزامنة');
-    expect(facts.textContent).toContain('أُرسلت الدعوة');
-    expect(facts.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-20T08:00:00.000Z');
+    expect(facts.textContent).toContain('بانتظار أول دخول');
+    expect(facts.textContent).not.toContain('الدعوة');
+    expect(facts.textContent).not.toContain('المزامنة');
     expect(screen.getByRole('region', { name: 'الملف' }).textContent).toContain('لم يُفعَّل بعد');
   });
 
@@ -498,12 +496,7 @@ describe('the user detail', () => {
     const items = within(menu)
       .getAllByRole('menuitem')
       .map((item) => item.textContent);
-    expect(items).toEqual([
-      'مزامنة الهوية',
-      'إعادة تفعيل الوصول',
-      'تعطيل المستخدم',
-      'إنهاء الوصول نهائيًا',
-    ]);
+    expect(items).toEqual(['إعادة تفعيل الوصول', 'تعطيل المستخدم', 'إنهاء الوصول نهائيًا']);
     // No iam.users.update, manage-roles or manage-departments: no such controls.
     expect(screen.queryByRole('button', { name: 'تعديل الاسم' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'إسناد دور' })).toBeNull();
@@ -571,7 +564,7 @@ describe('the user detail', () => {
 
   it.each([
     ['ACTIVE', 'أُعيد الوصول: الحالة الآن «نشط»'],
-    ['INVITED', 'أُعيد إلى «مدعو» بانتظار أول تفعيل'],
+    ['INVITED', 'أُعيد إلى «بانتظار أول دخول»'],
   ])('states the reactivation target the backend derived (%s)', async (target, message) => {
     const api = fakeApi({
       [detailRoute]: () => json(200, detail({ accessState: 'DISABLED' })),
@@ -630,34 +623,23 @@ describe('the user detail', () => {
     await waitFor(() => expect(reads).toBe(2));
   });
 
-  it('offers nothing but synchronization and session revocation for a TERMINATED user', async () => {
+  it('offers only session revocation for a TERMINATED user', async () => {
     fakeApi({ [detailRoute]: () => json(200, detail({ accessState: 'TERMINATED' })) });
     renderAt(detailPath);
     const items = within(await openUserActions())
       .getAllByRole('menuitem')
       .map((item) => item.textContent);
-    expect(items).toEqual(['مزامنة الهوية', 'إنهاء الجلسات']);
+    expect(items).toEqual(['إنهاء الجلسات']);
   });
 
-  it('offers invitation resend only while INVITED', async () => {
+  it('offers no invitation action while awaiting first sign-in', async () => {
     fakeApi({ [detailRoute]: () => json(200, detail({ accessState: 'INVITED' })) });
     renderAt(detailPath);
     const items = within(await openUserActions())
       .getAllByRole('menuitem')
       .map((item) => item.textContent);
-    expect(items).toContain('إعادة إرسال الدعوة');
+    expect(items).not.toContain('إعادة إرسال الدعوة');
     expect(items).not.toContain('إعادة تفعيل الوصول');
-  });
-
-  it('says a resend failed after an earlier confirmed sending (spec 11.3)', async () => {
-    fakeApi({
-      [detailRoute]: () =>
-        json(200, detail({ accessState: 'INVITED', invitationDeliveryState: 'FAILED' })),
-    });
-    renderAt(detailPath);
-    const facts = await screen.findByRole('region', { name: 'حالة الحساب' });
-    expect(facts.textContent).toContain('تعذّر تأكيد إرسال الدعوة');
-    expect(facts.textContent).toContain('تعذّر تأكيد إعادة الإرسال. آخر إرسال مؤكد:');
   });
 
   it('treats a lost answer as unconfirmed and reads the user again before any repeat', async () => {
@@ -690,50 +672,16 @@ describe('the user detail', () => {
     expect(await within(dialog).findByText('تعذّر التحقق من الطلب. أعد المحاولة.')).toBeTruthy();
   });
 
-  it('reports session revocation with the identity-service outcome', async () => {
+  it('reports local session revocation', async () => {
     fakeApi({
       [detailRoute]: () => json(200, detail()),
-      [`POST /api/iam/users/${TARGET_ID}/revoke-sessions`]: () =>
-        json(200, { sessionsRevoked: 1, providerSessions: 'FAILED' }),
+      [`POST /api/iam/users/${TARGET_ID}/revoke-sessions`]: () => json(200, { sessionsRevoked: 1 }),
     });
     renderAt(detailPath);
     const dialog = await chooseAction('إنهاء الجلسات');
     expect(dialog.textContent).toContain('لا تتغير حالة وصوله');
     fireEvent.click(within(dialog).getByRole('button', { name: 'إنهاء الجلسات' }));
-    expect(await screen.findByText(/تعذّر إنهاء جلساته في خدمة الهوية/)).toBeTruthy();
-  });
-
-  it('reports identity synchronization and the invitation outcome separately', async () => {
-    let resends = 0;
-    const api = fakeApi({
-      [detailRoute]: () =>
-        json(200, detail({ accessState: 'INVITED', identitySyncState: 'FAILED' })),
-      [`POST /api/iam/users/${TARGET_ID}/sync-identity`]: () =>
-        json(200, { user: user({ accessState: 'INVITED' }), invitation: 'SENT' }),
-      [`POST /api/iam/users/${TARGET_ID}/resend-invitation`]: () =>
-        resends++ === 0
-          ? problem(503, 'SERVICE_BUSY', {})
-          : json(200, { user: user({ accessState: 'INVITED' }), invitation: 'NO_ACTION_REQUIRED' }),
-    });
-    renderAt(detailPath);
-    fireEvent.click(
-      within(await openUserActions()).getByRole('menuitem', { name: 'مزامنة الهوية' }),
-    );
-    expect(await screen.findByText('اكتملت مزامنة الهوية')).toBeTruthy();
-    expect(screen.getByText('أُرسلت الدعوة.')).toBeTruthy();
-    expect(api.unsafe()[0]).toMatchObject({ body: {}, csrf: 'csrf-token' });
-
-    fireEvent.click(
-      within(await openUserActions()).getByRole('menuitem', { name: 'إعادة إرسال الدعوة' }),
-    );
-    expect(await screen.findByText('الخدمة مشغولة الآن. أعد المحاولة بعد قليل.')).toBeTruthy();
-
-    fireEvent.click(
-      within(await openUserActions()).getByRole('menuitem', { name: 'إعادة إرسال الدعوة' }),
-    );
-    expect(await screen.findByText('نتيجة إعادة إرسال الدعوة')).toBeTruthy();
-    expect(screen.getByText('لا تحتاج الهوية إلى دعوة.')).toBeTruthy();
-    expect(screen.queryByText('اكتملت مزامنة الهوية')).toBeNull();
+    expect(await screen.findByText(/أُنهيت الجلسات النشطة: 1/)).toBeTruthy();
   });
 
   it('removes the user data when the administrator loses iam.users.read (review AB-2)', async () => {
@@ -770,9 +718,8 @@ describe('the user detail', () => {
     fakeApi({ [detailRoute]: () => json(200, detail({ accessState: 'INVITED' })) });
     renderAt(detailPath);
     const facts = await screen.findByRole('region', { name: 'Account status' });
-    expect(facts.textContent).toContain('Invited');
-    expect(facts.textContent).toContain('Synced');
-    expect(facts.textContent).toContain('Invitation sent');
+    expect(facts.textContent).toContain('Awaiting first sign-in');
+    expect(facts.textContent).not.toContain('Invitation');
     expect(document.documentElement.dir).toBe('ltr');
   });
 });

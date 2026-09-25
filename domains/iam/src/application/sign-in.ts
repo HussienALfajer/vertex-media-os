@@ -172,16 +172,6 @@ async function refuseInactive(
   traceId: TraceId,
 ): Promise<Attempt> {
   return dependencies.runner.run(async (scope) => {
-    let after = user;
-    if (user.identitySyncState !== 'FAILED') {
-      const written = await scope.users.recordIdentitySync({
-        id: user.id,
-        expectedVersion: user.version,
-        state: 'FAILED',
-      });
-      if (written.outcome !== 'updated') return RETRY;
-      after = written.user;
-    }
     await append(scope.audit, {
       action: 'iam.user.sign-in-refused',
       actor: actorOf(user.id),
@@ -190,7 +180,7 @@ async function refuseInactive(
       traceId,
       change: {
         before: { accessState: user.accessState, identitySyncState: user.identitySyncState },
-        after: { accessState: after.accessState, identitySyncState: after.identitySyncState },
+        after: { accessState: user.accessState, identitySyncState: user.identitySyncState },
       },
     });
     return { outcome: 'inactive' };

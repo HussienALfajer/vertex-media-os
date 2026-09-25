@@ -8,36 +8,22 @@ import {
   Post,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
-import {
-  ApiBadRequestResponse,
-  ApiBody,
-  ApiConsumes,
-  ApiCookieAuth,
-  ApiHeader,
-  ApiForbiddenResponse,
-  ApiOkResponse,
-  ApiResponse,
-  ApiTags,
-  ApiTooManyRequestsResponse,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
+import { ApiBody, ApiCookieAuth, ApiHeader, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { PROBLEM_CONTENT_TYPE } from '../http/problem-details.js';
-import { ProblemDetailsSchema } from '../openapi/problem-details.schema.js';
+import { RequestValidationException } from '../http/problem-details.js';
 import type { AuthRuntime } from './auth-runtime.js';
 import { CsrfTokenResponse, LogoutResponse, SessionResponse } from './auth.responses.js';
+import { AUTH_RUNTIME, Public } from './access.guard.js';
 import {
   clearedCookie,
   LOGIN_COOKIE,
-  loginCookie,
   readCookie,
   SESSION_COOKIE,
   sessionCookie,
 } from './cookies.js';
-import { AUTH_RUNTIME, Public } from './access.guard.js';
-import { logEvidenceLimited } from './evidence-log.js';
-import { clientAddressKey, type RateLimiter } from './rate-limit.js';
+import { clientAddressKey } from './rate-limit.js';
 import {
   requireSession,
   systemAttribution,
@@ -45,203 +31,123 @@ import {
   userAttribution,
 } from './request-session.js';
 
-/** Browser-visible outcome codes of a failed sign-in (IAM-R03 D-23, IAM-R09 D-03). */
-type SignInFailure =
-  | 'AUTH_ACCESS_DENIED'
-  | 'AUTH_LOGIN_FAILED'
-  | 'AUTH_RATE_LIMITED'
-  | 'IDENTITY_PROVIDER_UNAVAILABLE';
-
 const NO_STORE = 'no-store';
-const problem = { content: { [PROBLEM_CONTENT_TYPE]: { schema: ProblemDetailsSchema } } };
 
-/**
- * The BFF authentication endpoints of spec Section 25.1. Login, callback and back-channel logout
- * are public by design (spec Section 24); session, CSRF and logout need a valid session.
- */
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(@Inject(AUTH_RUNTIME) private readonly runtime: AuthRuntime) {}
 
-  /** Starts an OIDC sign-in: stores a login attempt and redirects to Keycloak. */
-  @Get('login')
+  /** Same-origin JSON credentials create an opaque application session. */
+  @Post('login')
   @Public()
-  @ApiResponse({ status: 302, description: 'Redirect to the identity provider.' })
-  @ApiResponse({
-    status: 303,
-    description:
-      'Sign-in cannot start: back to the app as `/?authError=` with `AUTH_RATE_LIMITED`, ' +
-      '`AUTH_LOGIN_FAILED` or `IDENTITY_PROVIDER_UNAVAILABLE`.',
+  @HttpCode(200)
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['email', 'password'],
+      additionalProperties: false,
+      properties: {
+        email: { type: 'string', format: 'email', maxLength: 254 },
+        password: { type: 'string', format: 'password', minLength: 15, maxLength: 128 },
+      },
+    },
   })
-  async login(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
-    // A refused request stores no login attempt (IAM-R09 D-03).
-    if (!admit(request, this.runtime.limits.signIn, 'sign-in')) {
-      return this.signInFailed(reply, 'AUTH_RATE_LIMITED');
+  @ApiOkResponse({ type: SessionResponse })
+  async login(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<SessionResponse> {
+    void reply.header('cache-control', NO_STORE);
+    const body = request.body;
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new RequestValidationException(['email', 'password']);
     }
-    // Every outcome, including an unexpected failure, ends in a redirect back to the app (D-23).
-    try {
-      await this.startSignIn(request, reply);
-    } catch (error) {
-      if (reply.sent) throw error;
-      request.log.error({ err: error, auth: 'sign-in-failed' }, 'sign-in failed unexpectedly');
-      this.signInFailed(reply, 'AUTH_LOGIN_FAILED');
+    const input = body as Record<string, unknown>;
+    if (
+      Object.keys(input).some((key) => key !== 'email' && key !== 'password') ||
+      typeof input['email'] !== 'string' ||
+      input['email'].length > 254 ||
+      typeof input['password'] !== 'string' ||
+      Buffer.byteLength(input['password'], 'utf8') > 512
+    ) {
+      throw new RequestValidationException(['email', 'password']);
     }
-  }
-
-  private async startSignIn(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const authorization = await this.runtime.oidc.authorizationRequest();
-    if (!authorization.ok) {
-      request.log.warn(
-        { auth: 'login-start-failed', failure: authorization.failure, code: authorization.code },
-        'sign-in could not start',
+    const address = clientAddressKey(request.ip);
+    const limiter = this.runtime.limits.signIn;
+    const byAddress = limiter.take(`login-address:${address}`);
+    const byEmail = limiter.take(`login-email:${input['email'].trim().toLowerCase()}`);
+    if (!byAddress.allowed || !byEmail.allowed) {
+      if ((!byAddress.allowed && byAddress.first) || (!byEmail.allowed && byEmail.first)) {
+        request.log.warn(
+          { auth: 'login-rate-limited' },
+          'sign-in attempts exceeded the configured limit',
+        );
+      }
+      const waitAddress = byAddress.allowed ? 0 : byAddress.retryAfterSeconds;
+      const waitEmail = byEmail.allowed ? 0 : byEmail.retryAfterSeconds;
+      void reply.header('retry-after', String(Math.max(waitAddress, waitEmail)));
+      throw new HttpException(
+        'Too many sign-in attempts; retry later.',
+        HttpStatus.TOO_MANY_REQUESTS,
+        {
+          errorCode: 'RATE_LIMITED',
+        },
       );
-      return this.signInFailed(
-        reply,
-        authorization.failure === 'unavailable'
-          ? 'IDENTITY_PROVIDER_UNAVAILABLE'
-          : 'AUTH_LOGIN_FAILED',
-      );
     }
-    const { url, ...secrets } = authorization.value;
-    const handle = await this.runtime.sessions.startLogin(secrets);
-    void reply
-      .code(302)
-      .header('cache-control', NO_STORE)
-      .header(
-        'set-cookie',
-        loginCookie(handle, this.runtime.config.session.loginAttemptTimeoutSeconds),
-      )
-      .header('location', url)
-      .send();
-  }
 
-  /** Completes the sign-in (spec Section 13 steps 6–13) and issues the session cookie. */
-  @Get('callback')
-  @Public()
-  @ApiResponse({
-    status: 303,
-    description:
-      'Back to the app: `/` when signed in, otherwise `/?authError=` with `AUTH_ACCESS_DENIED`, ' +
-      '`AUTH_LOGIN_FAILED`, `AUTH_RATE_LIMITED` or `IDENTITY_PROVIDER_UNAVAILABLE`.',
-  })
-  async callback(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
-    if (!admit(request, this.runtime.limits.signIn, 'sign-in')) {
-      return this.signInFailed(reply, 'AUTH_RATE_LIMITED');
-    }
-    // Every outcome, including an unexpected failure, ends in a redirect back to the app (D-23).
-    try {
-      await this.completeSignIn(request, reply);
-    } catch (error) {
-      if (reply.sent) throw error;
-      request.log.error({ err: error, auth: 'sign-in-failed' }, 'sign-in failed unexpectedly');
-      this.signInFailed(reply, 'AUTH_LOGIN_FAILED');
-    }
-  }
-
-  private async completeSignIn(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    // The login attempt is single-use whatever happens next: every answer below clears its cookie.
-    const attempt = await this.runtime.sessions.finishLogin(
-      readCookie(request.headers.cookie, LOGIN_COOKIE),
+    const result = await this.runtime.iam.localSignIn(
+      input['email'],
+      input['password'],
+      traceIdOf(request),
     );
-    if (attempt.outcome !== 'found') {
-      request.log.warn(
-        { auth: 'sign-in-failed', reason: `attempt-${attempt.outcome}` },
-        'sign-in failed',
-      );
-      return this.signInFailed(reply, 'AUTH_LOGIN_FAILED');
-    }
-
-    const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?') + 1) : '';
-    const identity = await this.runtime.oidc.completeAuthorization({
-      query,
-      state: attempt.state,
-      nonce: attempt.nonce,
-      codeVerifier: attempt.codeVerifier,
-    });
-    if (!identity.ok) {
-      request.log.warn(
-        { auth: 'sign-in-failed', reason: identity.failure, code: identity.code },
-        'sign-in failed',
-      );
-      return this.signInFailed(
-        reply,
-        identity.failure === 'unavailable' ? 'IDENTITY_PROVIDER_UNAVAILABLE' : 'AUTH_LOGIN_FAILED',
-      );
-    }
-
-    const result = await this.runtime.iam.signIn({
-      issuer: identity.value.issuer,
-      subject: identity.value.subject,
-      traceId: traceIdOf(request),
-    });
     if (result.outcome !== 'signed-in') {
-      request.log.warn({ auth: 'sign-in-denied', reason: result.outcome }, 'sign-in denied');
-      return this.signInFailed(
-        reply,
-        result.outcome === 'conflict' ? 'AUTH_LOGIN_FAILED' : 'AUTH_ACCESS_DENIED',
-      );
+      request.log.warn({ auth: 'sign-in-denied' }, 'sign-in denied');
+      throw new UnauthorizedException('The email or password is incorrect.', {
+        errorCode: 'AUTH_LOGIN_FAILED',
+      });
     }
-
-    const attribution = userAttribution(request, result.userId);
+    const user = await this.runtime.iam.resolveSessionUser(result.userId);
+    if (user.outcome !== 'active') {
+      throw new UnauthorizedException('The email or password is incorrect.', {
+        errorCode: 'AUTH_LOGIN_FAILED',
+      });
+    }
     const previous = await this.runtime.sessions.authenticate(
       readCookie(request.headers.cookie, SESSION_COOKIE),
       systemAttribution(request, 'iam.session-check'),
     );
-    if (previous.outcome === 'ended') {
-      request.log.info(
-        { auth: 'session-revoked', reason: 'provider-session-ended' },
-        'session revoked',
-      );
-    }
-    const { secret, endedByProvider } = await this.runtime.sessions.establish({
+    const { secret, session } = await this.runtime.sessions.establish({
       userId: result.userId,
-      idpSessionId: identity.value.idpSessionId,
-      idToken: identity.value.idToken,
-      refreshToken: identity.value.refreshToken,
-      attribution,
+      idpSessionId: undefined,
+      idToken: undefined,
+      refreshToken: undefined,
+      attribution: userAttribution(request, result.userId),
     });
-    if (endedByProvider) {
-      // Keycloak logged this sign-in's session out while it completed (IAM-R09 D-08).
-      request.log.warn(
-        { auth: 'sign-in-failed', reason: 'provider-session-ended' },
-        'sign-in failed',
-      );
-      return this.signInFailed(reply, 'AUTH_LOGIN_FAILED');
-    }
-    // A new sign-in in the same browser replaces the session it held (session rotation). The new
-    // session exists already, so a failure here is logged and the sign-in still completes.
     if (previous.outcome === 'valid') {
-      await this.runtime.sessions
-        .revoke(previous.session, 'REPLACED', attribution)
-        .catch((error: unknown) =>
-          request.log.error(
-            { err: error, auth: 'rotation-failed' },
-            'previous session not revoked',
-          ),
-        );
+      await this.runtime.sessions.revoke(
+        previous.session,
+        'REPLACED',
+        userAttribution(request, result.userId),
+      );
     }
+    void reply.header('set-cookie', [clearedCookie(LOGIN_COOKIE), sessionCookie(secret)]);
     request.log.info(
       { auth: 'sign-in', firstActivation: result.firstActivation },
       'application session established',
     );
-    void reply
-      .code(303)
-      .header('cache-control', NO_STORE)
-      .header('set-cookie', [clearedCookie(LOGIN_COOKIE), sessionCookie(secret)])
-      .header('location', '/')
-      .send();
+    return {
+      user: { id: user.user.id, email: user.user.email, displayName: user.user.displayName },
+      session: {
+        idleExpiresAt: session.idleExpiresAt.toISOString(),
+        absoluteExpiresAt: session.absoluteExpiresAt.toISOString(),
+      },
+    };
   }
 
-  /** The current session and its user; never a token or a session identifier. */
   @Get('session')
   @ApiCookieAuth('session')
   @ApiOkResponse({ type: SessionResponse })
-  @ApiUnauthorizedResponse({
-    description: '`AUTHENTICATION_REQUIRED`, `AUTH_SESSION_INVALID` or `AUTH_SESSION_EXPIRED`.',
-    ...problem,
-  })
-  @ApiForbiddenResponse({ description: '`IAM_USER_INACTIVE`.', ...problem })
   async session(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -257,12 +163,9 @@ export class AuthController {
     };
   }
 
-  /** The session's CSRF token, for the browser to hold in memory only (spec Section 15). */
   @Get('csrf')
   @ApiCookieAuth('session')
   @ApiOkResponse({ type: CsrfTokenResponse })
-  @ApiUnauthorizedResponse({ description: 'No valid session.', ...problem })
-  @ApiForbiddenResponse({ description: '`IAM_USER_INACTIVE`.', ...problem })
   async csrf(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -272,36 +175,17 @@ export class AuthController {
     return { token: this.runtime.sessions.csrfToken(secret) };
   }
 
-  /**
-   * Ends the session (the access guard has checked the session and its CSRF token) and the Keycloak
-   * session (spec Section 32; IAM-R03 D-17), and returns where the browser goes next: the
-   * post-logout URI, or the token-free end-session URL when the API could not end it itself.
-   */
   @Post('logout')
   @HttpCode(200)
   @ApiCookieAuth('session')
-  @ApiHeader({
-    name: 'X-CSRF-Token',
-    required: true,
-    description: 'The session’s token from `GET /api/auth/csrf`; every unsafe request needs it.',
-  })
+  @ApiHeader({ name: 'X-CSRF-Token', required: true })
   @ApiOkResponse({ type: LogoutResponse })
-  @ApiUnauthorizedResponse({ description: 'No valid session.', ...problem })
-  @ApiForbiddenResponse({
-    description: '`CSRF_VALIDATION_FAILED` or `IAM_USER_INACTIVE`.',
-    ...problem,
-  })
-  @ApiTooManyRequestsResponse({
-    description: '`RATE_LIMITED`: too many logout requests from this address; see `Retry-After`.',
-    ...problem,
-  })
   async logout(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<LogoutResponse> {
     const limited = this.runtime.limits.logout.take(`logout:${clientAddressKey(request.ip)}`);
     if (!limited.allowed) {
-      if (limited.first) logLimited(request, 'logout');
       void reply.header('retry-after', String(limited.retryAfterSeconds));
       throw new HttpException(
         'Too many logout requests; retry later.',
@@ -312,161 +196,11 @@ export class AuthController {
       );
     }
     const { session, user } = await requireSession(this.runtime, request, reply);
-    const idToken = this.runtime.sessions.idTokenOf(session);
     await this.runtime.sessions.revoke(session, 'LOGOUT', userAttribution(request, user.id));
-    // After the revocation committed: Keycloak I/O never runs inside a transaction (invariant 10).
-    const provider = await this.runtime.oidc.endProviderSession(idToken);
     void reply
       .header('cache-control', NO_STORE)
       .header('set-cookie', clearedCookie(SESSION_COOKIE));
-    request.log.info(
-      { auth: 'logout', providerSessionEnded: provider.ended },
-      'application session ended',
-    );
-    return { logoutUrl: provider.browserUrl };
+    request.log.info({ auth: 'logout' }, 'application session ended');
+    return { logoutUrl: '/' };
   }
-
-  /** Keycloak back-channel logout (spec Section 33), validated by the logout token alone. */
-  @Post('backchannel-logout')
-  @Public()
-  @ApiConsumes('application/x-www-form-urlencoded')
-  @ApiBody({
-    required: true,
-    schema: {
-      type: 'object',
-      required: ['logout_token'],
-      properties: {
-        logout_token: {
-          type: 'string',
-          maxLength: 16_384,
-          description: 'The Logout Token (OIDC Back-Channel Logout 1.0 Section 2.4).',
-        },
-      },
-    },
-  })
-  @ApiOkResponse({ description: 'The matching sessions are revoked (idempotent).' })
-  @ApiBadRequestResponse({
-    description: 'The logout token is missing or invalid (Section 2.8 of the same specification).',
-    content: {
-      'application/json': {
-        schema: {
-          type: 'object',
-          required: ['error'],
-          properties: { error: { type: 'string', enum: ['invalid_request'] } },
-        },
-      },
-    },
-  })
-  async backchannelLogout(
-    @Req() request: FastifyRequest,
-    @Res() reply: FastifyReply,
-  ): Promise<void> {
-    void reply.header('cache-control', NO_STORE);
-    // Form bodies only (OIDC Back-Channel Logout 1.0 Section 2.5); JSON is parsed on every route.
-    const form = request.headers['content-type']?.startsWith('application/x-www-form-urlencoded');
-    const token = form ? logoutTokenOf(request.body) : undefined;
-    const verified =
-      token === undefined
-        ? ({ ok: false, failure: 'rejected' } as const)
-        : await this.runtime.oidc.verifyLogoutToken(token);
-    if (!verified.ok) {
-      request.log.warn(
-        { auth: 'backchannel-logout-rejected', failure: verified.failure, code: verified.code },
-        'back-channel logout rejected',
-      );
-      // Anyone can post here, from any number of addresses, so the Audit evidence of refusals has
-      // one budget for the whole process (D-04, D-05; review S-1). The log keeps every refusal.
-      const evidence = this.runtime.limits.evidence.take('backchannel-refused');
-      if (evidence.allowed) {
-        await this.recordBackchannelLogout(request, verified.failure);
-      } else if (evidence.first) {
-        logEvidenceLimited(request, 'backchannel-logout-refused');
-      }
-      void reply.code(400).send({ error: 'invalid_request' });
-      return;
-    }
-
-    const attribution = systemAttribution(request, 'iam.backchannel-logout');
-    let revoked: number;
-    if (verified.value.sessionId !== undefined) {
-      revoked = await this.runtime.sessions.revokeIdpSession(
-        verified.value.sessionId,
-        'BACKCHANNEL_LOGOUT',
-        attribution,
-      );
-    } else {
-      const userId = await this.runtime.iam.resolveIdentityUser({
-        issuer: this.runtime.config.oidc.issuer,
-        subject: verified.value.subject,
-      });
-      revoked =
-        userId === undefined
-          ? 0
-          : await this.runtime.sessions.revokeUserSessions(
-              userId,
-              'BACKCHANNEL_LOGOUT',
-              attribution,
-            );
-    }
-    // Each revoked session has its own record; a valid token that matched none needs one (CP1-14).
-    if (revoked === 0) await this.recordBackchannelLogout(request, 'no-match');
-    request.log.info({ auth: 'backchannel-logout', revoked }, 'back-channel logout processed');
-    void reply.code(200).send();
-  }
-
-  /**
-   * Records a back-channel logout that revoked nothing (D-05). The protocol answer does not depend
-   * on it: a failed append is logged as missing evidence, as for authorization denials (R04 D-15).
-   */
-  private async recordBackchannelLogout(
-    request: FastifyRequest,
-    outcome: 'rejected' | 'unavailable' | 'no-match',
-  ): Promise<void> {
-    try {
-      await this.runtime.sessions.recordBackchannelLogout({
-        outcome,
-        attribution: systemAttribution(request, 'iam.backchannel-logout'),
-      });
-    } catch (error) {
-      request.log.error(
-        { err: error, auth: 'backchannel-logout-unrecorded' },
-        'back-channel logout could not be recorded',
-      );
-    }
-  }
-
-  private signInFailed(reply: FastifyReply, code: SignInFailure): void {
-    // Fastify appends every `set-cookie` value, so each answer sets its cookies exactly once.
-    void reply
-      .code(303)
-      .header('cache-control', NO_STORE)
-      .header('set-cookie', clearedCookie(LOGIN_COOKIE))
-      .header('location', `/?authError=${code}`)
-      .send();
-  }
-}
-
-/**
- * Counts the request against `limiter` for its client address (IAM-R09 D-03, D-04) and says
- * whether it may proceed. The first refusal of each window is logged; later ones are not, so a
- * flood cannot flood the log.
- */
-function admit(request: FastifyRequest, limiter: RateLimiter, bucket: string): boolean {
-  const decision = limiter.take(`${bucket}:${clientAddressKey(request.ip)}`);
-  if (!decision.allowed && decision.first) logLimited(request, bucket);
-  return decision.allowed;
-}
-
-function logLimited(request: FastifyRequest, bucket: string): void {
-  request.log.warn({ auth: 'rate-limited', bucket }, 'rate limit reached for this window');
-}
-
-function logoutTokenOf(body: unknown): string | undefined {
-  const token =
-    typeof body === 'object' && body !== null
-      ? (body as Record<string, unknown>)['logout_token']
-      : undefined;
-  return typeof token === 'string' && token.length > 0 && token.length <= 16_384
-    ? token
-    : undefined;
 }

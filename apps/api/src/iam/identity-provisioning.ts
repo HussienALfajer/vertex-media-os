@@ -11,10 +11,10 @@ import {
   type ProvisionIdentityResult,
   type ReconcileIdentityResult,
 } from '@vertex-os/iam/composition';
-import { createKeycloakIdentityProvider } from '@vertex-os/iam-keycloak';
 import {
   createApplicationUserRepository,
   createIamTransactionRunner,
+  createLocalIdentityProvider,
 } from '@vertex-os/iam-persistence';
 import type { IdentityProvisioningConfig } from '../config/identity-provisioning-config.js';
 
@@ -47,12 +47,7 @@ export function createIdentityProvisioning(
     runner: createIamTransactionRunner(database, {
       auditRecorderFor: options.auditRecorderFor ?? createAuditRecorder,
     }),
-    identityProvider: createKeycloakIdentityProvider({
-      issuer: config.issuer,
-      clientId: config.provisioner.clientId,
-      clientSecret: config.provisioner.clientSecret,
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-    }),
+    identityProvider: createLocalIdentityProvider(database),
     invitationLifespanSeconds: config.invitationLifespanSeconds,
   };
   return Object.freeze({

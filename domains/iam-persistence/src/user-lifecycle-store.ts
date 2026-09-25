@@ -14,7 +14,7 @@ import { accessToDatabase, identitySyncToDatabase, invitationToDatabase } from '
  * differs, which only a broken lock assumption can cause.
  */
 export function createUserLifecycleStore(client: IamPersistenceClient): UserLifecycleStore {
-  function single(rows: readonly IamApplicationUser[], what: string) {
+  function single(rows: readonly Omit<IamApplicationUser, 'passwordHash'>[], what: string) {
     const row = rows[0];
     if (rows.length !== 1 || row === undefined) {
       throw new Error(`A locked user changed before ${what}.`);
@@ -49,7 +49,7 @@ export function createUserLifecycleStore(client: IamPersistenceClient): UserLife
       return row !== null;
     },
 
-    async insertUser({ email, displayName }) {
+    async insertUser({ email, displayName, passwordHash }) {
       const now = new Date();
       // ON CONFLICT DO NOTHING turns an existing or concurrently inserted email into
       // `email-taken` without aborting the transaction and its Audit append.
@@ -58,6 +58,7 @@ export function createUserLifecycleStore(client: IamPersistenceClient): UserLife
           {
             email,
             displayName,
+            passwordHash: passwordHash ?? null,
             accessState: accessToDatabase.INVITED,
             identitySyncState: identitySyncToDatabase.PENDING,
             invitationDeliveryState: invitationToDatabase.NOT_SENT,
@@ -124,6 +125,16 @@ export function createUserLifecycleStore(client: IamPersistenceClient): UserLife
         select: userSelect,
       });
       return single(rows, 'its display-name change');
+    },
+
+    async initializePasswordHash({ id, expectedVersion, passwordHash }) {
+      const rows = await client.iamApplicationUser.updateManyAndReturn({
+        where: { id, version: expectedVersion, passwordHash: null },
+        data: { passwordHash, version: { increment: 1 }, updatedAt: new Date() },
+        select: userSelect,
+      });
+      const row = rows[0];
+      return row === undefined ? undefined : mapUser(row);
     },
 
     async readRoleHolders(roleId: RoleId) {

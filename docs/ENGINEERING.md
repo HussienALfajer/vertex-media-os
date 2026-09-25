@@ -134,12 +134,12 @@ The implemented backend modules (IAM, Audit) realize this structure as two Nx pr
 
 - the core project `domains/<module>` (`layer:domain`) holds `domain/` and `application/`, including the ports; its public surface is the package entry `src/index.ts`, and a module MAY add a private, lint-restricted entry for its own adapter (for example `@vertex-os/iam/persistence`);
 - the adapter project `domains/<module>-persistence` (`layer:adapter`) holds the persistence adapters behind those ports and reaches the database only through its domain-scoped `@vertex-os/database/<module>` entry;
-- an external-service adapter is a further `layer:adapter` project of the module, with its own private, lint-restricted entry into the core; IAM's Keycloak Admin adapter is `domains/iam-keycloak` (`@vertex-os/iam/identity-provider`) and never reaches the database;
+- an external-service adapter is a further `layer:adapter` project of the module with its own private, lint-restricted entry into the core; local IAM credentials use `domains/iam-persistence` and the scoped IAM database entry;
 - composition (wiring adapters to ports) happens in `apps/api`. Use cases that take ports as dependencies stay off the public entry: a module MAY expose them through a private, lint-restricted composition entry that only the API's composition roots import (IAM: `@vertex-os/iam/composition`, imported by `apps/api/src/iam` and `apps/api/src/commands`), which hand out bound capabilities.
 
 Neither project may import NestJS or `@prisma/*` directly. Inbound transport code (Section 6.4) lives in `apps/api/src/<module>/http` (IAM: `apps/api/src/iam/http`, `docs/plans/iam/IAM_R07_HTTP_ADMINISTRATION_PLAN.md` D-01): controllers, request and response schemas and the outcome-to-problem mapping. A module's Nest module beside it (`apps/api/src/iam/iam.module.ts`) mounts the controllers and binds the capabilities; the controllers see only those bound capabilities, never the composition entry, a composition root, an adapter, the database client or the authentication runtime, and never attribute a change to a system process (lint-enforced). Request bodies and responses are Zod schemas from which the OpenAPI components are generated; path identifiers are documented from the same identifier schema, and query parameters are documented beside the schema that validates them.
 
-Browser authentication (application sessions, login attempts, CSRF, OIDC) is platform infrastructure, not a business module (`docs/modules/iam.md` Section 6.2). It lives in `apps/api/src/auth`, which alone may import its scoped persistence entry `@vertex-os/database/auth` (lint-enforced), reaches IAM's use cases only through the bound capabilities composed in `apps/api/src/iam` (it imports only value types and `hasPermission` from `@vertex-os/iam`), and appends Audit evidence through the Audit capability bound to its own transactions (`docs/plans/iam/IAM_R03_SESSIONS_AND_OIDC_PLAN.md` D-01). Its global access guard makes every API route require an application session unless the handler is marked `@Public()`, and checks `@RequirePermission()` against the current IAM authorization context (`docs/plans/iam/IAM_R04_AUTHORIZATION_CONTEXT_PLAN.md` D-01 to D-04).
+Browser authentication (application sessions and CSRF) is platform infrastructure, not a business module. It lives in `apps/api/src/auth`, which alone may import its scoped persistence entry `@vertex-os/database/auth` (lint-enforced), reaches IAM's use cases only through the bound capabilities composed in `apps/api/src/iam`, and appends Audit evidence through the Audit capability bound to its own transactions. Its global access guard makes every API route require an application session unless the handler is marked `@Public()`, and checks `@RequirePermission()` against the current IAM authorization context.
 
 ### 6.1 Domain
 
@@ -650,7 +650,7 @@ Detailed policy belongs in `docs/SECURITY.md`, but the following repository-wide
 - authorization MUST fail closed;
 - input from clients and integrations MUST be treated as untrusted;
 - secrets MUST remain out of source, logs, and client bundles;
-- browser application code MUST NOT receive, store, or attach identity-provider tokens; authentication is carried only by the backend-issued application session cookie;
+- browser application code MUST NOT retain credentials or session secrets; authentication is carried only by the backend-issued application session cookie;
 - security-relevant failures MUST NOT leak sensitive implementation detail;
 - ownership boundaries MUST NOT be bypassed for convenience.
 

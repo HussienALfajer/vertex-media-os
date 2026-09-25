@@ -7,6 +7,14 @@
 **Depends on:** docs/PRODUCT.md, docs/ARCHITECTURE.md, docs/MODULES.md, docs/SECURITY.md, docs/ENGINEERING.md, docs/TESTING.md, docs/DESIGN_SYSTEM.md  
 **Supersedes:** No earlier IAM module specification
 
+> **Owner amendment, 2026-09-25:** [ADR-0001](../adr/0001-local-password-authentication.md)
+> supersedes this specification's Keycloak, OIDC, TOTP, invitation-email, and external credential
+> requirements. Current IAM sign-in uses a local email and password, and administrators create
+> staff accounts with passwords and selected roles in Vertex OS. Existing access-state,
+> authorization, grant-ceiling, session, CSRF, and Audit invariants remain in force. Historical
+> stage descriptions below record the earlier design and must not be used as current
+> authentication requirements.
+
 ---
 
 ## 1. Document Role

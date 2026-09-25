@@ -97,6 +97,12 @@ export async function apiRequest(path: ApiPath, options: RequestOptions = {}): P
   }
 }
 
+/** The public JSON login route precedes the session and therefore has no CSRF token yet. */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  await send('POST', '/api/auth/login', { body: { email, password } });
+  forgetCsrfToken();
+}
+
 /** Kept for simple reads (the liveness check). */
 export function getJson(path: ApiPath, signal?: AbortSignal): Promise<unknown> {
   return apiRequest(path, signal === undefined ? {} : { signal });

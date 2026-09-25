@@ -25,7 +25,7 @@ The default assurance target is:
 - Stronger controls MAY be applied to privileged, financial, identity, export, and other high-risk operations.
 - OWASP Top 10 is treated as risk-awareness guidance, not as the complete security specification.
 - Current NIST digital identity guidance SHOULD inform authentication, session, password, and recovery controls.
-- The Keycloak/OIDC integration MUST follow current OAuth 2.0 and OpenID Connect security best practice, including RFC 9700 (OAuth 2.0 Security BCP) and RFC 10017 (OAuth 2.0 for Browser-Based Applications, backend-for-frontend pattern).
+- Local email/password authentication and application sessions MUST follow the accepted [ADR-0001](adr/0001-local-password-authentication.md).
 
 Security controls MUST be proportionate to risk and MUST NOT introduce architectural complexity without a concrete threat or requirement.
 
@@ -103,7 +103,7 @@ Browser / Client
 Public HTTP Boundary
         |
         v
-API / Application (BFF) <-----> Identity Provider (Keycloak)
+API / Application (local authentication and sessions)
         |
         v
 Domain Modules
@@ -115,7 +115,7 @@ Domain Modules
         +----> External Services / Integrations
 ```
 
-The browser is also redirected to the identity provider's sign-in interface; that interaction is governed by the identity-provider configuration and the OIDC protocol requirements in Section 7.
+The browser submits credentials only to the same-origin Vertex API over HTTPS in production.
 
 Every transition across a trust boundary MUST validate, authorize, and constrain data as appropriate.
 
@@ -163,10 +163,7 @@ Examples:
 - session secrets;
 - API keys;
 - signing keys;
-- OIDC client secrets;
-- identity-provider ID, access, and refresh tokens;
-- MFA secrets;
-- reset tokens;
+- password hashes and password reset material, if a reset workflow is later introduced;
 - private encryption keys.
 
 Security controls SHOULD become stricter as data classification increases.
@@ -175,28 +172,22 @@ Security controls SHOULD become stricter as data classification increases.
 
 ## 6. Identity Lifecycle
 
-Every Vertex OS user has two linked representations:
-
-- an identity in Keycloak, which holds credentials, authentication factors, and the identity-provider enabled state;
-- a Vertex application user owned by IAM, which holds the identity mapping, access state, roles, and permissions.
-
-Access requires both: a successfully authenticated identity-provider identity AND an active Vertex application user mapped to it. Disabling either side MUST prevent access.
+Each Vertex OS user is an IAM application user with a local password hash, access state, roles, and permissions. Access requires a valid password and an account permitted to sign in. Disabled and terminated accounts cannot create or use sessions.
 
 Vertex OS V1 MUST NOT provide public self-registration.
 
-Accounts MUST be created, invited, or activated only through an authorized workflow. A Keycloak identity MUST NOT obtain Vertex OS access merely because it can authenticate.
+Accounts MUST be created and activated only through an authorized workflow. Knowing a password MUST NOT grant access to a disabled account.
 
 The identity lifecycle MUST support:
 
 - creation;
-- invitation;
 - activation;
 - suspension;
 - disablement;
-- recovery;
+- authorized password replacement;
 - termination.
 
-Disabling or terminating an account MUST invalidate its active Vertex application sessions immediately and MUST also terminate or block its identity-provider sessions so that access cannot be silently re-established.
+Disabling or terminating an account MUST invalidate its active application sessions immediately and prevent a new sign-in.
 
 Security-impacting identity changes MUST take effect without requiring the user to wait for stale authorization state to expire.
 
@@ -208,159 +199,33 @@ Default/shared privileged accounts MUST NOT exist in production.
 
 ## 7. Authentication
 
-Protected endpoints MUST require authentication by default.
+Protected endpoints require authentication by default. The public login endpoint is explicitly declared. The architecture is defined in [ADR 0001](adr/0001-local-password-authentication.md) and `docs/ARCHITECTURE.md` Section 22.
 
-Public endpoints MUST be explicitly declared and SHOULD be minimized.
+The Vertex OS interface collects email and password and submits them to the same-origin API. The API verifies the local IAM credential and issues an opaque application session in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie. The browser does not store a credential hash, token or session secret in web storage. Authorization remains a separate backend decision based on access state and effective permissions.
 
-Vertex OS uses one authentication architecture for the first-party web application:
-
-> **Keycloak is the identity provider. The Vertex OS backend integrates with it as a confidential OIDC client using the Authorization Code Flow with PKCE and acts as the browser-facing backend-for-frontend (BFF). The browser authenticates to Vertex OS only through an opaque, server-side application session delivered as a secure cookie.**
-
-The topology and the full responsibility split are defined in `docs/ARCHITECTURE.md` (Section 22). In security terms:
-
-- Keycloak owns credentials, password policy, MFA factors, credential recovery, the identity-provider session, and OIDC token issuance.
-- The Vertex OS backend owns the application session, its cookie, the server-side binding of that session to OIDC state and tokens, CSRF defense, logout, and the mapping of the authenticated identity into the Vertex application context.
-- Vertex IAM owns the application user, its identity mapping, access state, roles, permissions, and application-level authorization primitives.
-- Business modules own resource-level authorization decisions.
-
-### 7.1 Browser constraints
-
-Browser application code MUST NOT receive, hold, or persist OIDC ID tokens, OAuth access tokens, or refresh tokens.
-
-Identity-provider tokens MUST remain server-side, bound to the application session.
-
-Authentication tokens and session secrets MUST NOT be stored in browser `localStorage`, `sessionStorage`, IndexedDB, or non-`HttpOnly` cookies.
-
-Bearer-token authentication from the browser MUST NOT be introduced merely because the frontend and backend are separate applications.
-
-### 7.2 Protocol requirements
-
-The OIDC integration MUST:
-
-- use the Authorization Code Flow with PKCE (`S256`);
-- act as a confidential client whose client secret is held only by the backend;
-- validate `state` on every callback and `nonce` on every ID token;
-- validate ID tokens (issuer, audience, signature, expiry) according to the OpenID Connect specification;
-- use exact-match, pre-registered redirect URIs;
-- follow RFC 9700 and RFC 10017.
-
-The implicit flow and the resource-owner password credentials grant MUST NOT be used.
-
-Vertex OS MUST NOT collect user passwords through its own interfaces; credential entry happens only in identity-provider interfaces.
-
-### 7.3 Authentication is not authorization
-
-Successful Keycloak authentication establishes identity only.
-
-Access to Vertex OS additionally requires an active Vertex application user mapped to that identity with an access state that permits sign-in.
-
-Permission to perform any business operation is decided by Vertex authorization (Sections 12–14), never by authentication success alone.
-
-### 7.4 Other clients
-
-Bearer-token authentication for native applications, external APIs, third-party integrations, or machine-to-machine access is not part of the V1 baseline.
-
-Introducing any such mechanism MUST receive an explicit security design review and MUST NOT introduce a second identity provider or a parallel user-credential store.
-
----
+The login endpoint must respond generically to an unknown email, wrong password or inaccessible account. Rate limits apply per client address and normalized email. Request and audit logging must never contain passwords or credential hashes. Unsafe authenticated requests require CSRF proof.
 
 ## 8. Passwords and Credentials
 
-The configured identity provider MUST satisfy the credential-storage and password-security policy in this section.
+IAM stores only a salted scrypt hash of a password. Each hash uses an independent random 32-byte salt and fixed reviewed work factors. The raw password is accepted only for account creation and login, is never returned by an API, and is never included in logs, audit records, fixtures or source control.
 
-When Keycloak is the active identity provider, password hashing, credential storage, password policy, MFA credentials, and credential recovery are configured and verified in Keycloak rather than reimplemented in Vertex OS application code.
+Passwords must be 15–128 Unicode characters and at most 512 UTF-8 bytes. Pasting is allowed. There is no arbitrary character-class requirement or periodic forced rotation. The user-provided password must not be sent to any external identity provider. Before production launch, benchmark the scrypt parameters on the actual server and add a check for known compromised passwords.
 
-Vertex OS application code MUST NOT store, hash, verify, or accept user passwords and MUST NOT implement a user-credential store parallel to the identity provider.
-
-Passwords MUST be treated as authentication secrets.
-
-Passwords MUST:
-
-- be hashed with a memory-hard algorithm — **Argon2id** is the approved baseline;
-- use unique salts;
-- support parameter upgrades over time;
-- never be logged;
-- never be returned by any API;
-- never be stored in plaintext or reversibly encrypted.
-
-The identity provider's Argon2id parameters (memory, iterations, parallelism) MUST be explicitly configured and verified against current OWASP guidance, not assumed from defaults.
-
-The password policy SHOULD follow current NIST guidance.
-
-Default baseline:
-
-- minimum length: **15 characters** when password may function as a single factor;
-- the identity provider MUST accept passwords of at least **64 characters**;
-- arbitrary composition rules such as mandatory symbol/uppercase/lowercase combinations SHOULD NOT be required;
-- periodic forced password rotation SHOULD NOT be required without evidence of compromise;
-- new passwords SHOULD be checked against known weak/common/compromised password lists;
-- password pasting SHOULD be allowed.
-
-Password hashing parameters MUST be benchmarked against production hardware before launch.
-
-The identity-provider configuration implementing this policy SHOULD be maintained as reviewable, reproducible configuration rather than manual console changes, and MUST be verified as part of security verification (Section 34).
-
----
+An administrator with `iam.users.create` may create an employee with email, password, and selected roles. IAM enforces the grant ceiling and commits user, roles and audit evidence together. An administrator with `iam.users.manage-access` can initialize a migrated account's missing password once, subject to the grant ceiling, optimistic version check, CSRF protection and Audit evidence. This revokes any retained sessions. A password replacement workflow for accounts that already have a local password is not yet implemented.
 
 ## 9. Multi-Factor Authentication
 
-MFA is provided and enforced by Keycloak.
-
-Vertex OS application code MUST NOT implement its own authentication factors or store MFA secrets.
-
-MFA requirements MUST be enforced through identity-provider policy (authentication flows and required actions). Vertex OS MAY additionally verify authentication-context claims (`acr`/`amr`) delivered through the OIDC integration to require step-up authentication for sensitive operations (Section 15).
-
-Before production use:
-
-- MFA MUST be required for privileged/administrative accounts.
-- MFA SHOULD be available to all internal users.
-
-For mature production use, MFA SHOULD be required for all staff unless a documented risk decision states otherwise.
-
-Preferred authentication-factor order:
-
-1. WebAuthn / passkeys where practical;
-2. TOTP;
-3. single-use recovery codes.
-
-Email alone SHOULD NOT be treated as a strong second factor.
-
-MFA enrollment, removal, reset, and recovery MUST be recorded as security events; because these occur in Keycloak, identity-provider event logging for them MUST be enabled and retained (Section 28).
-
-Disabling or replacing MFA MAY require recent authentication or step-up authentication.
-
----
+The owner has explicitly selected single-factor email and password sign-in for Vertex OS. The application does not request, store or verify TOTP, one-time codes, passkeys or other second factors. Any later change to this policy requires a new accepted security decision.
 
 ## 10. Account Recovery
 
-Credential recovery (password reset, MFA reset, recovery codes) is performed in Keycloak.
-
-Vertex OS application code MUST NOT implement parallel password-reset or recovery-token flows.
-
-Recovery mechanisms MUST NOT be weaker than necessary.
-
-The identity-provider recovery configuration MUST ensure recovery tokens and links are:
-
-- cryptographically random;
-- single-use;
-- short-lived;
-- invalidated after use;
-- stored securely;
-- resistant to account enumeration.
-
-Recovery responses exposed publicly SHOULD avoid revealing whether a specific account exists.
-
-High-risk recovery events SHOULD revoke other active sessions, including Vertex application sessions (Section 11).
-
-Recovery events MUST be auditable through identity-provider event logging.
+There is no public self-service recovery endpoint. The existing one-time initial-password route refuses an account that already has a local password. Any future replacement flow must authenticate and authorize the administrator, hash the new password, audit the change and revoke the target's sessions. Responses must not reveal credential material.
 
 ---
 
 ## 11. Session Security
 
-Two sessions exist: the Vertex application session, owned by the backend acting as BFF, and the Keycloak SSO session, owned by the identity provider.
-
-This section governs the application session. Identity-provider session parameters are configured in Keycloak and MUST NOT undermine the application-session policy below.
+The Vertex backend owns and validates the only authentication session.
 
 Application sessions MUST use opaque identifiers.
 
@@ -372,9 +237,7 @@ Application session cookies MUST:
 - use the narrowest practical domain/path scope;
 - contain no sensitive user information.
 
-Transient cookies used to correlate an in-progress OIDC sign-in (`state`, PKCE verifier) MUST be short-lived and single-purpose, MAY use `SameSite=Lax` as the redirect flow requires, and MUST NOT carry the application session.
-
-Identity-provider tokens bound to a session MUST be stored server-side only and MUST be discarded when the session ends; associated tokens SHOULD be revoked at the identity provider on logout. A revocation discards them in the same change. A session that ends by expiry has no event of its own, so its tokens are discarded when the session is next presented, and otherwise by scheduled housekeeping, which runs once a minute. The server never uses the tokens of an expired session.
+Expired and revoked session secrets MUST be refused. Scheduled housekeeping deletes expired authentication state.
 
 Session identifiers MUST rotate after successful authentication and other privilege-establishing events where appropriate.
 
@@ -388,16 +251,12 @@ Sessions MUST be revoked on:
 - credential reset where appropriate;
 - security-critical compromise response.
 
-Application logout MUST terminate the application session server-side and SHOULD perform OIDC RP-initiated logout so the identity-provider session does not silently re-establish access.
-
-Vertex OS MUST support identity-provider-initiated termination (OIDC back-channel logout or an equivalent re-validation mechanism) so that identity-provider-side disablement or logout propagates to application sessions.
+Application logout MUST terminate the application session server-side. Account restriction and password replacement MUST revoke the affected user's sessions.
 
 Default application-session baseline:
 
 - inactivity timeout: **no more than 60 minutes**;
 - absolute session lifetime: **no more than 24 hours** for ordinary authenticated sessions.
-
-Identity-provider SSO idle and maximum lifetimes MUST NOT exceed these limits unless a documented risk decision accepts silent re-authentication.
 
 More sensitive or privileged sessions MAY use shorter limits.
 
@@ -491,7 +350,6 @@ Sensitive operations MAY require stronger controls than ordinary authenticated a
 Examples include:
 
 - granting or removing privileged roles;
-- disabling MFA;
 - changing credentials;
 - revoking security controls;
 - exporting confidential data;
@@ -503,14 +361,13 @@ Examples include:
 Depending on risk, sensitive operations MAY require:
 
 - recent authentication;
-- step-up MFA;
 - explicit confirmation;
 - four-eyes approval;
 - additional audit detail.
 
 Security-sensitive workflows MUST fail closed.
 
-Where a sensitive operation is performed inside the identity provider (credential change, MFA reset, recovery), the identity-provider configuration MUST apply equivalent controls.
+Credential replacement MUST be authorized, audited, and followed by session revocation.
 
 ---
 
@@ -579,7 +436,7 @@ This includes the backend's own session endpoints, such as logout.
 
 SameSite cookies MAY contribute to defense-in-depth but MUST NOT be treated as the only CSRF design decision.
 
-The OIDC callback MUST validate `state` bound to the initiating browser so that an attacker cannot complete a sign-in in the victim's browser (login CSRF / session fixation).
+The login endpoint MUST accept credentials only through a same-origin POST and MUST rotate any existing session on success.
 
 Safe HTTP methods MUST NOT perform state-changing business operations.
 
@@ -669,7 +526,7 @@ Secrets include, at minimum:
 - signing keys;
 - encryption keys;
 - API credentials;
-- OIDC client secrets and identity-provider administrative credentials;
+- local credential hashes and session secrets;
 - SMTP credentials;
 - webhook secrets.
 
@@ -738,9 +595,8 @@ Logs MUST NOT include:
 - password hashes;
 - session IDs or session secrets;
 - authorization headers;
-- identity-provider ID, access, and refresh tokens, and authorization codes;
+- password hashes and session secrets;
 - API keys;
-- MFA secrets;
 - password-reset tokens;
 - private cryptographic keys.
 
@@ -758,19 +614,18 @@ Logging, monitoring, alerting, and incident response are distinct responsibiliti
 
 Security-relevant events MUST be recorded when applicable.
 
-Events that occur in the identity provider are recorded by Keycloak. Identity-provider user and admin event logging MUST be enabled and retained for at least:
+Vertex OS MUST record relevant local authentication and administration events, including:
 
 - login success/failure;
 - logout;
 - password change/reset;
-- MFA enrollment/removal/recovery;
-- identity-provider account enablement changes;
+- account access-state changes;
 - administrative configuration changes.
 
 Vertex OS MUST record its own security events, including:
 
 - application session establishment, refresh, and revocation;
-- identity-mapping failures and sign-in denials for disabled or unmapped application users;
+- sign-in denials for inaccessible application users;
 - account disablement/reactivation;
 - role/permission/scope changes;
 - authorization denials;
@@ -779,7 +634,7 @@ Vertex OS MUST record its own security events, including:
 - sensitive exports;
 - privileged security operations.
 
-Where practical, Vertex events SHOULD carry identifiers that allow correlation with identity-provider events for the same session.
+Security events SHOULD carry the application session and request trace identifiers where safe.
 
 ### 28.2 Event content
 
@@ -804,8 +659,8 @@ Alert-worthy conditions include, at minimum:
 - repeated authentication failures against one account or from one source, and brute-force lockouts;
 - privilege changes, especially grants of administrative roles;
 - unusual volumes of authorization denials for one actor;
-- MFA removal/reset and account-recovery abuse indicators;
-- security-sensitive configuration changes in Vertex OS or the identity provider;
+- suspicious password replacement and account-recovery abuse indicators;
+- security-sensitive configuration changes in Vertex OS;
 - suspicious administrative behavior such as bulk or off-hours privileged changes;
 - integrity failures, including audit write failures and security-configuration validation failures;
 - suspicious export or download activity.
@@ -843,9 +698,8 @@ Rate limiting MUST be applied where abuse is realistic.
 
 At minimum, review:
 
-- identity-provider login, password reset, and MFA verification (Keycloak brute-force detection and rate limiting MUST be enabled);
-- Vertex OS session-establishment (OIDC callback) and logout endpoints;
-- invite acceptance;
+- local password login and session establishment;
+- logout endpoints;
 - public endpoints;
 - expensive searches;
 - expensive reports/exports;
@@ -893,7 +747,7 @@ At minimum:
 - unnecessary services disabled;
 - database access restricted;
 - sensitive administration surfaces protected;
-- identity provider hardened: TLS enforced, administrative console and API not publicly exposed, and the parameters in Section 37 applied.
+- HTTPS enforced for the application origin, and the parameters in Section 37 applied.
 
 API documentation such as Swagger/OpenAPI UI MUST NOT be publicly exposed in production without an explicit decision.
 
@@ -924,14 +778,14 @@ At minimum, the test strategy MUST cover:
 - authentication at the application-session boundary;
 - application session creation/revocation/expiry;
 - CSRF protection on cookie-authenticated endpoints;
-- identity-to-application-user mapping;
-- access denial for disabled or unmapped application users despite successful identity-provider authentication;
+- local credential lookup and verification;
+- access denial for disabled or terminated users despite a correct password;
 - authorization allow/deny paths;
 - object/resource-level access control;
 - account disablement;
 - role/permission changes;
 - privileged operations;
-- identity-provider configuration for password, MFA, and recovery policy (verified as configuration, not reimplemented);
+- password hashing, validation and rate limiting;
 - file authorization where applicable.
 
 CI SHOULD include:
@@ -953,7 +807,7 @@ A focused security review MUST occur when a change introduces or materially modi
 
 - authentication;
 - sessions;
-- password or MFA behavior;
+- password or login behavior;
 - authorization or scope semantics;
 - public endpoints;
 - privileged roles;
@@ -967,7 +821,7 @@ A focused security review MUST occur when a change introduces or materially modi
 - recovery flows;
 - impersonation;
 - identity federation;
-- OAuth/OIDC;
+- local credential and session handling;
 - machine-to-machine credentials.
 
 A security review SHOULD ask:
@@ -991,7 +845,7 @@ The system SHOULD support rapid containment of suspected account or credential c
 Required capabilities SHOULD include:
 
 - disable account;
-- revoke active application sessions and identity-provider sessions;
+- revoke active application sessions;
 - revoke or rotate credentials;
 - rotate compromised secrets;
 - preserve security/audit evidence;
@@ -1009,17 +863,14 @@ Default policy baseline:
 
 | Parameter | Baseline | Enforced in |
 |---|---|---|
-| Password minimum | 15 characters when password may be single-factor | Keycloak password policy |
-| Accepted password length | at least 64 characters | Keycloak password policy |
-| Password hashing | Argon2id, parameters verified against OWASP guidance | Keycloak |
+| Password minimum | 15 characters | Vertex OS IAM |
+| Accepted password length | 15–128 Unicode characters, at most 512 UTF-8 bytes | Vertex OS IAM |
+| Password hashing | Salted scrypt with reviewed work factors | Vertex OS IAM |
 | Application session inactivity | ≤ 60 minutes | Vertex OS backend |
 | Application session absolute lifetime | ≤ 24 hours | Vertex OS backend |
-| IdP SSO session idle / max | not exceeding the application-session limits | Keycloak realm settings |
-| Recovery tokens | short-lived, single-use | Keycloak |
-| MFA recovery codes | single-use | Keycloak |
-| Login / MFA attempts | rate-limited, brute-force detection enabled | Keycloak |
+| Login attempts | rate-limited by client address and normalized email | Vertex OS backend |
 | Session-establishment / logout endpoints | rate-limited | Vertex OS backend |
-| Privileged actions | recent auth / step-up where risk requires | Vertex OS, using IdP step-up where required |
+| Privileged actions | authorization and attributable audit evidence | Vertex OS IAM |
 
 Exact technical values MAY be tightened after implementation benchmarking and production risk review.
 
@@ -1029,11 +880,10 @@ Exact technical values MAY be tightened after implementation benchmarking and pr
 
 Security is a shared responsibility, but ownership MUST remain explicit.
 
-- Keycloak (identity provider) owns credentials, authentication factors, identity-provider sessions, and OIDC protocol security.
-- The Vertex OS backend (BFF) owns application-session security, CSRF defense, and identity mapping into the application context.
-- IAM owns application users, access state, roles, permissions, and application-level authorization primitives.
+- IAM owns application users, local password hashes, access state, roles, permissions, and authorization primitives.
+- The Vertex OS backend owns credential verification, application-session security and CSRF defense through IAM capabilities.
 - Each domain module owns authorization decisions tied to its business state.
-- Infrastructure owns secure deployment/runtime configuration, including identity-provider configuration and its security parameters.
+- Infrastructure owns secure deployment/runtime configuration and TLS termination.
 - File/asset capability owns storage security boundaries.
 - Audit capability owns audit persistence behavior.
 - CI/repository tooling enforces automatable security policy.
@@ -1053,14 +903,12 @@ The following are forbidden unless an accepted security decision explicitly stat
 - cross-module security bypass through direct persistence access;
 - plaintext passwords;
 - reversibly encrypted passwords;
-- a Vertex-owned user password or user-credential store parallel to the identity provider;
-- Vertex OS interfaces that collect user passwords, including the resource-owner password credentials grant;
-- the OAuth implicit flow;
-- granting application access on identity-provider authentication alone, without an active mapped Vertex application user;
+- a second password store outside the IAM ownership boundary;
+- granting application access to a disabled or terminated account;
 - secrets in source control;
 - secrets in frontend bundles;
 - secrets or credentials in logs;
-- identity-provider tokens or session secrets in browser-accessible storage or browser-readable cookies for first-party web authentication;
+- session secrets in browser-accessible storage or browser-readable cookies;
 - long-lived unrevocable browser authentication;
 - wildcard credentialed CORS;
 - direct rendering of untrusted HTML;
@@ -1137,8 +985,6 @@ Vertex OS security policy is informed by:
 - OWASP Cheat Sheet Series;
 - OWASP Top 10:2025;
 - NIST SP 800-63B-4;
-- RFC 9700 — Best Current Practice for OAuth 2.0 Security;
-- RFC 10017 — OAuth 2.0 for Browser-Based Applications;
 - OpenID Connect Core 1.0.
 
 External standards guide verification.

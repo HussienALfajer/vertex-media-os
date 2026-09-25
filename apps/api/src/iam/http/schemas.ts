@@ -39,12 +39,17 @@ const ExpectedVersion = z.int().min(1);
 
 export const CreateUserBody = z.strictObject({
   email: Email,
-  displayName: DisplayName,
+  password: z.string().min(15).max(128),
   memberships: z
     .array(z.strictObject({ departmentId: Id, isPrimary: z.boolean() }))
     .max(100)
     .optional(),
   roleIds: z.array(Id).max(100).optional(),
+});
+
+export const InitializePasswordBody = z.strictObject({
+  expectedVersion: ExpectedVersion,
+  password: z.string().min(15).max(128),
 });
 
 /** Only the display name is mutable (spec Sections 9.1, 25.3); any other field is refused. */
@@ -216,7 +221,6 @@ export const UserInvitationResponse = z.object({
 
 export const RevokeSessionsResponse = z.object({
   sessionsRevoked: z.int(),
-  providerSessions: z.enum(['TERMINATED', 'NO_IDENTITY', 'FAILED']),
 });
 
 export const MembershipAddedResponse = z.object({
@@ -287,6 +291,11 @@ export type InvitationOutcome = z.output<typeof InvitationOutcome>;
 /** Named components of the OpenAPI document, one per request body and response. */
 export const refs = {
   CreateUserBody: namedSchema('IamCreateUserRequest', CreateUserBody, 'input'),
+  InitializePasswordBody: namedSchema(
+    'IamInitializePasswordRequest',
+    InitializePasswordBody,
+    'input',
+  ),
   UpdateUserBody: namedSchema('IamUpdateUserRequest', UpdateUserBody, 'input'),
   ReasonBody: namedSchema(
     'IamReasonRequest',

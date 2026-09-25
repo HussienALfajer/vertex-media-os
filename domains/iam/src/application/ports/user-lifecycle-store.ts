@@ -30,6 +30,7 @@ export interface UserLifecycleStore {
   insertUser(values: {
     readonly email: NormalizedEmail;
     readonly displayName: DisplayName;
+    readonly passwordHash?: string;
   }): Promise<
     | { readonly outcome: 'created'; readonly user: ApplicationUser }
     | { readonly outcome: 'email-taken' }
@@ -59,6 +60,12 @@ export interface UserLifecycleStore {
     readonly expectedVersion: number;
     readonly displayName: DisplayName;
   }): Promise<ApplicationUser>;
+  /** Sets a legacy account's first local credential; existing credentials are never overwritten. */
+  initializePasswordHash(change: {
+    readonly id: UserId;
+    readonly expectedVersion: number;
+    readonly passwordHash: string;
+  }): Promise<ApplicationUser | undefined>;
   /**
    * The holders of the role that are not TERMINATED, sorted by ID; stable while the role row is
    * locked, because assignments of the role change only under that lock.

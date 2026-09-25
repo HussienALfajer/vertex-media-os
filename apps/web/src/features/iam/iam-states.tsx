@@ -20,7 +20,11 @@ interface StateMapping {
 }
 
 const ACCESS: Readonly<Record<string, StateMapping>> = {
-  INVITED: { tone: 'info', icon: 'clock', label: { ar: 'مدعو', en: 'Invited' } },
+  INVITED: {
+    tone: 'info',
+    icon: 'clock',
+    label: { ar: 'بانتظار أول دخول', en: 'Awaiting first sign-in' },
+  },
   ACTIVE: { tone: 'success', icon: 'check-circle', label: { ar: 'نشط', en: 'Active' } },
   SUSPENDED: {
     tone: 'warning',

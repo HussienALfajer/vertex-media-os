@@ -12,7 +12,7 @@
  * Without `--force`, an existing `.env` is never rewritten: only keys that `.env.example` has and
  * `.env` lacks are appended, so a checkout that predates a new service picks up its settings.
  *
- * PostgreSQL and Keycloak apply their generated credentials only when they initialise an empty
+ * PostgreSQL applies its generated credentials only when it initialises an empty
  * data volume and keep them afterwards. A value is therefore generated only while the volume that
  * owns it does not exist; otherwise `.env` and the service would silently disagree. Rotating local
  * credentials means deleting the local data first, which the script explains when it refuses.
@@ -34,11 +34,6 @@ const COMPOSE_PROJECT = 'vertexos';
 const OWNING_VOLUME = {
   'auth-token-encryption-secret': null,
   'postgres-password': 'postgres-data',
-  'keycloak-admin-username': 'keycloak-data',
-  'keycloak-admin-password': 'keycloak-data',
-  'keycloak-web-client-secret': 'keycloak-data',
-  'keycloak-provisioner-client-secret': 'keycloak-data',
-  'keycloak-smtp-password': 'keycloak-data',
 };
 
 const PLACEHOLDER = /<generated:([a-z0-9-]+)>/g;
@@ -74,14 +69,14 @@ function writeNewEnv() {
     ...(envExists
       ? [
           '.env was left untouched. To rotate the local credentials, delete the local development',
-          'data first (all data in PostgreSQL and Keycloak is lost), then generate new ones:',
+          'data first (all data in PostgreSQL is lost), then generate new ones:',
           '',
           '  pnpm infra:reset',
           '  pnpm env:setup -- --force',
         ]
       : [
           'Those values came from an earlier .env. Restore it if you still have it. Otherwise delete',
-          'the local development data (all of it is lost) and run this command again:',
+          'the local PostgreSQL data (all of it is lost) and run this command again:',
           '',
           `  docker compose -p ${COMPOSE_PROJECT} down --volumes`,
           '  pnpm env:setup',
@@ -136,7 +131,7 @@ function completeExistingEnv() {
   const names = [...new Set(missing.flatMap((line) => placeholdersIn(line)))];
   refuseIfVolumesExist(names, [
     '.env was left untouched. Restore the values those services were initialised with, or delete',
-    'the local development data (all data in PostgreSQL and Keycloak is lost) and run this again:',
+    'the local PostgreSQL data (all data is lost) and run this again:',
     '',
     '  pnpm infra:reset',
     '  pnpm env:setup',

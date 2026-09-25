@@ -25,17 +25,10 @@ import {
 import { IAM_PERMISSIONS, IamRoute, PageQueries, permission } from './docs.js';
 import { isOutcome, refuse } from './iam-problems.js';
 import { actorAttribution, NoStoreInterceptor, parseInput, pathId } from './request.js';
-import {
-  toInvitation,
-  toPage,
-  toProviderSessions,
-  toUser,
-  toUserDetail,
-  toUserSummary,
-} from './responses.js';
+import { toPage, toUser, toUserDetail, toUserSummary } from './responses.js';
 import {
   CreateUserBody,
-  EmptyBody,
+  InitializePasswordBody,
   ReactivateUserBody,
   ReasonBody,
   refs,
@@ -46,7 +39,6 @@ import {
 type Restriction = 'suspendUser' | 'disableUser' | 'terminateUser';
 
 const NOT_FOUND = { 404: '`IAM_USER_NOT_FOUND`' } as const;
-const PROVIDER = '`IDENTITY_PROVIDER_UNAVAILABLE`';
 
 /**
  * Users (spec Section 25.3): the directory, creation, the display name and the access lifecycle.
@@ -87,8 +79,7 @@ export class UsersController {
     body: refs.CreateUserBody,
     success: {
       status: 201,
-      description:
-        'Created INVITED, then provisioned and invited; a failed Keycloak step shows in the states.',
+      description: 'Creates a local password account. It becomes active on first sign-in.',
       schema: refs.CreateUser,
     },
     errors: {
@@ -148,6 +139,40 @@ export class UsersController {
     const result = await this.users.updateDisplayName({ userId: id, ...input }, attribution);
     if (!isOutcome(result, 'updated', 'unchanged')) refuse(result);
     return toUser(result.user);
+  }
+
+  @Post(':userId/password')
+  @HttpCode(200)
+  @IamRoute({
+    permission: permission(IAM_PERMISSIONS.usersManageAccess),
+    unsafe: true,
+    params: ['userId'],
+    body: refs.InitializePasswordBody,
+    success: {
+      status: 200,
+      description: 'Initializes a migrated account password and revokes its old sessions.',
+      schema: refs.RestrictUser,
+    },
+    errors: {
+      ...NOT_FOUND,
+      403: '`IAM_GRANT_EXCEEDS_ACTOR`',
+      409: '`IAM_VERSION_CONFLICT`, `IAM_PASSWORD_ALREADY_CONFIGURED`',
+    },
+  })
+  async initializePassword(
+    @Param('userId') userId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const input = parseInput(InitializePasswordBody, body);
+    const attribution = await actorAttribution(this.actors, request, reply);
+    const result = await this.users.initializePassword(
+      { userId: pathId('userId', userId), ...input },
+      attribution,
+    );
+    if (result.outcome !== 'initialized') refuse(result);
+    return { user: toUser(result.user), sessionsRevoked: result.sessionsRevoked };
   }
 
   @Post(':userId/suspend')
@@ -217,7 +242,6 @@ export class UsersController {
       ...NOT_FOUND,
       403: '`IAM_GRANT_EXCEEDS_ACTOR`',
       409: '`IAM_VERSION_CONFLICT`, `IAM_INVALID_ACCESS_TRANSITION`, `IAM_OPERATION_SUPERSEDED`, `IAM_IDENTITY_CONFLICT`',
-      503: PROVIDER,
     },
   })
   async reactivate(
@@ -237,68 +261,6 @@ export class UsersController {
     return { user: toUser(result.user), target: result.target };
   }
 
-  @Post(':userId/resend-invitation')
-  @HttpCode(200)
-  @IamRoute({
-    permission: permission(IAM_PERMISSIONS.usersCreate),
-    unsafe: true,
-    params: ['userId'],
-    success: {
-      status: 200,
-      description: '`SENT`, or `NO_ACTION_REQUIRED` when the identity needs no invitation.',
-      schema: refs.UserInvitation,
-    },
-    errors: {
-      ...NOT_FOUND,
-      409: '`IAM_INVITATION_NOT_APPLICABLE`, `IAM_IDENTITY_SYNC_INCOMPLETE`, `IAM_OPERATION_SUPERSEDED`, `IAM_IDENTITY_CONFLICT`',
-      503: PROVIDER,
-    },
-  })
-  async resendInvitation(
-    @Param('userId') userId: string,
-    @Body() body: unknown,
-    @Req() request: FastifyRequest,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ) {
-    parseInput(EmptyBody, body);
-    const id = pathId('userId', userId);
-    const attribution = await actorAttribution(this.actors, request, reply);
-    const result = await this.users.resendInvitation({ userId: id }, attribution);
-    if (!isOutcome(result, 'sent', 'no-action-required')) refuse(result);
-    return { user: toUser(result.user), invitation: toInvitation({ outcome: result.outcome }) };
-  }
-
-  @Post(':userId/sync-identity')
-  @HttpCode(200)
-  @IamRoute({
-    permission: permission(IAM_PERMISSIONS.usersManageAccess),
-    unsafe: true,
-    params: ['userId'],
-    success: {
-      status: 200,
-      description: 'The identity is reconciled; a first invitation is sent if none was attempted.',
-      schema: refs.UserInvitation,
-    },
-    errors: {
-      ...NOT_FOUND,
-      409: '`IAM_OPERATION_SUPERSEDED`, `IAM_IDENTITY_CONFLICT`',
-      503: PROVIDER,
-    },
-  })
-  async syncIdentity(
-    @Param('userId') userId: string,
-    @Body() body: unknown,
-    @Req() request: FastifyRequest,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ) {
-    parseInput(EmptyBody, body);
-    const id = pathId('userId', userId);
-    const attribution = await actorAttribution(this.actors, request, reply);
-    const result = await this.users.syncIdentity({ userId: id }, attribution);
-    if (result.outcome !== 'synced') refuse(result);
-    return { user: toUser(result.user), invitation: toInvitation(result.invitation) };
-  }
-
   @Post(':userId/revoke-sessions')
   @HttpCode(200)
   @IamRoute({
@@ -309,7 +271,7 @@ export class UsersController {
     bodyRequired: false,
     success: {
       status: 200,
-      description: 'Every application session is revoked, then the Keycloak sessions are ended.',
+      description: 'Every application session of the user is revoked.',
       schema: refs.RevokeSessions,
     },
     errors: NOT_FOUND,
@@ -327,7 +289,6 @@ export class UsersController {
     if (result.outcome !== 'revoked') refuse(result);
     return {
       sessionsRevoked: result.sessionsRevoked,
-      providerSessions: toProviderSessions(result.providerSessions),
     };
   }
 }
@@ -341,7 +302,7 @@ function restrictionDocs(state: 'Suspended' | 'Disabled' | 'Terminated') {
     bodyRequired: false,
     success: {
       status: 200,
-      description: `${state}; sessions revoked. A failed Keycloak step shows in the states.`,
+      description: `${state}; application sessions revoked.`,
       schema: refs.RestrictUser,
     },
     errors: { ...NOT_FOUND, 409: '`IAM_INVALID_ACCESS_TRANSITION`, `IAM_LAST_SYSTEM_ADMIN`' },

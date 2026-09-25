@@ -12,6 +12,11 @@
 **Next step:** the Final IAM Module Audit with `/audit IAM-FINAL` (session effort `xhigh`), once the `IAM-R09B` pull request is merged. It also carries the deferred `IAM-CP2` scope (amendment record 2026-09-24)  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
+> **Owner-directed amendment, 2026-09-25:** The owner replaced the planned Keycloak/OIDC/TOTP
+> architecture with local email/password authentication. [ADR-0001](../../adr/0001-local-password-authentication.md)
+> and [IAM-R10](IAM_R10_LOCAL_AUTH_PLAN.md) define this new Tier A run. The historical R01–R09B
+> records remain delivery history; their provider-specific requirements are superseded for new work.
+
 ---
 
 ## 1. Purpose

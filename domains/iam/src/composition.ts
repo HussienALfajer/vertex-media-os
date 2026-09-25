@@ -55,6 +55,7 @@ export {
 export {
   createUser,
   disableUser,
+  initializePassword,
   reactivateUser,
   resendUserInvitation,
   revokeUserSessions,

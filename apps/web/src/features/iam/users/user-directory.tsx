@@ -34,7 +34,7 @@ import {
   rolesQuery,
   usersQuery,
 } from '../iam-queries';
-import { AccessStatus, accessLabel, IdentityStatus, InvitationStatus } from '../iam-states';
+import { AccessStatus, accessLabel } from '../iam-states';
 
 export interface DirectoryParams {
   readonly page: number;
@@ -168,20 +168,6 @@ export function UserDirectory({
       header: messages.columnAccess,
       kind: 'status',
       cell: (user) => <AccessStatus state={user.accessState} />,
-    },
-    {
-      id: 'identity',
-      header: messages.columnIdentity,
-      kind: 'status',
-      cell: (user) => <IdentityStatus state={user.identitySyncState} />,
-    },
-    {
-      id: 'invitation',
-      header: messages.columnInvitation,
-      kind: 'status',
-      cell: (user) => (
-        <InvitationStatus accessState={user.accessState} state={user.invitationDeliveryState} />
-      ),
     },
   ];
 
