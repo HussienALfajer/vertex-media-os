@@ -1,6 +1,6 @@
 # IAM-R11 — Final-audit blocking fixes and current acceptance evidence
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETE — accepted baseline follows the PR merge  
 **Master Plan stage:** Owner-directed final-audit fix run  
 **Risk tier:** A — Critical  
 **Branch:** `codex/iam-final-project-audit`  
@@ -84,12 +84,15 @@ merged baseline with independent reviewers and produce its own audit-record pull
 - [x] Correct IAM failure and confirmation presentation; test affected behavior.
 - [x] Reconcile normative documents and the current evidence map.
 - [x] Complete local verification and independent fix review.
-- [ ] Open fix PR, await CI, merge and update local main.
+- [x] Open [fix PR #24](https://github.com/HussienALfajer/vertex-media-os/pull/24) and pass
+  [required CI](https://github.com/HussienALfajer/vertex-media-os/actions/runs/36206283048).
+- [ ] Merge the fix PR and update local main.
 - [ ] Run the independent Final IAM Module Audit on merged main.
 
 ## 10. Hand-off
 
-Pending the fix pull request and its merged CI evidence. A read-only review also found dormant
+Fix PR #24 passed the required full CI gate; acceptance follows its merge. A read-only review
+also found dormant
 provider-specific session mechanics and a token-encryption startup secret unused by the local
 runtime. The owner requested full provider removal, so a focused IAM-R12 cleanup should follow
 this merge before the Final Audit. It must preserve historical migration data and recheck session

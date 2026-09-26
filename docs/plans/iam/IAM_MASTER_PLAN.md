@@ -1823,7 +1823,7 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-15 E2E & Hardening, part 1 (backend and test evidence) | R09 | COMPLETE | R08C merged (satisfied) |
 | IAM-MP-15 E2E & Hardening, part 2 (browser journeys and closeout) | R09B | COMPLETE | R09 merged (satisfied) |
 | `IAM-R10` Local password authentication | R10 | COMPLETE | PR #23 merged (satisfied) |
-| `IAM-R11` Final-audit blocking fixes | R11 | IN_PROGRESS | R10 merged (satisfied) |
+| `IAM-R11` Final-audit blocking fixes | R11 | COMPLETE (accepted on merge) | R10 merged (satisfied) |
 | `IAM-R12` Dormant provider session cleanup | R12 | WAITING | R11 reviewed and merged |
 | `IAM-FINAL` Final IAM Module Audit | — | WAITING | R12 reviewed and merged |
 

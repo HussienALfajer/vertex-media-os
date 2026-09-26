@@ -57,8 +57,10 @@ repository gate cannot be interpreted as the complete Lead-to-Payment product be
 - Independent manual mobile QA found no overflow or browser console error in the inspected
   screens; this observation is bounded to the inspected pages and viewport.
 
-The run report and pull-request CI link carry the final command results. The Final IAM Audit
-record cites merged CI, probes and its independent verdict.
+The [IAM-R11 CI run](https://github.com/HussienALfajer/vertex-media-os/actions/runs/36206283048)
+passed `pnpm verify:full` and `pnpm deps:audit` on pull request #24. Its dependency audit reported
+only the reviewed exceptions in repository policy. The Final IAM Audit record cites merged CI,
+probes and its independent verdict.
 
 ## 5. Remaining boundaries
 
