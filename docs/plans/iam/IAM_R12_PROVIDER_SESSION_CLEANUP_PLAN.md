@@ -76,12 +76,14 @@ Three independent reviewers cover security, data/concurrency and tests/contracts
 - [x] Preserve and verify legacy-session refusal and old-state cleanup.
 - [x] Synchronize current docs and evidence map.
 - [x] Complete local verification and independent Tier A review.
-- [ ] Open PR, pass required CI and obtain owner acceptance.
+- [x] Open [PR #25](https://github.com/HussienALfajer/vertex-media-os/pull/25).
+- [ ] Pass required CI and obtain owner acceptance.
 
 ## 10. Hand-off
 
-After acceptance, run the independent Final IAM Module Audit on merged `main`, including deferred
-IAM-CP2 and the local identity compatibility layer. A repository inventory found that IAM's
-administration capabilities still call an in-process local identity adapter implementing the
+PR #25 is in review. After acceptance, run the independent Final IAM Module Audit on merged
+`main`, including deferred IAM-CP2 and the local identity compatibility layer. A repository
+inventory found that IAM's administration capabilities still call an in-process local identity
+adapter implementing the
 historical provider port. It makes no Keycloak or network request, but the Final Audit must
 classify whether the remaining provider-era semantics are a closure defect or nonblocking debt.
