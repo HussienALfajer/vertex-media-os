@@ -6,7 +6,6 @@ import { loadAuthConfig, type AuthConfig } from '../src/config/auth-config.js';
  */
 export const TEST_AUTH_ENVIRONMENT = {
   NODE_ENV: 'test',
-  AUTH_TOKEN_ENCRYPTION_SECRET: 'sentinel-token-encryption-secret-000000',
 } as const;
 
 /**

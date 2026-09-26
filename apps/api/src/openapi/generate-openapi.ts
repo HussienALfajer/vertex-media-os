@@ -25,11 +25,9 @@ const GENERATION_AUTH_CONFIG: AuthConfig = {
   session: {
     idleTimeoutSeconds: 1_800,
     absoluteTimeoutSeconds: 36_000,
-    loginAttemptTimeoutSeconds: 600,
     retentionDays: 30,
   },
   rateLimits: { windowSeconds: 60, signIn: 60, logout: 30, evidence: 30 },
-  tokenEncryptionSecret: 'openapi-generation-placeholder-secret-0000',
 };
 
 const GENERATION_PROVISIONING_CONFIG: IdentityProvisioningConfig = {

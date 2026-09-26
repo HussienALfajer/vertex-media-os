@@ -32,7 +32,6 @@ const COMPOSE_PROJECT = 'vertexos';
  * value only the API reads, which can be generated at any time.
  */
 const OWNING_VOLUME = {
-  'auth-token-encryption-secret': null,
   'postgres-password': 'postgres-data',
 };
 

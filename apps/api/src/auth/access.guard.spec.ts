@@ -36,7 +36,6 @@ const session: ValidSession = {
   csrfTokenHash: hashSecret(csrfTokenFor(SECRET)),
   idleExpiresAt: new Date('2026-09-23T12:30:00.000Z'),
   absoluteExpiresAt: new Date('2026-09-23T22:00:00.000Z'),
-  idToken: undefined,
 };
 
 const context: AuthorizationContext = {

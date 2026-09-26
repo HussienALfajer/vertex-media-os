@@ -23,7 +23,6 @@ const SCRIPT = fileURLToPath(new URL('../../../../scripts/setup-env.mjs', import
 const TEMPLATE = [
   '# Local settings (test template)',
   'API_PORT=3000',
-  'AUTH_TOKEN_ENCRYPTION_SECRET=<generated:auth-token-encryption-secret>',
   'POSTGRES_PASSWORD=<generated:postgres-password>',
   'DATABASE_URL=postgresql://vertex:<generated:postgres-password>@127.0.0.1:5432/vertex',
   '',
@@ -82,20 +81,16 @@ const env = () => readFileSync(envPath(), 'utf8');
 const value = (text: string, key: string) => new RegExp(`^${key}=(.*)$`, 'm').exec(text)?.[1] ?? '';
 
 describe('pnpm env:setup', () => {
-  it('creates .env with a fresh value per name, shared where a name repeats, printing none', () => {
+  it('creates .env with the database password shared between keys and never printed', () => {
     const { status, output } = run();
     expect(status).toBe(0);
     const text = env();
     expect(text).not.toContain('<generated:');
-    const secret = value(text, 'AUTH_TOKEN_ENCRYPTION_SECRET');
     const password = value(text, 'POSTGRES_PASSWORD');
-    expect(secret).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(password).toMatch(/^[A-Za-z0-9_-]{32}$/);
-    expect(secret).not.toBe(password);
     expect(value(text, 'DATABASE_URL')).toBe(
       `postgresql://vertex:${password}@127.0.0.1:5432/vertex`,
     );
-    expect(output).not.toContain(secret);
     expect(output).not.toContain(password);
   });
 
@@ -114,7 +109,7 @@ describe('pnpm env:setup', () => {
     expect(existsSync(envPath())).toBe(false);
   });
 
-  it('appends only the missing keys, generating values only the API reads without Docker', () => {
+  it('appends only missing unowned keys without consulting Docker', () => {
     const existing = [
       '# my local file',
       'POSTGRES_PASSWORD=kept-password',
@@ -122,14 +117,13 @@ describe('pnpm env:setup', () => {
       '',
     ].join('\n');
     writeFileSync(envPath(), existing);
-    // Docker is not consulted: the API's own secret belongs to no data volume.
+    // Docker is not consulted: API_PORT is not a generated secret.
     const { status, output } = run({ docker: 'missing' });
     expect(status).toBe(0);
-    expect(output).toContain('Appended 2 missing key(s)');
+    expect(output).toContain('Appended 1 missing key(s)');
     const text = env();
     expect(text.startsWith(existing)).toBe(true);
     expect(value(text, 'API_PORT')).toBe('3000');
-    expect(value(text, 'AUTH_TOKEN_ENCRYPTION_SECRET')).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(value(text, 'POSTGRES_PASSWORD')).toBe('kept-password');
   });
 
@@ -153,7 +147,7 @@ describe('pnpm env:setup', () => {
   });
 
   it('refuses to append values for a service whose data volume already exists', () => {
-    const existing = 'API_PORT=3000\nAUTH_TOKEN_ENCRYPTION_SECRET=kept-secret\n';
+    const existing = 'API_PORT=3000\n';
     writeFileSync(envPath(), existing);
     const { status, output } = run({ docker: 'postgres-data' });
     expect(status).toBe(1);

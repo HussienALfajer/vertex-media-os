@@ -4,8 +4,8 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * The user administration screens of the production build in a real browser, in Arabic (RTL)
  * and English (LTR), with an accessibility scan (IAM-R08B D-15). A signed-in journey through the
- * real API needs Keycloak and belongs to IAM-MP-15, so here the browser's `/api` requests are
- * answered in the page with the API's documented shapes. Synthetic data only.
+ * real API is covered by the local IAM browser journey. Here the browser's `/api` requests are
+ * answered in the page with documented shapes to inspect UI states. Synthetic data only.
  */
 
 const ADMIN = {

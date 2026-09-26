@@ -7,7 +7,7 @@ import { iamPermissionManifest } from '@vertex-os/iam';
 import { synchronizeIamReferenceData } from '@vertex-os/iam/composition';
 import { createIamTransactionRunner } from '@vertex-os/iam-persistence';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { TEST_AUTH_ENVIRONMENT, testAuthConfig } from '../../../test-support/auth-config.js';
+import { testAuthConfig } from '../../../test-support/auth-config.js';
 import { seedInvitedUser } from '../../../test-support/iam-users.js';
 import { IAM_ROUTES } from '../../../test-support/iam-routes.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../../../test-support/postgres.js';
@@ -16,7 +16,6 @@ import { createApp } from '../../app.factory.js';
 import { csrfTokenFor } from '../../auth/secrets.js';
 import { createSessionStore } from '../../auth/session-store.js';
 import { createSessionService } from '../../auth/sessions.js';
-import { createTokenCiphers } from '../../auth/token-cipher.js';
 import { loadAppConfig } from '../../config/app-config.js';
 
 /**
@@ -133,17 +132,10 @@ async function sessionFor(userId: string): Promise<string> {
   if (!process.ok || !traceId.ok) throw new Error('attribution fixture');
   const sessions = createSessionService({
     store: createSessionStore(database, { auditRecorderFor: createAuditRecorder }),
-    ciphers: createTokenCiphers(TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET),
-    provider: { refreshSession: async () => ({ ok: false, failure: 'unavailable' }) },
     limits: testAuthConfig().session,
-    clientId: 'vertex-local',
-    local: true,
   });
   const { secret } = await sessions.establish({
     userId,
-    idpSessionId: undefined,
-    idToken: undefined,
-    refreshToken: undefined,
     attribution: { actor: { type: 'SYSTEM', process: process.value }, traceId: traceId.value },
   });
   return secret;

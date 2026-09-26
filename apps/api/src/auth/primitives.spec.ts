@@ -2,13 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   clearedCookie,
   LOGIN_COOKIE,
-  loginCookie,
   readCookie,
   SESSION_COOKIE,
   sessionCookie,
 } from './cookies.js';
 import { csrfTokenFor, hashSecret, isSecretShaped, matchesHash, newSecret } from './secrets.js';
-import { createTokenCipher } from './token-cipher.js';
 
 describe('secrets', () => {
   it('issues 256-bit base64url secrets and stores only their SHA-256', () => {
@@ -46,14 +44,11 @@ describe('cookies', () => {
     expect(sessionCookie('s')).toBe(
       '__Host-vertex-session=s; Path=/; Secure; HttpOnly; SameSite=Strict',
     );
-    expect(loginCookie('h', 600)).toBe(
-      '__Host-vertex-login=h; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax',
-    );
     expect(clearedCookie(SESSION_COOKIE)).toBe(
       '__Host-vertex-session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict',
     );
     expect(clearedCookie(LOGIN_COOKIE)).toContain('Max-Age=0');
-    for (const cookie of [sessionCookie('s'), loginCookie('h', 1)]) {
+    for (const cookie of [sessionCookie('s'), clearedCookie(LOGIN_COOKIE)]) {
       expect(cookie).not.toMatch(/Domain=/i);
     }
   });
@@ -67,42 +62,5 @@ describe('cookies', () => {
       readCookie('__Host-vertex-session=a; __Host-vertex-session=b', SESSION_COOKIE),
     ).toBeUndefined();
     expect(readCookie('__Host-vertex-login=h', LOGIN_COOKIE)).toBe('h');
-  });
-});
-
-describe('token ciphers', () => {
-  const cipher = createTokenCipher('sentinel-token-encryption-secret-000000', 'id-token');
-  const sessionId = '6a1f2b3c-4d5e-4f60-8a1b-2c3d4e5f6a7b';
-
-  it('round-trips, with a fresh IV each time and no plaintext in the ciphertext', () => {
-    const first = cipher.encrypt('header.payload.signature', sessionId);
-    const second = cipher.encrypt('header.payload.signature', sessionId);
-    expect(first).not.toBe(second);
-    expect(first).not.toContain('payload');
-    expect(cipher.decrypt(first, cipher.keyVersion, sessionId)).toBe('header.payload.signature');
-  });
-
-  it('refuses another session, another key, another version and altered data', () => {
-    const sealed = cipher.encrypt('token', sessionId);
-    expect(cipher.decrypt(sealed, cipher.keyVersion, '00000000-0000-4000-8000-000000000000')).toBe(
-      undefined,
-    );
-    const other = createTokenCipher('another-token-encryption-secret-0000000', 'id-token');
-    expect(other.decrypt(sealed, other.keyVersion, sessionId)).toBeUndefined();
-    expect(cipher.decrypt(sealed, cipher.keyVersion + 1, sessionId)).toBeUndefined();
-    const raw = Buffer.from(sealed, 'base64url');
-    raw[raw.length - 1] = (raw[raw.length - 1] ?? 0) ^ 1;
-    expect(cipher.decrypt(raw.toString('base64url'), cipher.keyVersion, sessionId)).toBeUndefined();
-    expect(cipher.decrypt('', cipher.keyVersion, sessionId)).toBeUndefined();
-  });
-
-  it('derives one key per token purpose (IAM-R03F D-06)', () => {
-    const refresh = createTokenCipher('sentinel-token-encryption-secret-000000', 'refresh-token');
-    const sealed = refresh.encrypt('refresh', sessionId);
-    expect(refresh.decrypt(sealed, refresh.keyVersion, sessionId)).toBe('refresh');
-    expect(cipher.decrypt(sealed, cipher.keyVersion, sessionId)).toBeUndefined();
-    expect(refresh.decrypt(cipher.encrypt('id', sessionId), refresh.keyVersion, sessionId)).toBe(
-      undefined,
-    );
   });
 });

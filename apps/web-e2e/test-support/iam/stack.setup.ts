@@ -53,7 +53,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const database = 'vertex_iam_e2e';
   const pgPassword = randomBytes(24).toString('base64url');
   const adminPassword = randomBytes(48).toString('base64url');
-  const tokenKey = randomBytes(48).toString('base64url');
   const adminEmail = `admin-${randomUUID()}@example.test`;
   let api: ChildProcess | undefined;
   let web: ChildProcess | undefined;
@@ -67,7 +66,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     if (postgresStarted) docker('rm', '--force', '--volumes', container);
     rmSync(work, { recursive: true, force: true });
     const output = [...apiLog, ...webLog].join('');
-    if ([pgPassword, adminPassword, tokenKey].some((secret) => output.includes(secret))) {
+    if ([pgPassword, adminPassword].some((secret) => output.includes(secret))) {
       throw new Error('A stack log exposed a generated secret.');
     }
   };
@@ -109,7 +108,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       NODE_ENV: 'test',
       DATABASE_URL: url,
       LOG_LEVEL: 'warn',
-      AUTH_TOKEN_ENCRYPTION_SECRET: tokenKey,
     });
     runNode(
       dbRoot,

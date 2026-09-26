@@ -134,7 +134,6 @@ export default defineConfig({
         API_PORT,
         LOG_LEVEL: 'warn',
         DATABASE_URL: 'postgresql://e2e:not-used@127.0.0.1:1/never_connected',
-        AUTH_TOKEN_ENCRYPTION_SECRET: 'local-e2e-legacy-session-key-not-used',
         NX_DAEMON: 'false',
       },
     },

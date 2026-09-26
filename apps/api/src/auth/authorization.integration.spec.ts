@@ -4,14 +4,13 @@ import { parseSystemProcess, parseTraceId, type AuditAttribution } from '@vertex
 import { createAuditRecorder } from '@vertex-os/audit-persistence';
 import { createDatabaseClient, type DatabaseClient } from '@vertex-os/database';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { TEST_AUTH_ENVIRONMENT, testAuthConfig } from '../../test-support/auth-config.js';
+import { testAuthConfig } from '../../test-support/auth-config.js';
 import { startMigratedPostgres, type MigratedPostgres } from '../../test-support/postgres.js';
 import { createProbeApp, PROBE_PERMISSION } from '../../test-support/probe-app.js';
 import { loadAppConfig } from '../config/app-config.js';
 import { csrfTokenFor } from './secrets.js';
 import { createSessionStore } from './session-store.js';
 import { createSessionService } from './sessions.js';
-import { createTokenCiphers } from './token-cipher.js';
 import { seedInvitedUser } from '../../test-support/iam-users.js';
 
 /**
@@ -71,17 +70,10 @@ describe('authorization context against PostgreSQL', () => {
     const config = testAuthConfig();
     const sessions = createSessionService({
       store: createSessionStore(database, { auditRecorderFor: createAuditRecorder }),
-      ciphers: createTokenCiphers(TEST_AUTH_ENVIRONMENT.AUTH_TOKEN_ENCRYPTION_SECRET),
-      provider: { refreshSession: async () => ({ ok: false, failure: 'unavailable' }) },
       limits: config.session,
-      clientId: 'vertex-local',
-      local: true,
     });
     const { secret } = await sessions.establish({
       userId: id,
-      idpSessionId: undefined,
-      idToken: undefined,
-      refreshToken: undefined,
       attribution: attribution(),
     });
     return { id, secret };

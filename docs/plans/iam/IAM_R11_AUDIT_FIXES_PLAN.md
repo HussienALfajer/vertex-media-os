@@ -85,17 +85,15 @@ merged baseline with independent reviewers and produce its own audit-record pull
 - [x] Reconcile normative documents and the current evidence map.
 - [x] Complete local verification and independent fix review.
 - [x] Open [fix PR #24](https://github.com/HussienALfajer/vertex-media-os/pull/24) and pass
-  [required CI](https://github.com/HussienALfajer/vertex-media-os/actions/runs/36206283048).
-- [ ] Merge the fix PR and update local main.
-- [ ] Run the independent Final IAM Module Audit on merged main.
+  [required CI](https://github.com/HussienALfajer/vertex-media-os/actions/runs/36206766684).
+- [x] Merge the fix PR and update local main.
+- [ ] Run the independent Final IAM Module Audit after IAM-R12 is accepted.
 
 ## 10. Hand-off
 
-Fix PR #24 passed the required full CI gate; acceptance follows its merge. A read-only review
-also found dormant
-provider-specific session mechanics and a token-encryption startup secret unused by the local
-runtime. The owner requested full provider removal, so a focused IAM-R12 cleanup should follow
-this merge before the Final Audit. It must preserve historical migration data and recheck session
-security. The Final Audit then inspects R10–R12 and the deferred IAM-CP2
+Fix PR #24 passed the required full CI gate and was merged. The local `main` was fast-forwarded
+to that accepted baseline. The focused [IAM-R12 cleanup](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md)
+follows before the Final Audit. It preserves historical migration data and rechecks session
+security. The Final Audit inspects R10–R12 and the deferred IAM-CP2
 authorization/administration scope. Production launch gates remain separate and are enumerated
 in the current evidence map.

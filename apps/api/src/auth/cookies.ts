@@ -1,6 +1,6 @@
 /**
- * The two cookies of the authentication area (IAM-R03 D-06). Both are host-scoped (`__Host-`:
- * `Secure`, `Path=/`, no `Domain`), `HttpOnly`, and carry only an opaque secret.
+ * The local application session is host-scoped, Secure and HttpOnly. The retired login-attempt
+ * cookie name remains only so successful local sign-in can clear a browser's old cookie.
  */
 export const SESSION_COOKIE = '__Host-vertex-session';
 export const LOGIN_COOKIE = '__Host-vertex-login';
@@ -24,11 +24,6 @@ export function readCookie(header: string | undefined, name: CookieName): string
 export function sessionCookie(secret: string): string {
   // No Max-Age: the server-side idle and absolute deadlines are authoritative (D-06).
   return `${SESSION_COOKIE}=${secret}; Path=/; Secure; HttpOnly; SameSite=Strict`;
-}
-
-export function loginCookie(handle: string, maxAgeSeconds: number): string {
-  // Lax, because the callback arrives as a top-level navigation from the identity provider.
-  return `${LOGIN_COOKIE}=${handle}; Path=/; Max-Age=${maxAgeSeconds}; Secure; HttpOnly; SameSite=Lax`;
 }
 
 export function clearedCookie(name: CookieName): string {
