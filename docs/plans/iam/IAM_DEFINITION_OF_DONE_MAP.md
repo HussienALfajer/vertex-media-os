@@ -53,11 +53,11 @@ acceptance must inspect the executable evidence below and the Final Audit record
 
 ## 5. Open launch gates and intentionally deferred behavior
 
-- Before Final IAM acceptance: the [IAM-R12 run](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md) must
-  be reviewed and merged. It removes dormant provider session methods and the unused
-  token-encryption startup requirement while preserving legacy migration data and token cleanup.
-  The independent Final Audit must still inspect the local identity compatibility layer used by
-  administration and decide whether any retained provider-era semantics block IAM closure.
+- Before Final IAM acceptance: [IAM-R12](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md) has merged;
+  the independent [Final IAM audit](audits/IAM-FINAL.md) returned `IAM-FINAL FIXES REQUIRED` for
+  the session-revival race and dirty-form navigation behavior. Dedicated reviewed fix runs and a
+  focused audit re-check are required before module closure. The audit classified the local
+  identity compatibility layer as nonblocking, in-process technical debt.
 - Before production deployment: benchmark scrypt on the actual server; check new passwords
   against known compromised passwords; configure HTTPS, security alerts and the Contabo deployment
   topology (`docs/SECURITY.md` Sections 8, 28 and `docs/ARCHITECTURE.md` deployment section).

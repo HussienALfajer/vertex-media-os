@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** complete [IAM-R12](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md) after merged IAM-R11, then perform the independent Final IAM audit on merged `main`. The audit includes the deferred `IAM-CP2` scope (amendment record 2026-09-24) and IAM-R10–R12.  
+**Next step:** resolve the blocking findings in the [Final IAM audit](audits/IAM-FINAL.md) through dedicated reviewed fix runs, then re-check the findings on merged `main`. The audit includes the deferred `IAM-CP2` scope (amendment record 2026-09-24) and IAM-R10–R12.  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 > **Owner-directed amendment, 2026-09-25:** The owner replaced the planned Keycloak/OIDC/TOTP
@@ -493,6 +493,8 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R10` | Owner-directed local password authentication replacement | A | security; data and concurrency; tests and verification | **`IAM-R11`** audit fix run |
 | `IAM-R11` | Migrated-administrator recovery and current IAM QA fixes | A | security; data and concurrency; UI/UX and verification | **`IAM-R12`** provider cleanup |
 | `IAM-R12` | Dormant external-provider session cleanup | A | security; data and concurrency; tests and verification | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
+| `IAM-R13` | `IAM-FINAL` F-01: session access-generation and restriction race | A | security; data and concurrency; tests and verification | `IAM-R14` UI fix run |
+| `IAM-R14` | `IAM-FINAL` F-02–F-04: dirty-form protection and current IAM UI corrections | B | UI/UX and accessibility; tests and verification | `IAM-FINAL` focused re-check |
 
 Grouping rules behind the table:
 
@@ -1825,9 +1827,18 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | `IAM-R10` Local password authentication | R10 | COMPLETE | PR #23 merged (satisfied) |
 | `IAM-R11` Final-audit blocking fixes | R11 | COMPLETE (accepted on merge) | R10 merged (satisfied) |
 | `IAM-R12` Dormant provider session cleanup | R12 | COMPLETE (accepted on merge) | R11 reviewed and merged |
-| `IAM-FINAL` Final IAM Module Audit | — | WAITING | R12 reviewed and merged |
+| `IAM-FINAL` Final IAM Module Audit | — | FIXES REQUIRED; re-check pending | R12 reviewed and merged; see audit record F-01–F-04 |
+| `IAM-R13` Session access-generation fix | R13 | READY after audit record acceptance | `IAM-FINAL` F-01 |
+| `IAM-R14` Dirty-form and current IAM UI correction | R14 | PLANNED | `IAM-FINAL` F-02–F-04; R13 merged |
 
 The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
+
+### Amendment record — Final Audit fix runs (2026-09-26)
+
+- **Problem:** the audit of merged IAM-R10–R12 found a session-revival race across restriction/reactivation (F-01), missing dirty-form navigation protection (F-02), and current IAM UI copy and retry defects (F-03–F-04).
+- **Change:** add one focused Tier A run for the session/access-generation boundary (`IAM-R13`) and one focused Tier B UI run (`IAM-R14`), each with its own plan, review, pull request and CI. Re-check the Final Audit findings on their merged baselines. The existing accepted stage merges remain valid for their delivered work, but module closure is deferred.
+- **Alternatives:** folding both unrelated surfaces into one fix pull request would make a security/data change harder to review; changing only the audit verdict would leave the reproducible defects in place.
+- **Migration and validation:** R13 must choose and document a backward-compatible session generation rule, prove the restricted-login interleaving and revocation-failure path against PostgreSQL, and pass Tier A review. R14 must protect dirty forms across Cancel, route changes and unload, correct current IAM copy and picker recovery, and pass focused UI/browser checks and Tier B review. No data deletion or authentication-policy change is authorized by this amendment.
 
 ### Amendment record — delivery method (2026-09-23)
 
@@ -2124,14 +2135,7 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-15 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, IAM-MP-12 through run `IAM-R08`, IAM-MP-13 through run `IAM-R08B`, IAM-MP-14 through run `IAM-R08C`, and IAM-MP-15 through runs `IAM-R09` and `IAM-R09B`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). IAM-R10 merged in PR #23, and the audit of that baseline identified the migrated-administrator lockout fixed in merged PR #24. The current run is the focused [IAM-R12 cleanup](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md) of dormant provider session mechanics and the unused token-encryption startup requirement. Then run the independent Final IAM Module Audit (Section 17) on that merged baseline:
-
-```text
-/audit IAM-FINAL
-```
-
-It reads Section 17, including the revised `IAM_DEFINITION_OF_DONE_MAP.md`, ADR-0001, IAM-R11–R12 evidence and the deferred `IAM-CP2` scope.
-Do **not** plan later runs in detail now.
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is included in the [Final IAM audit](audits/IAM-FINAL.md). IAM-R10, R11 and R12 merged in PRs #23, #24 and #25. The independent audit of the R12 merged baseline returned `IAM-FINAL FIXES REQUIRED`: F-01 is a security/data concurrency blocker and F-02 is a current UI contract blocker. The next run is `IAM-R13` after the audit record is accepted; `IAM-R14` follows its merge. Re-check the findings after both fix runs merge, and close IAM only if the re-check returns `IAM-FINAL ACCEPTED` and its record is merged.
 
 ---
 

@@ -55,7 +55,7 @@ and revocation. No destructive database migration is included.
   environment setup no longer generates it.
 - [x] Historical mapping and session data remain intact; cleanup and retention still work.
 - [x] Current docs, evidence map and run ledger state the supported local-only behavior.
-- [ ] Relevant tests, `pnpm verify`, touched integration suites, required CI and independent
+- [x] Relevant tests, `pnpm verify`, touched integration suites, required CI and independent
   Tier A review pass before the PR is merged.
 
 ## 7. Stop conditions
@@ -77,13 +77,11 @@ Three independent reviewers cover security, data/concurrency and tests/contracts
 - [x] Synchronize current docs and evidence map.
 - [x] Complete local verification and independent Tier A review.
 - [x] Open [PR #25](https://github.com/HussienALfajer/vertex-media-os/pull/25).
-- [ ] Pass required CI and obtain owner acceptance.
+- [x] Pass required CI and obtain owner acceptance ([PR #25](https://github.com/HussienALfajer/vertex-media-os/pull/25)).
 
 ## 10. Hand-off
 
-PR #25 is in review. After acceptance, run the independent Final IAM Module Audit on merged
-`main`, including deferred IAM-CP2 and the local identity compatibility layer. A repository
-inventory found that IAM's administration capabilities still call an in-process local identity
-adapter implementing the
-historical provider port. It makes no Keycloak or network request, but the Final Audit must
-classify whether the remaining provider-era semantics are a closure defect or nonblocking debt.
+PR #25 merged. The independent [Final IAM audit](audits/IAM-FINAL.md) examined merged `main`,
+including deferred IAM-CP2 and the local identity compatibility layer. It classified the local
+adapter as nonblocking compatibility debt because it makes no Keycloak or network request, but
+identified separate session and UI closure blockers that require dedicated fix runs.
