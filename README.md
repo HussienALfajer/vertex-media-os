@@ -81,16 +81,30 @@ users without a local password cannot sign in until an administrator with
 password and a CSRF token. The action is audited and can be used only once per legacy account.
 The new administrator account and all new staff accounts have local passwords.
 
+If an upgraded database has an `ACTIVE` System Administrator whose old provider account has no
+local password, and no administrator can sign in, the operator can initialize that existing
+administrator once. Set `IAM_BOOTSTRAP_PASSWORD` in the command process environment and run:
+
+```sh
+pnpm iam:bootstrap --recover-migrated-admin --email <existing-admin-address> --reason "Migration credential recovery"
+```
+
+The command requires an exact existing administrator email and a reason, refuses if any ACTIVE or
+INVITED administrator already has a local password, never overwrites a credential or creates a
+new user, and records the attempt and successful initialization in Audit. Do not use it as a
+general password-reset command.
+
 ## Database and commands
 
-| Command                                 | Purpose                                                             |
-| --------------------------------------- | ------------------------------------------------------------------- |
-| `pnpm infra:up` / `pnpm infra:down`     | Start / stop the local PostgreSQL service; data is retained         |
-| `pnpm infra:reset`                      | Delete the local PostgreSQL volume (destructive)                    |
-| `pnpm db:validate` / `pnpm db:generate` | Validate the schema / generate the Prisma client                    |
-| `pnpm db:migrate`                       | Apply forward-only migrations; API startup never migrates           |
-| `pnpm iam:sync-reference`               | Synchronize permission catalog and protected system role            |
-| `pnpm iam:bootstrap --email <address>`  | Create the first local administrator using `IAM_BOOTSTRAP_PASSWORD` |
+| Command                                                                           | Purpose                                                                     |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm infra:up` / `pnpm infra:down`                                               | Start / stop the local PostgreSQL service; data is retained                 |
+| `pnpm infra:reset`                                                                | Delete the local PostgreSQL volume (destructive)                            |
+| `pnpm db:validate` / `pnpm db:generate`                                           | Validate the schema / generate the Prisma client                            |
+| `pnpm db:migrate`                                                                 | Apply forward-only migrations; API startup never migrates                   |
+| `pnpm iam:sync-reference`                                                         | Synchronize permission catalog and protected system role                    |
+| `pnpm iam:bootstrap --email <address>`                                            | Create the first local administrator using `IAM_BOOTSTRAP_PASSWORD`         |
+| `pnpm iam:bootstrap --recover-migrated-admin --email <address> --reason <reason>` | Recover one inaccessible migrated ACTIVE administrator, under strict checks |
 
 The Prisma schema lives under `packages/database/prisma/schema/`; migrations live under
 `packages/database/prisma/migrations/`. `iam:sync-reference` runs in one transaction and audits

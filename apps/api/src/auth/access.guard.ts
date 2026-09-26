@@ -40,9 +40,8 @@ export const PUBLIC_ROUTE = 'vertex:public';
 const REQUIRED_PERMISSION = 'vertex:required-permission';
 
 /**
- * Marks a route that needs no application session (spec Section 24; IAM-R04 D-01, D-02): health,
- * the OIDC login and callback, and back-channel logout, which its protocol authenticates. Read on
- * the handler only, so a method added to a public controller is protected.
+ * Marks a route that needs no application session, such as health and local login. Read on the
+ * handler only, so a method added to a public controller remains protected.
  */
 export const Public = (): MethodDecorator => SetMetadata(PUBLIC_ROUTE, true);
 

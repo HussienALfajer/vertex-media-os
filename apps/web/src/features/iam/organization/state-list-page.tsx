@@ -1,5 +1,7 @@
 import type { UseQueryResult } from '@tanstack/react-query';
 import {
+  Alert,
+  Button,
   DataTable,
   EmptyState,
   ErrorState,
@@ -92,12 +94,24 @@ export function StateListPage<Item, State extends string>({
     onSearch({ text: '', applied: '' });
     onParamsChange({ page: 1, pageSize: params.pageSize });
   };
-  const page = query.data;
+  // Never retain protected rows when a refresh says the session is no longer authorized.
+  const page = isApiProblem(query.error, 401) ? undefined : query.data;
 
   return (
     <Page>
       {header}
       <div className="flex flex-col gap-toolbar-groups">
+        {page !== undefined && query.isError && (
+          <Alert
+            tone="warning"
+            title={messages.staleDataTitle}
+            actions={
+              <Button onClick={() => void query.refetch()} disabled={query.isFetching}>
+                {messages.retry}
+              </Button>
+            }
+          />
+        )}
         <TableToolbar
           search={
             <Field label={copy.searchLabel} description={copy.searchHelp}>

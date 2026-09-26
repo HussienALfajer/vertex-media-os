@@ -11,8 +11,7 @@ export interface AccountAreaProps {
 
 /**
  * The shell's account area: who is signed in (display name and primary department) and the
- * sign-out action. Sign-out ends the session through the API, then leaves for the identity
- * provider's logout page (spec Section 32; IAM-R08 D-09).
+ * sign-out action. Sign-out ends the application session through the API.
  */
 export function AccountArea({ user, departments }: AccountAreaProps) {
   const messages = useAuthMessages();

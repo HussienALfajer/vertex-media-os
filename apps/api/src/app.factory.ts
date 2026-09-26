@@ -40,7 +40,7 @@ export async function createApp(
     logger: {
       level: config.logging.level,
       // `err`: database errors are logged as allowlisted descriptions (IAM-02 D-15). `req`: the
-      // path without its query string, which can carry OIDC codes and state (IAM-R03 D-20).
+      // path without its query string, which can contain sensitive request values.
       serializers: { err: safeErrorSerializer, req: safeRequestSerializer },
       ...(logStream ? { stream: logStream } : {}),
     },

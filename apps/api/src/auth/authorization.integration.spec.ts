@@ -17,7 +17,7 @@ import { seedInvitedUser } from '../../test-support/iam-users.js';
 /**
  * The authorization context over HTTP against real PostgreSQL (IAM-R04 Done means 3 to 8): the
  * access guard, the bound IAM capability, the one-statement reader and the Audit adapter, with
- * sessions created directly (sign-in itself is proven by auth-flow and the Keycloak journeys).
+ * sessions created directly (local sign-in is proven by its dedicated integration and browser journeys).
  */
 describe('authorization context against PostgreSQL', () => {
   let postgres: MigratedPostgres;

@@ -19,7 +19,7 @@ import {
   UiLink,
   type TableColumn,
 } from '@vertex-os/ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { isApiProblem } from '../../../lib/http';
 import { refreshAuthState } from '../../auth/auth-state';
 import { useAccess } from '../../auth/use-access';
@@ -29,6 +29,7 @@ import {
   deactivateRole,
   ENTITY_STATES,
   getRole,
+  listPermissions,
   updateRole,
   type EntityState,
   type Permission,
@@ -40,6 +41,7 @@ import { describeMutationFailure } from '../iam-problems';
 import {
   catalogQuery,
   IAM_PERMISSIONS,
+  LIST_BOUND,
   refreshOrganization,
   roleQuery,
   rolesQuery,
@@ -176,10 +178,11 @@ export function RoleDetailPage({ roleId, created }: { roleId: string; created: b
   const { can } = useAccess();
   const role = useQuery(roleQuery(roleId));
   const readsCatalog = can(IAM_PERMISSIONS.permissionsRead);
+  const readsUsers = can(IAM_PERMISSIONS.usersRead);
   const catalog = useQuery({ ...catalogQuery, enabled: readsCatalog });
   const holders = useQuery({
     ...userCountQuery({ roleId }),
-    enabled: can(IAM_PERMISSIONS.usersRead),
+    enabled: readsUsers,
   });
   const [outcome, setOutcome] = useState<Outcome | undefined>(
     created
@@ -189,9 +192,60 @@ export function RoleDetailPage({ roleId, created }: { roleId: string; created: b
   const [editing, setEditing] = useState(false);
   const [editingPermissions, setEditingPermissions] = useState(false);
   const [confirming, setConfirming] = useState<Confirming | undefined>(undefined);
+  const [reviewCount, setReviewCount] = useState<number | undefined>();
+  const [reviewCountError, setReviewCountError] = useState(false);
+  const [reviewCountLoading, setReviewCountLoading] = useState(false);
+  const countRequest = useRef(0);
+  const [activationCatalog, setActivationCatalog] = useState<readonly Permission[] | undefined>();
+  const [activationCatalogError, setActivationCatalogError] = useState(false);
+  const [activationCatalogLoading, setActivationCatalogLoading] = useState(false);
+  const activationRequest = useRef(0);
   const [reason, setReason] = useState('');
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const manage = can(IAM_PERMISSIONS.rolesManage);
+
+  const refreshReviewCount = () => {
+    if (!readsUsers) return;
+    const request = ++countRequest.current;
+    setReviewCount(undefined);
+    setReviewCountError(false);
+    setReviewCountLoading(true);
+    void holders.refetch().then((result) => {
+      if (countRequest.current !== request) return;
+      setReviewCount(result.isError ? undefined : result.data);
+      setReviewCountError(result.isError || result.data === undefined);
+      setReviewCountLoading(false);
+    });
+  };
+
+  const refreshActivationCatalog = (codes: readonly string[]) => {
+    const request = ++activationRequest.current;
+    setActivationCatalog(undefined);
+    setActivationCatalogError(false);
+    if (!readsCatalog) return;
+    setActivationCatalogLoading(true);
+    void (async () => {
+      try {
+        const first = await listPermissions({ page: 1, pageSize: LIST_BOUND });
+        const items = [...first.items];
+        const pages = Math.ceil(first.total / LIST_BOUND);
+        if (pages > 100) throw new Error('The permission catalog exceeds the review bound.');
+        for (let page = 2; page <= pages; page += 1) {
+          const next = await listPermissions({ page, pageSize: LIST_BOUND });
+          items.push(...next.items);
+        }
+        const found = new Map(items.map((permission) => [permission.code, permission]));
+        if (codes.some((code) => !found.has(code))) {
+          throw new Error('A mapped permission could not be verified.');
+        }
+        if (activationRequest.current === request) setActivationCatalog(items);
+      } catch {
+        if (activationRequest.current === request) setActivationCatalogError(true);
+      } finally {
+        if (activationRequest.current === request) setActivationCatalogLoading(false);
+      }
+    })();
+  };
 
   const settle = (next: Outcome) => {
     setOutcome(next);
@@ -272,6 +326,8 @@ export function RoleDetailPage({ roleId, created }: { roleId: string; created: b
     setReason('');
     setFailure(undefined);
     setConfirming(change);
+    refreshReviewCount();
+    if (change === 'activate') refreshActivationCatalog(detail.permissionCodes);
   };
 
   return (
@@ -403,6 +459,10 @@ export function RoleDetailPage({ roleId, created }: { roleId: string; created: b
               : copy.deactivateRoleConsequence
           }
           confirmLabel={confirming === 'activate' ? copy.activateRole : copy.deactivateRole}
+          confirmDisabled={
+            (readsUsers && (reviewCount === undefined || reviewCountError || reviewCountLoading)) ||
+            (confirming === 'activate' && readsCatalog && activationCatalog === undefined)
+          }
           // Activation grants permissions: primary fill with a warning (DESIGN_SYSTEM Section 35).
           intent={confirming === 'activate' ? 'default' : 'danger'}
           pending={changeState.isPending}
@@ -416,10 +476,44 @@ export function RoleDetailPage({ roleId, created }: { roleId: string; created: b
             <p>
               <Bdi>{detail.name}</Bdi> <TechnicalId>{detail.code}</TechnicalId>
             </p>
-            {holders.data !== undefined && <p>{copy.roleReach(holders.data)}</p>}
-            {confirming === 'activate' && (
-              <ActivePermissions codes={detail.permissionCodes} catalog={catalog.data?.items} />
+            {!readsUsers ? (
+              <p>{copy.impactCountRestricted}</p>
+            ) : reviewCountError ? (
+              <InlineMessage tone="danger">
+                {copy.impactCountUnavailable}{' '}
+                <Button size="small" onClick={refreshReviewCount}>
+                  {copy.retry}
+                </Button>
+              </InlineMessage>
+            ) : reviewCount !== undefined && !reviewCountLoading ? (
+              <p>{copy.roleReach(reviewCount)}</p>
+            ) : (
+              <p>{messages.loadingList}</p>
             )}
+            {confirming === 'activate' &&
+              (!readsCatalog ? (
+                <Alert tone="warning" title={copy.activationScopeRestricted}>
+                  {detail.permissionCodes.length === 0
+                    ? copy.activateGrantsNothing
+                    : copy.activationScopeRestrictedDetail}
+                </Alert>
+              ) : activationCatalogError ? (
+                <InlineMessage tone="danger">
+                  {copy.activationCatalogUnavailable}{' '}
+                  {readsCatalog && (
+                    <Button
+                      size="small"
+                      onClick={() => refreshActivationCatalog(detail.permissionCodes)}
+                    >
+                      {copy.retry}
+                    </Button>
+                  )}
+                </InlineMessage>
+              ) : activationCatalogLoading || activationCatalog === undefined ? (
+                <p>{messages.loadingList}</p>
+              ) : (
+                <ActivePermissions codes={detail.permissionCodes} catalog={activationCatalog} />
+              ))}
             {confirming === 'deactivate' && (
               <ReasonField value={reason} onChange={setReason} disabled={changeState.isPending} />
             )}
@@ -435,7 +529,7 @@ export function RoleDetailPage({ roleId, created }: { roleId: string; created: b
   );
 }
 
-/** What activation grants back: the role's mapped codes that are ACTIVE in the catalog. */
+/** Only catalog entries with a verified ACTIVE state are counted as activation grants. */
 function ActivePermissions({
   codes,
   catalog,
@@ -446,11 +540,20 @@ function ActivePermissions({
   const copy = useOrganizationMessages();
   if (codes.length === 0) return <p>{copy.activateGrantsNothing}</p>;
   const byCode = new Map((catalog ?? []).map((permission) => [permission.code, permission]));
-  // Only ACTIVE permissions are effective; a code beyond the loaded catalog page is listed.
-  const granted = codes.filter((code) => (byCode.get(code)?.state ?? 'ACTIVE') === 'ACTIVE');
+  const granted = codes.filter((code) => byCode.get(code)?.state === 'ACTIVE');
+  const unverified = codes.filter((code) => !byCode.has(code));
   return (
     <>
-      <Alert tone="warning" title={copy.activateGrants(granted.length)} />
+      <Alert
+        tone="warning"
+        title={
+          unverified.length === 0
+            ? copy.activateGrants(granted.length)
+            : copy.activateVerifiedGrants(granted.length)
+        }
+      >
+        {unverified.length > 0 && copy.activateUnverifiedGrants(unverified.length)}
+      </Alert>
       <ul className="flex flex-col">
         {granted.map((code) => (
           <li key={code}>
@@ -459,6 +562,15 @@ function ActivePermissions({
           </li>
         ))}
       </ul>
+      {unverified.length > 0 && (
+        <ul className="flex flex-col">
+          {unverified.map((code) => (
+            <li key={code}>
+              <TechnicalId>{code}</TechnicalId>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

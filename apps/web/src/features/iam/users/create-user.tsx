@@ -40,9 +40,8 @@ const EMAIL_ID = 'create-user-email';
 const PASSWORD_ID = 'create-user-password';
 
 /**
- * Creates (invites) a user (spec Section 12): the account starts INVITED, the backend creates
- * the identity and sends the invitation. No password or verification field exists (spec 40).
- * Assigning the System Administrator role asks for deliberate confirmation (spec Section 52).
+ * Creates a staff user with an email and password. Assigning the System Administrator role
+ * asks for deliberate confirmation.
  */
 export function CreateUser() {
   const messages = useIamMessages();

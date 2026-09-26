@@ -22,15 +22,15 @@ import { loadAppConfig } from '../../config/app-config.js';
 /**
  * The IAM HTTP surface against real PostgreSQL (IAM-R07 Done means 1 to 7, 9, 10): the access
  * guard, validation, the bound capabilities, the Audit adapter and the problem mapping, with
- * sessions created directly. Keycloak is unreachable here, so every provisioning step fails in a
- * known way; the Keycloak journey suite covers the successful identity paths.
+ * sessions created directly. Local sign-in and employee creation are also covered by their
+ * dedicated PostgreSQL and browser journeys.
  */
 
 let postgres: MigratedPostgres;
 let database: DatabaseClient;
 let app: NestFastifyApplication;
 
-/** A transport that never reaches Keycloak: every provider outcome is unknown. */
+/** Legacy transport seam: local provisioning never calls it. */
 const unreachable: typeof fetch = () => Promise.reject(new TypeError('fetch failed'));
 
 beforeAll(async () => {
@@ -108,8 +108,7 @@ async function systemRoleId(): Promise<string> {
 }
 
 /**
- * An ACTIVE user holding the given roles, with an identity bound under the unreachable test issuer,
- * as sign-in would leave it.
+ * An ACTIVE user holding the given roles, with a preserved synthetic identity mapping.
  */
 async function activeUser(roleIds: readonly string[] = []): Promise<string> {
   const id = await seedInvitedUser(postgres, `user-${suffix()}@example.test`);

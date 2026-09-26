@@ -7,8 +7,7 @@ import { useAuthMessages, type AuthMessages } from './auth-messages';
 import type { SignedOutReason } from './auth-state';
 
 /**
- * Failure codes the API's sign-in endpoints return to the app as `/?authError=` (IAM-R03 D-23,
- * IAM-R09 D-03).
+ * Failure codes accepted from the API and presented as a generic sign-in result.
  */
 export const SIGN_IN_FAILURES = ['AUTH_LOGIN_FAILED', 'AUTH_RATE_LIMITED'] as const;
 export type SignInFailure = (typeof SIGN_IN_FAILURES)[number];
@@ -37,8 +36,7 @@ export interface SignedOutPageProps {
 }
 
 /**
- * The signed-out entry (DESIGN_SYSTEM Section 34): the reason, the backend sign-in action and the
- * public system status. Vertex OS has no password or verification-code field (spec Section 40).
+ * The signed-out entry: session reason, email and password sign-in, and public system status.
  */
 export function SignedOutPage({ reason, authError }: SignedOutPageProps) {
   const messages = useAuthMessages();

@@ -41,6 +41,15 @@ export function createUserLifecycleStore(client: IamPersistenceClient): UserLife
       return mapUser(row);
     },
 
+    async hasLocalPassword(id) {
+      const row = await client.iamApplicationUser.findUnique({
+        where: { id },
+        select: { passwordHash: true },
+      });
+      if (row === null) throw new Error('A locked user disappeared.');
+      return row.passwordHash !== null;
+    },
+
     async emailInUse(email) {
       const row = await client.iamApplicationUser.findUnique({
         where: { email },

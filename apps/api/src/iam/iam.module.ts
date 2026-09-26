@@ -15,13 +15,13 @@ import { UsersController } from './http/users.controller.js';
 import { createIamUserAdministration } from './user-administration.js';
 
 export interface IamModuleOptions {
-  /** Replaces `fetch` for the Keycloak Admin adapter (tests fault or redirect the transport). */
+  /** Historical test seam; the local identity adapter does not make an outbound request. */
   readonly identityFetch?: typeof fetch;
 }
 
 /**
  * MOD-IAM's HTTP surface (spec Section 25; IAM-R07 D-01): the bound capabilities, composed over
- * the process's database client, the Audit adapter, the Keycloak Admin adapter and the
+ * the process's database client, the Audit adapter, the local identity adapter and the
  * authentication area's session revocation, and the controllers that expose them.
  */
 @Module({})

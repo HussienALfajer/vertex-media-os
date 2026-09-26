@@ -118,3 +118,36 @@ test('administrator signs in, creates a staff account, and staff signs in with e
     await admin.close();
   }
 });
+
+test('invalid credentials share a generic failure and signing out ends the session', async ({
+  page,
+}) => {
+  const { webOrigin, adminEmail, adminPassword } = stack();
+  await page.goto(webOrigin);
+  const email = page.getByLabel('البريد الإلكتروني');
+  const password = page.getByLabel('كلمة المرور');
+  const signIn = page.getByRole('button', { name: 'تسجيل الدخول' });
+
+  await email.fill(adminEmail);
+  await password.fill('invalid-credential');
+  await signIn.click();
+  await expect(page.getByText('لم يكتمل تسجيل الدخول. حاول مرة أخرى.')).toBeVisible();
+  await expect(password).toHaveValue('');
+
+  await email.fill(`unknown-${randomUUID()}@example.test`);
+  await password.fill('invalid-credential');
+  await signIn.click();
+  await expect(page.getByText('لم يكتمل تسجيل الدخول. حاول مرة أخرى.')).toBeVisible();
+  await expect(password).toHaveValue('');
+
+  await email.fill(adminEmail);
+  await password.fill(adminPassword);
+  await signIn.click();
+  await expect(page.getByRole('region', { name: 'الحساب' })).toContainText(adminEmail);
+  await page.getByRole('button', { name: 'تسجيل الخروج' }).click();
+  await expect(page.getByRole('heading', { name: 'تسجيل الدخول إلى Vertex OS' })).toBeVisible();
+  const status = await page.evaluate(
+    async () => (await fetch('/api/auth/session', { credentials: 'same-origin' })).status,
+  );
+  expect(status).toBe(401);
+});

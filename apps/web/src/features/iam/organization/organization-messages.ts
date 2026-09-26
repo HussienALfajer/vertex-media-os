@@ -43,6 +43,8 @@ const ar = {
   deactivateDepartmentConsequence:
     'يخرج القسم فورًا من السياق التنظيمي لكل أعضائه، بما في ذلك من يعدّه قسمه الرئيسي. تبقى العضويات محفوظة، ولا يمكن إضافة أعضاء جدد حتى يُفعّل مرة أخرى.',
   deactivateReach: (count: number) => `عدد الأعضاء بكل حالات الوصول: ${count}`,
+  impactCountUnavailable: 'تعذّر التحقق من عدد المتأثرين. أعد المحاولة قبل التأكيد.',
+  impactCountRestricted: 'سيشمل التغيير كل المرتبطين بهذا السجل؛ لا تملك صلاحية عرض عددهم.',
   members: 'الأعضاء',
   memberCount: (count: number) => `عدد المستخدمين: ${count}`,
   viewMembers: 'عرض الأعضاء',
@@ -84,6 +86,11 @@ const ar = {
     'تعود صلاحياته النشطة إلى كل من يحمله من طلبه التالي. يرفض النظام التفعيل إذا كانت تشمل صلاحيات لا تملكها أنت. يمكن إيقافه لاحقًا.',
   activateGrants: (count: number) => `الصلاحيات التي ستعود لحاملي الدور: ${count}`,
   activateGrantsNothing: 'لا يرتبط بالدور أي صلاحية.',
+  activationCatalogUnavailable:
+    'تعذّر التحقق من كل الصلاحيات المرتبطة بالدور. لا يمكن التفعيل قبل اكتمال المراجعة.',
+  activationScopeRestricted: 'يسري التفعيل على الصلاحيات النشطة المرتبطة بالدور.',
+  activationScopeRestrictedDetail:
+    'لا تملك صلاحية قراءة دليل الصلاحيات، لذلك لا يمكن عرض عدد الصلاحيات النشطة هنا. ستعود لكل من يحمل الدور من طلبه التالي.',
   roleActivated: 'فُعّل الدور',
   roleActivatedDetail: 'عادت صلاحياته إلى حامليه.',
   deactivateRoleTitle: 'إيقاف الدور؟',
@@ -92,6 +99,9 @@ const ar = {
   roleDeactivated: 'أُوقف الدور',
   roleDeactivatedDetail: 'لم تعد صلاحياته تُمنح لحامليه. بقيت الإسنادات محفوظة.',
   roleReach: (count: number) => `عدد حاملي الدور بكل حالات الوصول: ${count}`,
+  activateVerifiedGrants: (count: number) => `الصلاحيات النشطة التي أمكن التحقق منها: ${count}`,
+  activateUnverifiedGrants: (count: number) =>
+    `توجد ${count} صلاحية مرتبطة خارج صفحة الدليل المحمّلة. قد تعود إذا كانت نشطة؛ راجع حالتها قبل التأكيد.`,
   holders: 'حاملو الدور',
   holderCount: (count: number) => `عدد المستخدمين: ${count}`,
   viewHolders: 'عرض حاملي الدور',
@@ -127,7 +137,7 @@ const ar = {
   removedTitle: (count: number) => `ستُزال (${count})`,
   privilegedWarning: 'تضيف صلاحية امتيازية. تمنح كل من يحمل الدور قدرة إدارية واسعة.',
   reviewReach: (count: number) =>
-    `يسري التغيير على حاملي الدور من طلبهم التالي. عدد حاملي الدور بكل حالات الوصول: ${count}`,
+    `يسري التغيير على حاملي الدور من طلبهم التالي. عدد حاملي الدور عند آخر قراءة: ${count}`,
   reviewReachUnknown: 'يسري التغيير على كل من يحمل الدور من طلبه التالي.',
   permissionsConflictDetail:
     'غيّر مسؤول آخر صلاحيات هذا الدور. أُبقي اختيارك؛ حمّل أحدث نسخة وقارنها ثم راجع مرة أخرى.',
@@ -193,6 +203,9 @@ const en: OrganizationMessages = {
   deactivateDepartmentConsequence:
     'The department leaves every member’s organizational context immediately, including as their primary department. Memberships are kept, and no new member can be added until it is activated again.',
   deactivateReach: (count: number) => `Members in any access state: ${count}`,
+  impactCountUnavailable: 'The affected count could not be checked. Retry before confirming.',
+  impactCountRestricted:
+    'The change affects everyone linked to this record; you cannot view their count.',
   members: 'Members',
   memberCount: (count: number) => `Users: ${count}`,
   viewMembers: 'View members',
@@ -235,6 +248,11 @@ const en: OrganizationMessages = {
     'Its active permissions return to every holder on their next request. The system refuses if they include permissions you do not hold yourself. It can be deactivated later.',
   activateGrants: (count: number) => `Permissions returned to the role’s holders: ${count}`,
   activateGrantsNothing: 'No permission is mapped to the role.',
+  activationCatalogUnavailable:
+    'The mapped permissions could not all be verified. Activation is unavailable until the review is complete.',
+  activationScopeRestricted: 'Activation applies to the role’s active mapped permissions.',
+  activationScopeRestrictedDetail:
+    'You cannot read the permission catalog, so the number of active permissions is unavailable here. They return to every holder on their next request.',
   roleActivated: 'Role activated',
   roleActivatedDetail: 'Its permissions are granted to its holders again.',
   deactivateRoleTitle: 'Deactivate the role?',
@@ -244,6 +262,9 @@ const en: OrganizationMessages = {
   roleDeactivatedDetail:
     'Its permissions are no longer granted to its holders. Assignments are kept.',
   roleReach: (count: number) => `Holders in any access state: ${count}`,
+  activateVerifiedGrants: (count: number) => `Verified active permissions: ${count}`,
+  activateUnverifiedGrants: (count: number) =>
+    `${count} mapped permissions are outside the loaded catalog page. They may be restored if active; check their state before confirming.`,
   holders: 'Holders',
   holderCount: (count: number) => `Users: ${count}`,
   viewHolders: 'View holders',
@@ -280,7 +301,7 @@ const en: OrganizationMessages = {
   privilegedWarning:
     'You are adding a privileged permission. It gives everyone holding the role broad administrative power.',
   reviewReach: (count: number) =>
-    `The change applies to the role’s holders on their next request. Holders in any access state: ${count}`,
+    `The change applies to the role’s holders on their next request. Holders at the last read: ${count}`,
   reviewReachUnknown: 'The change applies to everyone holding the role on their next request.',
   permissionsConflictDetail:
     'Another administrator changed this role’s permissions. Your choice is kept; load the latest version, compare, then review again.',

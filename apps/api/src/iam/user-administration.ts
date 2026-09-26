@@ -19,6 +19,7 @@ import type {
 } from '@vertex-os/iam';
 import {
   bootstrapSystemAdministrator,
+  recoverMigratedAdministratorCredential,
   createUser,
   disableUser,
   initializePassword,
@@ -86,7 +87,7 @@ export interface IamUserAdministrationOptions {
   readonly revokeUserSessions: RevokeUserSessions;
   /** Binds MOD-AUDIT's append capability to a transaction; the Audit adapter by default. */
   readonly auditRecorderFor?: (handle: DatabaseClient | DatabaseTransaction) => AuditRecorder;
-  /** Replaces the global `fetch` of the Keycloak adapter, for tests that fault the transport. */
+  /** Legacy transport seam retained for compatibility; local provisioning performs no network I/O. */
   readonly fetch?: typeof fetch;
 }
 
@@ -176,4 +177,15 @@ export function createIamBootstrap(
 ): (request: BootstrapRequest) => Promise<BootstrapResult> {
   const dependencies = userAdministrationDependencies(config, database, options);
   return (request) => bootstrapSystemAdministrator(dependencies, request);
+}
+
+/** Operator-only recovery for a migrated active administrator without a local credential. */
+export function createIamMigratedAdministratorRecovery(
+  config: IdentityProvisioningConfig,
+  database: DatabaseClient,
+  options: IamUserAdministrationOptions,
+) {
+  const dependencies = userAdministrationDependencies(config, database, options);
+  return (request: Parameters<typeof recoverMigratedAdministratorCredential>[1]) =>
+    recoverMigratedAdministratorCredential(dependencies, request);
 }

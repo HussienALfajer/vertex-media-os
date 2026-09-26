@@ -65,7 +65,10 @@ export {
   updateDisplayName,
   type UserAdministrationDependencies,
 } from './application/administer-users.js';
-export { bootstrapSystemAdministrator } from './application/bootstrap.js';
+export {
+  bootstrapSystemAdministrator,
+  recoverMigratedAdministratorCredential,
+} from './application/bootstrap.js';
 export type {
   SessionRevocation,
   SessionRevocationReason,

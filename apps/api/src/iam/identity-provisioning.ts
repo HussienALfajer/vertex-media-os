@@ -26,7 +26,7 @@ export interface IdentityProvisioning {
 }
 
 export interface IdentityProvisioningOptions {
-  /** Replaces the global `fetch` of the Keycloak adapter, for tests that fault the transport. */
+  /** Legacy transport seam retained for compatibility; local provisioning performs no network I/O. */
   readonly fetch?: typeof fetch;
   /** Binds MOD-AUDIT's append capability to a transaction; the Audit adapter by default. */
   readonly auditRecorderFor?: (handle: DatabaseClient | DatabaseTransaction) => AuditRecorder;
@@ -34,7 +34,7 @@ export interface IdentityProvisioningOptions {
 
 /**
  * Composition root of identity provisioning: the IAM capabilities wired to the PostgreSQL
- * adapters, the Audit adapter and the Keycloak Admin adapter. Not mounted in the HTTP runtime;
+ * adapters, the Audit adapter and the local identity adapter. Not mounted in the HTTP runtime;
  * the administrative use cases of IAM-MP-10 and the bootstrap command consume it.
  */
 export function createIdentityProvisioning(

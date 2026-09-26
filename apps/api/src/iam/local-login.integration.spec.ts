@@ -16,7 +16,11 @@ import { testProvisioningConfig } from '../../test-support/provisioning-config.j
 import { createApp } from '../app.factory.js';
 import { hashPassword } from '../auth/passwords.js';
 import { loadAppConfig } from '../config/app-config.js';
-import { createIamBootstrap, createIamUserAdministration } from './user-administration.js';
+import {
+  createIamBootstrap,
+  createIamMigratedAdministratorRecovery,
+  createIamUserAdministration,
+} from './user-administration.js';
 
 const EMAIL = 'staff@example.invalid';
 const PASSWORD = 'a very long test passphrase 5QG!';
@@ -248,5 +252,93 @@ describe('local password sign-in', () => {
       traceId: trace.value,
     });
     expect(result).toEqual({ outcome: 'refused', reason: 'active-administrator-exists' });
+  });
+
+  it('recovers one migrated administrator without creating an account or replacing a credential', async () => {
+    const options = { revokeUserSessions: async () => 0 };
+    const recovery = createIamMigratedAdministratorRecovery(
+      testProvisioningConfig(),
+      database,
+      options,
+    );
+    const trace = parseTraceId(randomUUID());
+    if (!trace.ok) throw new Error('Invalid trace');
+    const request = {
+      email: ADMIN_EMAIL,
+      passwordHash: await hashPassword('recovered administrator password 8!'),
+      reason: 'Recover migrated administrator after local credential migration',
+      manifests: [iamPermissionManifest],
+      traceId: trace.value,
+    };
+    expect(await recovery(request)).toEqual({
+      outcome: 'refused',
+      reason: 'administrator-can-sign-in',
+    });
+
+    // The R10 migration leaves previous provider accounts in exactly this credential state.
+    await postgres.sql(`
+      UPDATE iam_application_user SET password_hash = NULL
+      WHERE id IN (
+        SELECT assignment.user_id FROM iam_user_role_assignment assignment
+        JOIN iam_role role ON role.id = assignment.role_id
+        WHERE role.code = 'system-administrator'
+      ) AND access_state IN ('ACTIVE', 'INVITED')
+    `);
+    const lockedOut = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+    });
+    expect(lockedOut.statusCode).toBe(401);
+
+    expect(await recovery({ ...request, email: 'wrong-admin@example.invalid' })).toEqual({
+      outcome: 'refused',
+      reason: 'target-not-eligible',
+    });
+    expect(await recovery({ ...request, email: EMAIL })).toEqual({
+      outcome: 'refused',
+      reason: 'target-not-eligible',
+    });
+    expect(
+      await postgres.sql(`SELECT password_hash IS NULL FROM iam_application_user
+        WHERE email = '${ADMIN_EMAIL}'`),
+    ).toBe('t');
+
+    const brokenAudit = createIamMigratedAdministratorRecovery(testProvisioningConfig(), database, {
+      ...options,
+      auditRecorderFor: () => ({
+        append: async () => {
+          throw new Error('audit unavailable');
+        },
+      }),
+    });
+    await expect(brokenAudit(request)).rejects.toThrow('audit unavailable');
+    expect(
+      await postgres.sql(`SELECT password_hash IS NULL FROM iam_application_user
+        WHERE email = '${ADMIN_EMAIL}'`),
+    ).toBe('t');
+
+    const otherTrace = parseTraceId(randomUUID());
+    if (!otherTrace.ok) throw new Error('Invalid trace');
+    const attempts = await Promise.all([
+      recovery(request),
+      recovery({ ...request, traceId: otherTrace.value }),
+    ]);
+    expect(attempts.filter((attempt) => attempt.outcome === 'recovered')).toHaveLength(1);
+    expect(attempts.filter((attempt) => attempt.outcome === 'refused')).toHaveLength(1);
+    const signedIn = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: ADMIN_EMAIL, password: 'recovered administrator password 8!' },
+    });
+    expect(signedIn.statusCode).toBe(200);
+    expect(await recovery(request)).toEqual({
+      outcome: 'refused',
+      reason: 'administrator-can-sign-in',
+    });
+    const evidence = await postgres.sql(`SELECT action FROM audit_record
+      WHERE trace_id IN ('${trace.value}', '${otherTrace.value}')`);
+    expect(evidence).toContain('iam.user.password-initialized');
+    expect(evidence).toContain('iam.bootstrap.migrated-credential-recovery');
   });
 });

@@ -9,13 +9,18 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** the Final IAM Module Audit with `/audit IAM-FINAL` (session effort `xhigh`), once the `IAM-R09B` pull request is merged. It also carries the deferred `IAM-CP2` scope (amendment record 2026-09-24)  
+**Next step:** complete the reviewed IAM-R11 fix run, then remove dormant provider session mechanics in IAM-R12 before the independent Final IAM audit on merged `main`. The audit includes the deferred `IAM-CP2` scope (amendment record 2026-09-24) and IAM-R10–R12.  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 > **Owner-directed amendment, 2026-09-25:** The owner replaced the planned Keycloak/OIDC/TOTP
 > architecture with local email/password authentication. [ADR-0001](../../adr/0001-local-password-authentication.md)
 > and [IAM-R10](IAM_R10_LOCAL_AUTH_PLAN.md) define this new Tier A run. The historical R01–R09B
 > records remain delivery history; their provider-specific requirements are superseded for new work.
+>
+> **Final-audit fix amendment, 2026-09-25:** [IAM-R11](IAM_R11_AUDIT_FIXES_PLAN.md) closes the
+> migrated-administrator lockout and current UI/acceptance-evidence findings on the merged R10
+> baseline. A focused IAM-R12 removes dormant provider session mechanics and its unused startup
+> secret after R11 merges. The Final Audit verdict follows both reviewed, merged fixes.
 
 ---
 
@@ -485,6 +490,9 @@ Only the next run receives a detailed plan, written from the merged `main`. The 
 | `IAM-R08C` | IAM-MP-14 | B | architecture and boundaries; tests and verification | — |
 | `IAM-R09` | IAM-MP-15 (part 1: backend security, concurrency and operational hardening; test evidence) | A | security; data and concurrency; tests and verification | — |
 | `IAM-R09B` | IAM-MP-15 (part 2: real-browser journeys, cross-engine cookies, closeout and Definition of Done map) | A | security; tests and verification; architecture and boundaries | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
+| `IAM-R10` | Owner-directed local password authentication replacement | A | security; data and concurrency; tests and verification | **`IAM-R11`** audit fix run |
+| `IAM-R11` | Migrated-administrator recovery and current IAM QA fixes | A | security; data and concurrency; UI/UX and verification | **`IAM-R12`** provider cleanup |
+| `IAM-R12` | Dormant external-provider session cleanup | A | security; data and concurrency; tests and verification | **`IAM-FINAL`** Final IAM Module Audit (Section 17) |
 
 Grouping rules behind the table:
 
@@ -1733,6 +1741,10 @@ Risk IDs were `IAM-R01`…`IAM-R17` until run IDs took the `IAM-Rnn` form (Secti
 
 ## 15. Stage Status Ledger
 
+The provider-specific carry-forward entries below are delivery history from R01–R09B. ADR-0001
+and IAM Section 61 supersede them; current open launch gates are in
+`IAM_DEFINITION_OF_DONE_MAP.md` Section 5.
+
 This Master Plan is `ACTIVE`. IAM-MP-00 to IAM-MP-02 are `COMPLETE` under the previous method: each was independently audited (`IAM-00`, `IAM-01`, `IAM-02 ACCEPTED`, no blocking findings) and accepted by the owner on 2026-09-23.
 
 Run `IAM-R01` delivered IAM-MP-03 (plan `IAM_R01_KEYCLOAK_ENVIRONMENT_PLAN.md`). It is `COMPLETE` once its pull request is merged. It closed A-02, A2-02 and A2-03. A-04 was not triggered, because no Keycloak package was installed, and passes to IAM-MP-04 and IAM-MP-06. A2-01 passes on under the condition stated in the IAM-MP-03 section.
@@ -1810,7 +1822,10 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-14 Frontend Department/Role/Permission Admin | R08C | COMPLETE | R08B merged (satisfied) |
 | IAM-MP-15 E2E & Hardening, part 1 (backend and test evidence) | R09 | COMPLETE | R08C merged (satisfied) |
 | IAM-MP-15 E2E & Hardening, part 2 (browser journeys and closeout) | R09B | COMPLETE | R09 merged (satisfied) |
-| `IAM-FINAL` Final IAM Module Audit | — | READY | R09B merged (satisfied) |
+| `IAM-R10` Local password authentication | R10 | COMPLETE | PR #23 merged (satisfied) |
+| `IAM-R11` Final-audit blocking fixes | R11 | COMPLETE (accepted on merge) | R10 merged (satisfied) |
+| `IAM-R12` Dormant provider session cleanup | R12 | WAITING | R11 reviewed and merged |
+| `IAM-FINAL` Final IAM Module Audit | — | WAITING | R12 reviewed and merged |
 
 The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
 
@@ -1967,9 +1982,9 @@ When amended, record:
 
 ## 17. Final IAM Module Audit
 
-After the `IAM-R09B` pull request (IAM-MP-15 part 2) is merged, perform a dedicated Final Module Audit with `/audit IAM-FINAL`.
+After IAM-R09B and the owner-directed IAM-R10–R12 local-auth changes are merged, perform a dedicated Final Module Audit. The current authentication criteria are ADR-0001 and the IAM specification Section 61. Historical provider-specific checks below are replaced by the local-credential checks in this section.
 
-Inputs from IAM-MP-15: `IAM_DEFINITION_OF_DONE_MAP.md` (spec Sections 47 and 56 mapped to evidence, with the Keycloak policy map), and these carried items:
+Inputs include the current `IAM_DEFINITION_OF_DONE_MAP.md`, the IAM specification Section 61, the R10 plan and these carried items:
 
 - **Reactivated permissions (IAM-R09 D-12, SEC-5):** a DEPRECATED permission made ACTIVE again by a released catalog change widens roles that map it; whoever reactivates it reviews those roles.
 - **Module boundaries for `.mts` files (IAM-R09B review A-2, pre-existing):** `@nx/enforce-module-boundaries` is configured for `.ts`, `.tsx`, `.js` and `.jsx` only, so a `.mts` file (for example a Playwright configuration) escapes the project and import bans.
@@ -1980,7 +1995,7 @@ The Final Audit evaluates IAM as one integrated system and must verify, at minim
 
 ### Deferred `IAM-CP2` scope
 
-By owner decision (2026-09-24) the Final Audit also carries the checkpoint audit that `IAM-CP2` would have performed on IAM-MP-07 to IAM-MP-10, against their run plans (`IAM_R04`, `IAM_R05`, `IAM_R06`) and each stage's "Audit focus": protected-by-default routing and the authorization context; department, membership, role and mapping administration; the last-System-Administrator rule and its lock order; the grant ceiling; the user lifecycle, fail-closed Keycloak ordering and reactivation compensation; bootstrap and recovery; session revocation and the auth-session database guarantees; and the carried-forward findings of those runs. Findings in this scope are classified as they would have been at the checkpoint.
+By owner decision (2026-09-24) the Final Audit also carries the checkpoint audit that `IAM-CP2` would have performed on IAM-MP-07 to IAM-MP-10, against their run plans (`IAM_R04`, `IAM_R05`, `IAM_R06`) and each stage's "Audit focus": protected-by-default routing and the authorization context; department, membership, role and mapping administration; the last-System-Administrator rule and its lock order; the grant ceiling; the user lifecycle and reactivation; bootstrap and migrated-admin recovery; session revocation and the auth-session database guarantees; and the carried-forward findings of those runs. Historical external-provider ordering is superseded by ADR-0001. Findings in this scope are classified as they would have been at the checkpoint.
 
 ### Specification coverage
 
@@ -1992,22 +2007,22 @@ By owner decision (2026-09-24) the Final Audit also carries the checkpoint audit
 
 - IAM owns only its documented domain concepts;
 - auth/session infrastructure remains outside IAM business entities;
-- Keycloak remains the identity provider;
+- IAM holds salted local credential hashes and the API verifies them; no external identity provider participates in sign-in;
 - Audit ownership remains MOD-AUDIT;
 - cross-module consumers have only the approved IAM public surface;
 - no forbidden dependency or persistence shortcut exists.
 
 ### Security
 
-- browser never receives IdP tokens;
-- credentials/MFA stay in Keycloak;
+- the browser never stores a password or session secret;
+- salted scrypt hashes are verified only on the backend; no MFA or provider token is required;
 - application sessions are opaque, server-side, revocable, and expiry-bounded;
-- CSRF, state, nonce, PKCE, issuer/audience/signature/expiry validation are correct;
+- CSRF, password verification, generic login refusal, rate limiting and session expiry are correct;
 - inactive/unmapped users are denied;
 - protected endpoints are deny-by-default;
 - privilege removal is prompt;
 - last-System-Administrator protection is race-safe;
-- bootstrap is not a privileged backdoor;
+- bootstrap and one-time migrated-admin recovery are operator-only, locked, audited and cannot overwrite a credential;
 - sensitive logs/responses contain no secrets.
 
 ### Data integrity
@@ -2018,14 +2033,14 @@ By owner decision (2026-09-24) the Final Audit also carries the checkpoint audit
 - access and identity mappings cannot be silently corrupted;
 - no ordinary hard-delete path destroys required security history.
 
-### External identity integration
+### Local credentials and migration
 
-- provisioning is retryable/idempotent;
-- ownership proof prevents unsafe linking;
-- ambiguous failures are recoverable;
-- realm configuration is reproducible;
-- identity and invitation state are not conflated;
-- disable/reactivation ordering fails closed.
+- existing user, role and Audit records survive the migration; former identity values are retained;
+- old provider-backed sessions are rejected and no migrated password is inferred;
+- an authorized administrator can initialize a legacy account password once;
+- an inaccessible ACTIVE System Administrator can be recovered once by explicit operator command only when no administrator can sign in;
+- password initialization and its Audit evidence commit or roll back together;
+- disablement, suspension and reactivation remain fail closed.
 
 ### Authorization
 
@@ -2052,10 +2067,10 @@ By owner decision (2026-09-24) the Final Audit also carries the checkpoint audit
 ### Verification and operations
 
 - targeted test layers provide meaningful evidence;
-- full required repository verification succeeds;
+- full required repository verification succeeds on the audit/fix pull request;
 - dependency/security audit satisfies repository policy;
 - no temporary bypass, focused test, debug code, or undocumented workaround remains;
-- documentation and README/current limitations are reconciled with the new reality.
+- documentation and README/current limitations are reconciled with the local-auth reality.
 
 The Final IAM Module Audit result must be one of (`docs/PLANNING.md` Section 9):
 
@@ -2104,13 +2119,13 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-15 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, IAM-MP-12 through run `IAM-R08`, IAM-MP-13 through run `IAM-R08B`, IAM-MP-14 through run `IAM-R08C`, and IAM-MP-15 through runs `IAM-R09` and `IAM-R09B`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). The next step is the Final IAM Module Audit (Section 17). Start it in a new Claude Code session with effort `xhigh`:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). IAM-R10 was merged in PR #23, and the audit of that baseline identified the migrated-administrator lockout. The current run is the dedicated [IAM-R11 fix](IAM_R11_AUDIT_FIXES_PLAN.md). After its reviewed pull request is merged and CI succeeds, run a focused IAM-R12 cleanup of dormant provider session mechanics and the unused token-encryption startup requirement. Then run the independent Final IAM Module Audit (Section 17) on that merged baseline:
 
 ```text
 /audit IAM-FINAL
 ```
 
-It reads Section 17, including its inputs from IAM-MP-15 (`IAM_DEFINITION_OF_DONE_MAP.md` and the carried items), and the deferred `IAM-CP2` scope.
+It reads Section 17, including the revised `IAM_DEFINITION_OF_DONE_MAP.md`, ADR-0001, IAM-R11–R12 evidence and the deferred `IAM-CP2` scope.
 Do **not** plan later runs in detail now.
 
 ---

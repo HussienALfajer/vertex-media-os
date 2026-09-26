@@ -125,6 +125,17 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
          identity_sync_state, invitation_delivery_state)
         VALUES ('legacy@example.invalid', 'Legacy User', 'INVITED',
                 'https://identity.example.invalid/realm', 'previous-subject', 'SYNCED', 'NOT_SENT')`;
+      await client.$executeRaw`INSERT INTO iam_role (code, name, state, is_system)
+        VALUES ('system-administrator', 'System Administrator', 'ACTIVE', true)`;
+      await client.$executeRaw`INSERT INTO iam_application_user
+        (email, display_name, access_state, identity_issuer, identity_subject,
+         identity_sync_state, invitation_delivery_state, invitation_sent_at, first_activated_at)
+        VALUES ('legacy-admin@example.invalid', 'Legacy Administrator', 'ACTIVE',
+                'https://identity.example.invalid/realm', 'previous-admin-subject',
+                'SYNCED', 'SENT', now(), now())`;
+      await client.$executeRaw`INSERT INTO iam_user_role_assignment (user_id, role_id)
+        SELECT u.id, r.id FROM iam_application_user u CROSS JOIN iam_role r
+        WHERE u.email = 'legacy-admin@example.invalid' AND r.code = 'system-administrator'`;
       await postgres.prisma(['migrate', 'deploy']);
       const rows = await client.$queryRaw<
         Array<{
@@ -139,7 +150,8 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
           u.identity_subject AS "identitySubject", u.password_hash AS "passwordHash",
           m.identity_issuer AS "previousIssuer", m.identity_subject AS "previousSubject"
         FROM iam_application_user u
-        JOIN iam_legacy_identity_mapping m ON m.user_id = u.id`;
+        JOIN iam_legacy_identity_mapping m ON m.user_id = u.id
+        WHERE u.email = 'legacy@example.invalid'`;
       expect(rows).toEqual([
         {
           email: 'legacy@example.invalid',
@@ -150,6 +162,21 @@ describe('upgrading an IAM-01 database with the IAM-02 migrations', () => {
           previousSubject: 'previous-subject',
         },
       ]);
+      const [administrator] = await client.$queryRaw<
+        Array<{ state: string; passwordHash: string | null; previousSubject: string; role: string }>
+      >`SELECT u.access_state AS state, u.password_hash AS "passwordHash",
+          m.identity_subject AS "previousSubject", r.code AS role
+        FROM iam_application_user u
+        JOIN iam_legacy_identity_mapping m ON m.user_id = u.id
+        JOIN iam_user_role_assignment a ON a.user_id = u.id
+        JOIN iam_role r ON r.id = a.role_id
+        WHERE u.email = 'legacy-admin@example.invalid'`;
+      expect(administrator).toEqual({
+        state: 'ACTIVE',
+        passwordHash: null,
+        previousSubject: 'previous-admin-subject',
+        role: 'system-administrator',
+      });
     });
   }, 180_000);
 
