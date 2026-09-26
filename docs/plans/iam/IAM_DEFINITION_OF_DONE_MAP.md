@@ -25,7 +25,7 @@ acceptance must inspect the executable evidence below and the Final Audit record
 | --- | --- | --- |
 | Password bounds, salted scrypt hash and verification are backend-owned | `apps/api/src/auth/passwords.ts` and `passwords.spec.ts`; `domains/iam-persistence/src/local-credentials.ts` | Invalid and missing credentials, no hash returned to browser or normal logs |
 | Email/password login has generic refusal and bounded attempts | `apps/api/src/iam/sign-in.ts`; `apps/api/src/auth/auth.api.spec.ts`; `apps/api/src/auth/rate-limit.spec.ts`; `apps/api/src/iam/local-login.integration.spec.ts` | Unknown email, bad password, inaccessible user and rate-limit outcomes |
-| Opaque, revocable server sessions enforce idle and absolute expiry | `apps/api/src/auth/sessions.ts`; `sessions.integration.spec.ts`; `apps/api/src/auth/primitives.spec.ts` | Cookie flags, old provider sessions rejected, revocation and expiry |
+| Opaque, revocable server sessions enforce idle and absolute expiry | `apps/api/src/auth/sessions.ts`; `sessions.integration.spec.ts`; `apps/api/src/auth/primitives.spec.ts` | Cookie flags, old provider sessions rejected, concurrent touch/revocation and expiry |
 | Protected routes deny by default and unsafe writes require CSRF | `apps/api/src/auth/access.api.spec.ts`; `apps/api/src/iam/http/iam-http.integration.spec.ts`; `apps/api/src/iam/local-login.integration.spec.ts` | No unauthenticated write or permission bypass |
 | Current roles and permissions decide every request; access restriction promptly removes access | `apps/api/src/auth/authorization.integration.spec.ts`; `apps/api/src/iam/administration.integration.spec.ts`; `apps/web-e2e/iam/local-login.spec.ts` | Grant ceiling, role removal and suspended session behavior |
 | Last ACTIVE System Administrator cannot be removed concurrently | `domains/iam/src/domain/administration-rules.spec.ts`; `apps/api/src/iam/administration.integration.spec.ts` | Lock ordering and competing restrictions |
@@ -53,9 +53,11 @@ acceptance must inspect the executable evidence below and the Final Audit record
 
 ## 5. Open launch gates and intentionally deferred behavior
 
-- Before Final IAM acceptance: IAM-R12 removes dormant provider session methods and the unused
-  token-encryption startup requirement while preserving legacy migration data. The active local
-  sign-in runtime already has no external provider; this item closes literal full-removal scope.
+- Before Final IAM acceptance: the [IAM-R12 run](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md) must
+  be reviewed and merged. It removes dormant provider session methods and the unused
+  token-encryption startup requirement while preserving legacy migration data and token cleanup.
+  The independent Final Audit must still inspect the local identity compatibility layer used by
+  administration and decide whether any retained provider-era semantics block IAM closure.
 - Before production deployment: benchmark scrypt on the actual server; check new passwords
   against known compromised passwords; configure HTTPS, security alerts and the Contabo deployment
   topology (`docs/SECURITY.md` Sections 8, 28 and `docs/ARCHITECTURE.md` deployment section).

@@ -9,7 +9,7 @@
 **Baseline commit:** `4076a08cabdb39de494474262a05e145f150aa68`  
 **Baseline date:** 2026-09-22  
 **Repository:** `HussienALfajer/vertex-media-os`  
-**Next step:** complete the reviewed IAM-R11 fix run, then remove dormant provider session mechanics in IAM-R12 before the independent Final IAM audit on merged `main`. The audit includes the deferred `IAM-CP2` scope (amendment record 2026-09-24) and IAM-R10–R12.  
+**Next step:** complete [IAM-R12](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md) after merged IAM-R11, then perform the independent Final IAM audit on merged `main`. The audit includes the deferred `IAM-CP2` scope (amendment record 2026-09-24) and IAM-R10–R12.  
 **Execution model:** `docs/PLANNING.md` — one stage run per session ending in a reviewed pull request; the owner's merge is the accepted baseline; deep audits at checkpoint `IAM-CP1` and the Final IAM Module Audit, which also covers the deferred `IAM-CP2` scope (Section 8)
 
 > **Owner-directed amendment, 2026-09-25:** The owner replaced the planned Keycloak/OIDC/TOTP
@@ -1824,7 +1824,7 @@ Open items that no IAM stage owns (IAM-02 plan Section 40), each resolved when i
 | IAM-MP-15 E2E & Hardening, part 2 (browser journeys and closeout) | R09B | COMPLETE | R09 merged (satisfied) |
 | `IAM-R10` Local password authentication | R10 | COMPLETE | PR #23 merged (satisfied) |
 | `IAM-R11` Final-audit blocking fixes | R11 | COMPLETE (accepted on merge) | R10 merged (satisfied) |
-| `IAM-R12` Dormant provider session cleanup | R12 | WAITING | R11 reviewed and merged |
+| `IAM-R12` Dormant provider session cleanup | R12 | COMPLETE (accepted on merge) | R11 reviewed and merged |
 | `IAM-FINAL` Final IAM Module Audit | — | WAITING | R12 reviewed and merged |
 
 The ledger changes only through the pull request of the run or audit that produced the evidence (`docs/PLANNING.md` Section 2).
@@ -1988,6 +1988,11 @@ Inputs include the current `IAM_DEFINITION_OF_DONE_MAP.md`, the IAM specificatio
 
 - **Reactivated permissions (IAM-R09 D-12, SEC-5):** a DEPRECATED permission made ACTIVE again by a released catalog change widens roles that map it; whoever reactivates it reviews those roles.
 - **Module boundaries for `.mts` files (IAM-R09B review A-2, pre-existing):** `@nx/enforce-module-boundaries` is configured for `.ts`, `.tsx`, `.js` and `.jsx` only, so a `.mts` file (for example a Playwright configuration) escapes the project and import bans.
+- **Local identity compatibility layer (IAM-R12 inventory):** IAM administration still binds an
+  in-process adapter to the historical identity-provider port. It makes no external request but
+  retains provider-era reconciliation and invitation semantics. Classify its current effect on
+  lifecycle, Audit and API behavior against Section 61; a closure blocker requires a focused
+  reviewed fix run, not a silent change inside the audit record.
 
 This is not another implementation stage.
 
@@ -2119,7 +2124,7 @@ next module planned from the new accepted baseline
 
 IAM-MP-00 to IAM-MP-15 are complete (Section 15); IAM-MP-03 through run `IAM-R01`, IAM-MP-04 through run `IAM-R02`, IAM-MP-05 and IAM-MP-06 through run `IAM-R03`, IAM-MP-07 through run `IAM-R04`, IAM-MP-08 and IAM-MP-09 through run `IAM-R05`, IAM-MP-10 through run `IAM-R06`, IAM-MP-11 through run `IAM-R07`, IAM-MP-12 through run `IAM-R08`, IAM-MP-13 through run `IAM-R08B`, IAM-MP-14 through run `IAM-R08C`, and IAM-MP-15 through runs `IAM-R09` and `IAM-R09B`, each accepted when its pull request is merged. Their plans, audit records and amendment records are history.
 
-`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). IAM-R10 was merged in PR #23, and the audit of that baseline identified the migrated-administrator lockout. The current run is the dedicated [IAM-R11 fix](IAM_R11_AUDIT_FIXES_PLAN.md). After its reviewed pull request is merged and CI succeeds, run a focused IAM-R12 cleanup of dormant provider session mechanics and the unused token-encryption startup requirement. Then run the independent Final IAM Module Audit (Section 17) on that merged baseline:
+`IAM-CP1` is accepted (`docs/plans/iam/audits/IAM-CP1.md` Section 5.7). `IAM-CP2` is deferred into the Final IAM Module Audit (amendment record 2026-09-24). IAM-R10 merged in PR #23, and the audit of that baseline identified the migrated-administrator lockout fixed in merged PR #24. The current run is the focused [IAM-R12 cleanup](IAM_R12_PROVIDER_SESSION_CLEANUP_PLAN.md) of dormant provider session mechanics and the unused token-encryption startup requirement. Then run the independent Final IAM Module Audit (Section 17) on that merged baseline:
 
 ```text
 /audit IAM-FINAL

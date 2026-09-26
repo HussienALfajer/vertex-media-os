@@ -7,7 +7,6 @@ import { createIamSignIn, type IamSignIn } from '../iam/sign-in.js';
 import { createRateLimiter, type RateLimiter } from './rate-limit.js';
 import { createSessionStore } from './session-store.js';
 import { createSessionService, type SessionService } from './sessions.js';
-import { createTokenCiphers } from './token-cipher.js';
 
 /** Everything the authentication endpoints and the access guard use, bound to its adapters. */
 export interface AuthRuntime {
@@ -54,10 +53,7 @@ export function createAuthRuntime(
     config,
     sessions: createSessionService({
       store: createSessionStore(database, { auditRecorderFor }),
-      ciphers: createTokenCiphers(config.tokenEncryptionSecret),
-      local: true,
       limits: config.session,
-      clientId: 'vertex-local',
       ...(options.now === undefined ? {} : { now: options.now }),
     }),
     iam: createIamSignIn(database, { auditRecorderFor }),

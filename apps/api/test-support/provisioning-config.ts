@@ -4,8 +4,8 @@ import {
 } from '../src/config/identity-provisioning-config.js';
 
 /**
- * Identity-provisioning configuration for tests that provision nobody. Nothing here is contacted
- * when the application starts: the Keycloak Admin adapter authenticates on its first call.
+ * Compatibility configuration for tests using IAM's local identity adapter. No external
+ * service is contacted when the application starts.
  */
 export function testProvisioningConfig(
   overrides: Readonly<Record<string, string | undefined>> = {},

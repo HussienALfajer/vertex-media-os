@@ -6,7 +6,6 @@ export interface AuthConfig {
   readonly session: {
     readonly idleTimeoutSeconds: number;
     readonly absoluteTimeoutSeconds: number;
-    readonly loginAttemptTimeoutSeconds: number;
     readonly retentionDays: number;
   };
   readonly rateLimits: {
@@ -15,8 +14,6 @@ export interface AuthConfig {
     readonly logout: number;
     readonly evidence: number;
   };
-  /** Retained while old encrypted session tokens are purged; never exposed to browsers. */
-  readonly tokenEncryptionSecret: string;
 }
 
 const environmentSchema = z
@@ -28,13 +25,11 @@ const environmentSchema = z
       .min(3_600)
       .max(86_400)
       .default(36_000),
-    AUTH_LOGIN_ATTEMPT_TIMEOUT_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
     AUTH_SESSION_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
     AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(10).max(3_600).default(60),
     AUTH_RATE_LIMIT_SIGN_IN: z.coerce.number().int().min(1).max(100).default(10),
     AUTH_RATE_LIMIT_LOGOUT: z.coerce.number().int().min(1).max(10_000).default(30),
     AUTH_EVIDENCE_LIMIT: z.coerce.number().int().min(1).max(10_000).default(30),
-    AUTH_TOKEN_ENCRYPTION_SECRET: z.string().min(32),
   })
   .refine(
     (value) =>
@@ -57,7 +52,6 @@ export function loadAuthConfig(source: Readonly<Record<string, string | undefine
     session: {
       idleTimeoutSeconds: env.AUTH_SESSION_IDLE_TIMEOUT_SECONDS,
       absoluteTimeoutSeconds: env.AUTH_SESSION_ABSOLUTE_TIMEOUT_SECONDS,
-      loginAttemptTimeoutSeconds: env.AUTH_LOGIN_ATTEMPT_TIMEOUT_SECONDS,
       retentionDays: env.AUTH_SESSION_RETENTION_DAYS,
     },
     rateLimits: {
@@ -66,6 +60,5 @@ export function loadAuthConfig(source: Readonly<Record<string, string | undefine
       logout: env.AUTH_RATE_LIMIT_LOGOUT,
       evidence: env.AUTH_EVIDENCE_LIMIT,
     },
-    tokenEncryptionSecret: env.AUTH_TOKEN_ENCRYPTION_SECRET,
   };
 }

@@ -119,9 +119,6 @@ export class AuthController {
     );
     const { secret, session } = await this.runtime.sessions.establish({
       userId: result.userId,
-      idpSessionId: undefined,
-      idToken: undefined,
-      refreshToken: undefined,
       attribution: userAttribution(request, result.userId),
     });
     if (previous.outcome === 'valid') {

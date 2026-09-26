@@ -11,7 +11,7 @@ import { testProvisioningConfig } from '../../test-support/provisioning-config.j
 
 /**
  * Protected by default (spec Section 24; IAM-R04 D-01, D-02), over Fastify inject with neither
- * PostgreSQL nor an identity provider reachable: without a session nothing reaches either.
+ * PostgreSQL reachable: without a session no protected handler reaches persistence.
  */
 const config = () =>
   loadAppConfig({
