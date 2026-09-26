@@ -19,7 +19,7 @@ import {
   UiLink,
   type TableColumn,
 } from '@vertex-os/ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { isApiProblem } from '../../../lib/http';
 import { refreshAuthState } from '../../auth/auth-state';
 import { useAccess } from '../../auth/use-access';
@@ -177,17 +177,36 @@ export function DepartmentDetailPage({
   const navigate = useNavigate();
   const { can } = useAccess();
   const department = useQuery(departmentQuery(departmentId));
+  const readsUsers = can(IAM_PERMISSIONS.usersRead);
   const members = useQuery({
     ...userCountQuery({ departmentId }),
-    enabled: can(IAM_PERMISSIONS.usersRead),
+    enabled: readsUsers,
   });
   const [outcome, setOutcome] = useState<Outcome | undefined>(
     created ? { tone: 'success', title: copy.departmentCreated } : undefined,
   );
   const [editing, setEditing] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  const [reviewCount, setReviewCount] = useState<number | undefined>();
+  const [reviewCountError, setReviewCountError] = useState(false);
+  const [reviewCountLoading, setReviewCountLoading] = useState(false);
+  const countRequest = useRef(0);
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const manage = can(IAM_PERMISSIONS.departmentsManage);
+
+  const refreshReviewCount = () => {
+    if (!readsUsers) return;
+    const request = ++countRequest.current;
+    setReviewCount(undefined);
+    setReviewCountError(false);
+    setReviewCountLoading(true);
+    void members.refetch().then((result) => {
+      if (countRequest.current !== request) return;
+      setReviewCount(result.isError ? undefined : result.data);
+      setReviewCountError(result.isError || result.data === undefined);
+      setReviewCountLoading(false);
+    });
+  };
 
   const settle = (next: Outcome) => {
     setOutcome(next);
@@ -291,6 +310,7 @@ export function DepartmentDetailPage({
                   onClick={() => {
                     setFailure(undefined);
                     setDeactivating(true);
+                    refreshReviewCount();
                   }}
                 >
                   {copy.deactivateDepartment}
@@ -378,6 +398,9 @@ export function DepartmentDetailPage({
           title={copy.deactivateDepartmentTitle}
           description={copy.deactivateDepartmentConsequence}
           confirmLabel={copy.deactivateDepartment}
+          confirmDisabled={
+            readsUsers && (reviewCount === undefined || reviewCountError || reviewCountLoading)
+          }
           pending={changeState.isPending}
           pendingLabel={messages.working}
           onConfirm={() => {
@@ -389,7 +412,20 @@ export function DepartmentDetailPage({
             <p>
               <Bdi>{detail.name}</Bdi> <TechnicalId>{detail.code}</TechnicalId>
             </p>
-            {members.data !== undefined && <p>{copy.deactivateReach(members.data)}</p>}
+            {!readsUsers ? (
+              <p>{copy.impactCountRestricted}</p>
+            ) : reviewCountError ? (
+              <InlineMessage tone="danger">
+                {copy.impactCountUnavailable}{' '}
+                <Button size="small" onClick={refreshReviewCount}>
+                  {copy.retry}
+                </Button>
+              </InlineMessage>
+            ) : reviewCount !== undefined && !reviewCountLoading ? (
+              <p>{copy.deactivateReach(reviewCount)}</p>
+            ) : (
+              <p>{messages.loadingList}</p>
+            )}
             {failure !== undefined && (
               <InlineMessage tone="danger" announce>
                 {failure}

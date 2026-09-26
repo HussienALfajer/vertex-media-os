@@ -298,6 +298,121 @@ export async function bootstrapSystemAdministrator(
   return { outcome: decided.outcome, userId: decided.userId, identity, invitation, superseded };
 }
 
+/**
+ * Restores the first local credential after an external-provider migration left every accessible
+ * System Administrator without one. This operator-only action never creates a user, changes a
+ * role, or replaces an existing password. The same role and user locks as bootstrap serialize it
+ * with administrator changes and competing recovery attempts.
+ */
+export async function recoverMigratedAdministratorCredential(
+  dependencies: UserAdministrationDependencies,
+  input: {
+    readonly email: string;
+    readonly passwordHash: string;
+    readonly reason: string;
+    readonly manifests: readonly PermissionManifest[];
+    readonly traceId: TraceId;
+  },
+): Promise<
+  | { readonly outcome: 'recovered'; readonly userId: UserId }
+  | {
+      readonly outcome: 'refused';
+      readonly reason:
+        'reference-data-not-synchronized' | 'administrator-can-sign-in' | 'target-not-eligible';
+    }
+  | {
+      readonly outcome: 'invalid';
+      readonly field: 'email' | 'passwordHash' | 'reason' | 'manifests';
+    }
+> {
+  if (!BOOTSTRAP_PROCESS.ok) throw new Error('The bootstrap process code must be valid.');
+  const email = typeof input.email === 'string' ? normalizeEmail(input.email) : undefined;
+  if (!email?.ok) return { outcome: 'invalid', field: 'email' };
+  if (typeof input.passwordHash !== 'string' || !input.passwordHash.startsWith('scrypt$')) {
+    return { outcome: 'invalid', field: 'passwordHash' };
+  }
+  const reason =
+    typeof input.reason === 'string' ? parseAdministrativeReason(input.reason) : undefined;
+  if (!reason?.ok) return { outcome: 'invalid', field: 'reason' };
+  const manifests = validatePermissionManifests(input.manifests);
+  if (!manifests.ok) return { outcome: 'invalid', field: 'manifests' };
+  const attribution: AuditAttribution = {
+    actor: { type: 'SYSTEM', process: BOOTSTRAP_PROCESS.value },
+    traceId: input.traceId,
+    reason: reason.value,
+  };
+  const action = 'iam.bootstrap.migrated-credential-recovery';
+  return dependencies.runner.run(async ({ referenceData, lifecycle, audit }) => {
+    const refuse = async (
+      refusal:
+        'reference-data-not-synchronized' | 'administrator-can-sign-in' | 'target-not-eligible',
+    ) => {
+      await audit.append(
+        requireIamEvidence(attribution, {
+          action,
+          target: INVOCATION_TARGET,
+          result: 'REFUSED',
+          after: { refusal },
+        }),
+      );
+      return { outcome: 'refused', reason: refusal } as const;
+    };
+
+    await referenceData.acquireSynchronizationLock();
+    const planned = planReferenceSync(
+      manifests.permissions,
+      systemAdministratorRole,
+      await referenceData.readSnapshot(),
+    );
+    if (planned.outcome !== 'planned' || !converged(planned.plan)) {
+      return refuse('reference-data-not-synchronized');
+    }
+    const roleId = await lifecycle.lockSystemAdministratorRole();
+    if (roleId === undefined) throw new Error('Synchronized reference data lacks the system role.');
+
+    let target: { readonly id: UserId; readonly version: number } | undefined;
+    let accessibleAdministratorHasPassword = false;
+    for (const id of await lifecycle.readRoleHolders(roleId)) {
+      const user = await lifecycle.lockUser(id);
+      if (user === undefined || user.accessState === 'TERMINATED') {
+        throw new Error('A System Administrator holder changed under the role lock.');
+      }
+      const hasPassword = await lifecycle.hasLocalPassword(id);
+      if (hasPassword && (user.accessState === 'ACTIVE' || user.accessState === 'INVITED')) {
+        accessibleAdministratorHasPassword = true;
+      }
+      if (user.email === email.value && user.accessState === 'ACTIVE' && !hasPassword) {
+        target = { id: user.id, version: user.version };
+      }
+    }
+    if (accessibleAdministratorHasPassword) return refuse('administrator-can-sign-in');
+    if (target === undefined) return refuse('target-not-eligible');
+
+    const initialized = await lifecycle.initializePasswordHash({
+      id: target.id,
+      expectedVersion: target.version,
+      passwordHash: input.passwordHash,
+    });
+    if (initialized === undefined) throw new Error('The locked recovery target changed.');
+    await appendUserAudit(
+      audit,
+      attribution,
+      initialized,
+      'iam.user.password-initialized',
+      'SUCCEEDED',
+      { after: { localSignInEnabled: true, via: 'migrated-administrator-recovery' } },
+    );
+    await audit.append(
+      requireIamEvidence(attribution, {
+        action,
+        target: INVOCATION_TARGET,
+        after: { outcome: 'recovered', candidateUserId: target.id },
+      }),
+    );
+    return { outcome: 'recovered', userId: target.id } as const;
+  });
+}
+
 /** Thrown inside the bootstrap transaction to roll it back when the email was taken meanwhile. */
 class EmailTaken extends Error {
   constructor() {

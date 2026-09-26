@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify';
 export interface SerializedRequest {
   readonly [key: string]: unknown;
   readonly method: string;
-  /** The path only: query strings can carry OIDC authorization codes and state (spec Section 36). */
+  /** The path only: query strings can contain sensitive values. */
   readonly url: string;
   readonly host?: string;
   readonly remoteAddress?: string;
@@ -12,9 +12,9 @@ export interface SerializedRequest {
 }
 
 /**
- * Pino `req` serializer for the API. Fastify's default logs the full URL, so the OIDC callback's
- * `?code=…&state=…` would reach the logs; this one keeps the fields of the default minus the query
- * string and fragment (IAM-R03 D-20). Never throws.
+ * Pino `req` serializer for the API. Fastify's default logs the full URL; this one keeps the
+ * default fields minus the query string and fragment, which may contain sensitive values.
+ * Never throws.
  */
 export function safeRequestSerializer(request: FastifyRequest): SerializedRequest {
   const url: unknown = request.url;

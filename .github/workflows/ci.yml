@@ -1,7 +1,7 @@
 # Remote enforcement of the repository's own verification commands (README, "Verification").
-# No secrets are needed: integration tests start ephemeral PostgreSQL and Keycloak containers through
-# Testcontainers; the smoke end-to-end tests give the API a synthetic, never-connected database
-# URL (apps/web-e2e/playwright.config.mts), and the IAM journeys start their own containers and
+# No secrets are needed: integration tests start ephemeral PostgreSQL through Testcontainers;
+# the smoke end-to-end tests give the API a synthetic, never-connected database URL
+# (apps/web-e2e/playwright.config.mts), and the IAM journeys start their own PostgreSQL container and
 # generate their test secrets (apps/web-e2e/playwright.iam.config.mts). Nx runs locally only (Nx
 # Cloud is disabled).
 name: CI

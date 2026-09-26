@@ -178,6 +178,20 @@ describe('navigation', () => {
 });
 
 describe('departments', () => {
+  it('keeps a loaded list labeled as stale after a failed refresh and offers retry', async () => {
+    let reads = 0;
+    fakeApi({
+      'GET /api/iam/departments': () =>
+        ++reads === 1 ? json(200, page([department()])) : problem(503, 'SERVICE_UNAVAILABLE'),
+    });
+    const { client } = renderAt('/departments');
+    expect(await screen.findByRole('link', { name: 'العمليات' })).toBeTruthy();
+    await client.invalidateQueries({ queryKey: ['iam', 'departments', 'list'] });
+    expect(await screen.findByText(/تعذّر تحديث البيانات/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'العمليات' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'إعادة المحاولة' })).toBeTruthy();
+  });
+
   it('lists departments with their state; the state filter lives in the address', async () => {
     const api = fakeApi({
       'GET /api/iam/departments': () =>
@@ -296,6 +310,21 @@ describe('departments', () => {
       url: `/api/iam/departments/${OPS}/deactivate`,
       body: { expectedVersion: 4 },
     });
+  });
+
+  it('prevents deactivation when the affected count cannot be checked', async () => {
+    const api = fakeApi({
+      [departmentRoute]: () => json(200, department()),
+      'GET /api/iam/users': () => problem(503, 'SERVICE_UNAVAILABLE'),
+    });
+    renderAt(`/departments/${OPS}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف القسم' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'إيقاف القسم؟' });
+    expect(await within(confirm).findByText(/تعذّر التحقق من عدد المتأثرين/)).toBeTruthy();
+    expect(
+      within(confirm).getByRole('button', { name: 'إيقاف القسم' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(api.unsafe()).toHaveLength(0);
   });
 
   it('states no member count without iam.users.read and reads no users', async () => {
@@ -435,6 +464,42 @@ describe('roles', () => {
     expect(api.unsafe()[0]?.body).toEqual({ expectedVersion: 2, reason: 'مراجعة فصلية' });
   });
 
+  it('prevents a role state change when its holder count cannot be checked', async () => {
+    const api = fakeApi({
+      [roleRoute]: () => json(200, role()),
+      'GET /api/iam/users': () => problem(503, 'SERVICE_UNAVAILABLE'),
+    });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف الدور' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'إيقاف الدور؟' });
+    expect(await within(confirm).findByText(/تعذّر التحقق من عدد المتأثرين/)).toBeTruthy();
+    expect(
+      within(confirm).getByRole('button', { name: 'إيقاف الدور' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(api.unsafe()).toHaveLength(0);
+  });
+
+  it('refreshes the affected holder count when the review opens', async () => {
+    let count = 7;
+    let reads = 0;
+    fakeApi({
+      [roleRoute]: () => json(200, role()),
+      'GET /api/iam/users': () => {
+        reads += 1;
+        return json(200, page([], count));
+      },
+    });
+    renderAt(`/roles/${EDITOR}`);
+    await waitFor(() => expect(reads).toBeGreaterThan(0));
+    count = 8;
+    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف الدور' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'إيقاف الدور؟' });
+    await waitFor(() =>
+      expect(confirm.textContent).toContain('عدد حاملي الدور بكل حالات الوصول: 8'),
+    );
+    expect(reads).toBeGreaterThan(1);
+  });
+
   it('confirms activation as a grant and explains a grant-ceiling refusal in place', async () => {
     const api = fakeApi({
       [roleRoute]: () =>
@@ -456,6 +521,63 @@ describe('roles', () => {
     fireEvent.click(within(confirm).getByRole('button', { name: 'تفعيل الدور' }));
     expect(await within(confirm).findByText('لا يمكنك منح صلاحيات لا تملكها.')).toBeTruthy();
     expect(api.unsafe()[0]?.body).toEqual({ expectedVersion: 2 });
+  });
+
+  it('reads later catalog pages and excludes a deprecated mapping from activation grants', async () => {
+    const first = [
+      ...CATALOG,
+      ...Array.from({ length: 95 }, (_, index) => permission(`filler.first.p${index}`)),
+    ];
+    const second = [
+      permission('legacy.other', { state: 'DEPRECATED' }),
+      ...Array.from({ length: 49 }, (_, index) => permission(`filler.second.p${index}`)),
+    ];
+    fakeApi({
+      [roleRoute]: () =>
+        json(200, role({ state: 'INACTIVE', permissionCodes: ['iam.users.read', 'legacy.other'] })),
+      'GET /api/iam/permissions': ({ url }) =>
+        json(200, { ...page(url.includes('page=2') ? second : first, 150), pageSize: 100 }),
+    });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تفعيل الدور' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'تفعيل الدور؟' });
+    await waitFor(() =>
+      expect(confirm.textContent).toContain('الصلاحيات التي ستعود لحاملي الدور: 1'),
+    );
+    expect(confirm.textContent).not.toContain('legacy.other');
+    expect(
+      within(confirm).getByRole('button', { name: 'تفعيل الدور' }).hasAttribute('disabled'),
+    ).toBe(false);
+  });
+
+  it('blocks activation if a mapped permission cannot be verified', async () => {
+    fakeApi({
+      [roleRoute]: () =>
+        json(200, role({ state: 'INACTIVE', permissionCodes: ['iam.users.read', 'legacy.other'] })),
+      'GET /api/iam/permissions': () => json(200, page(CATALOG, 150)),
+    });
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تفعيل الدور' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'تفعيل الدور؟' });
+    expect(await within(confirm).findByText(/تعذّر التحقق من كل الصلاحيات/)).toBeTruthy();
+    expect(
+      within(confirm).getByRole('button', { name: 'تفعيل الدور' }).hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('allows an authorized role manager without catalog-read permission to review activation scope', async () => {
+    const api = fakeApi(
+      { [roleRoute]: () => json(200, role({ state: 'INACTIVE', permissionCodes: [] })) },
+      ['iam.roles.read', 'iam.roles.manage'],
+    );
+    renderAt(`/roles/${EDITOR}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'تفعيل الدور' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'تفعيل الدور؟' });
+    expect(await within(confirm).findByText('لا يرتبط بالدور أي صلاحية.')).toBeTruthy();
+    expect(
+      within(confirm).getByRole('button', { name: 'تفعيل الدور' }).hasAttribute('disabled'),
+    ).toBe(false);
+    expect(api.calls.some((call) => call.url.startsWith('/api/iam/permissions'))).toBe(false);
   });
 });
 
@@ -506,7 +628,7 @@ describe('the permission editor', () => {
     expect(added?.textContent).toContain('iam.roles.manage');
     expect(removed?.textContent).toContain('iam.users.read');
     expect(removed?.textContent).toContain('iam.legacy.export');
-    expect(editor.textContent).toContain('عدد حاملي الدور بكل حالات الوصول: 7');
+    expect(editor.textContent).toContain('عدد حاملي الدور عند آخر قراءة: 7');
     expect(api.unsafe()).toHaveLength(0);
 
     fireEvent.change(within(editor).getByRole('textbox', { name: /السبب/ }), {

@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  Alert,
   Bdi,
   Button,
   DataTable,
@@ -185,12 +186,24 @@ export function UserDirectory({
     setSearch('');
     onParamsChange({ page: 1, pageSize: params.pageSize });
   };
-  const page = users.data;
+  // A failed authentication read must not keep protected rows from a previous successful fetch.
+  const page = isApiProblem(users.error, 401) ? undefined : users.data;
 
   return (
     <Page>
       {header}
       <div className="flex flex-col gap-toolbar-groups">
+        {page !== undefined && users.isError && (
+          <Alert
+            tone="warning"
+            title={messages.staleDataTitle}
+            actions={
+              <Button onClick={() => void users.refetch()} disabled={users.isFetching}>
+                {messages.retry}
+              </Button>
+            }
+          />
+        )}
         <TableToolbar
           search={
             <Field label={messages.searchUsers} description={messages.searchHelp}>

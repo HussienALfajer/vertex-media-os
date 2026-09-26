@@ -14,6 +14,9 @@
 > authorization, grant-ceiling, session, CSRF, and Audit invariants remain in force. Historical
 > stage descriptions below record the earlier design and must not be used as current
 > authentication requirements.
+> [Section 61](#61-local-credential-amendment-current-normative-contract) is the current IAM
+> authentication and credential contract. It replaces the provider-specific parts of Sections
+> 6–8, 11–13, 21, 25, 31–33, 37–39, 46–47 and 56. Their non-provider IAM invariants still apply.
 
 ---
 
@@ -2179,6 +2182,9 @@ The following invariants summarize IAM V1 and MUST remain true:
 
 ## 60. Implementation Reference Notes
 
+This section is retained only as the record of the former provider design. It is not an active
+implementation reference after ADR-0001.
+
 As of 2026-09-22, the reviewed external baseline is Keycloak 26.7.4.
 
 The official Keycloak documentation confirms the current Admin REST capability to create users and send required-action email flows, and documents the current bootstrap-admin environment-variable names. The implementation MUST still verify the exact API/configuration behavior against the pinned Keycloak release when code is written.
@@ -2188,3 +2194,74 @@ The 26.7.4 sources and documentation were reviewed on 2026-09-22 for the behavio
 Repository security policy remains authoritative if an external default differs from Vertex OS requirements.
 
 This file is an implementation specification, not a substitute for reviewing the pinned provider documentation during upgrades.
+
+---
+
+## 61. Local Credential Amendment — Current Normative Contract
+
+ADR-0001 replaces the external provider, OIDC, invitation email and second-factor requirements
+in the historical sections above. The rules below are the current acceptance criteria for
+authentication and credential migration. All IAM rules on access state, roles, grant ceiling,
+concurrency, authorization, sessions, CSRF and Audit that do not depend on an external provider
+remain binding.
+
+### 61.1 Ownership and account lifecycle
+
+- IAM owns the normalized immutable email, salted scrypt password hash, access state, roles,
+  permissions and department memberships. The API verifies credentials and owns the opaque
+  server-side application session. The browser holds only the `Secure`, `HttpOnly`,
+  `SameSite=Strict` session cookie and never stores a password or session secret.
+- An administrator creates a staff account with an email and password and may assign roles within
+  the actor's grant ceiling. No public registration or invitation email is part of this flow.
+  `INVITED` means awaiting the first successful local sign-in; it does not mean that an email was
+  sent. First sign-in activates the account once. Restricted and terminated accounts cannot
+  authenticate.
+- The historical identity-sync and invitation-delivery fields exist for migration compatibility.
+  They do not prove that an email was sent or confer access. New UI and operational reports must
+  not present them as an active delivery workflow.
+
+### 61.2 Sign-in and session contract
+
+- `POST /api/auth/login` accepts email and password. Unknown email, invalid password and an
+  inaccessible account have the same public refusal. Rate limiting applies to the normalized
+  address and request source; a successful sign-in issues a fresh opaque session.
+- The application checks current IAM access state and effective permissions on each protected
+  request. Unsafe authenticated requests require the session's CSRF token. Logout revokes the
+  session. Idle and absolute expiration and administrator-initiated revocation remain mandatory.
+- Passwords have the length and byte bounds in `docs/SECURITY.md` Section 8. There is no TOTP,
+  OIDC, Keycloak token, or external identity service in the active sign-in path.
+
+### 61.3 Migration and administrative recovery
+
+- The local-auth migration retains users, role assignments, Audit records and former issuer and
+  subject values in `iam_legacy_identity_mapping`. Old provider-backed sessions are refused.
+  Existing users have no inferred local password. An authenticated administrator with
+  `iam.users.manage-access` may initialize a legacy user's password once through the audited,
+  CSRF-protected API, with optimistic version checking; it may not overwrite a configured hash.
+- The first administrator is created with an explicit operator command using a password supplied
+  only in `IAM_BOOTSTRAP_PASSWORD`. No default account or password is committed. Normal bootstrap
+  refuses to create another account while an ACTIVE System Administrator exists.
+- A migrated database may contain an ACTIVE System Administrator with no local password and no
+  administrator able to sign in. The explicit operator-only
+  `iam:bootstrap --recover-migrated-admin --email <address> --reason <reason>` mode initializes
+  that existing account's password once. It requires a reason, synchronized reference data,
+  exact email and ACTIVE System Administrator role, no existing password on the target, and no
+  ACTIVE or INVITED System Administrator with a local password. It acquires the reference and
+  System Administrator locks before user locks, writes the hash and both Audit records in one
+  transaction, and refuses a second attempt. It creates no user and changes no role or access
+  state. A failed Audit append rolls the credential write back.
+- Replacing an established password, self-service recovery and production credential rotation
+  are separate future workflows. The migration-recovery mode must never become a general reset
+  endpoint.
+
+### 61.4 Verification and launch boundary
+
+- Acceptance evidence must cover migration from the previous schema, ordinary and failed login,
+  staff creation and role selection, current authorization after role changes, suspension and
+  session revocation, CSRF, expiration, bootstrap refusal, one-time migrated-admin recovery,
+  races and Audit rollback. Browser QA must cover the current Arabic/RTL and English UI and
+  responsive behavior. The canonical evidence map is
+  `docs/plans/iam/IAM_DEFINITION_OF_DONE_MAP.md` as updated after ADR-0001.
+- Before production launch, benchmark scrypt on the actual server, add a compromised-password
+  check, configure HTTPS and security alerts, and complete the deployment topology decision.
+  These are launch gates, not claims that this repository has already been deployed.

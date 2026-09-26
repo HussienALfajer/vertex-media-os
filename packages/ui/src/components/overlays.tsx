@@ -314,6 +314,8 @@ export interface AlertDialogProps {
   readonly intent?: 'danger' | 'default';
   /** A non-cancellable operation is running: dismissal is deferred with a visible explanation. */
   readonly pending?: boolean;
+  /** Prevent commitment until required review facts have loaded. */
+  readonly confirmDisabled?: boolean;
   readonly pendingLabel?: string;
   readonly returnFocus?: RefObject<HTMLElement | null>;
 }
@@ -330,6 +332,7 @@ export function AlertDialog({
   onConfirm,
   intent = 'danger',
   pending = false,
+  confirmDisabled = false,
   pendingLabel,
   returnFocus,
 }: AlertDialogProps) {
@@ -367,6 +370,7 @@ export function AlertDialog({
           <Button
             variant="primary"
             intent={intent}
+            disabled={confirmDisabled}
             pending={pending}
             pendingLabel={pendingLabel ?? messages.working}
             onClick={onConfirm}

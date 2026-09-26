@@ -33,9 +33,9 @@ export interface AuthRuntimeOptions {
 }
 
 /**
- * Composition root of browser authentication (IAM-R03 D-01): the session service over PostgreSQL,
- * the OIDC client, IAM sign-in and IAM authorization, sharing the process's database client. The only file of the
- * area that may import an adapter (the Audit adapter here; lint-enforced).
+ * Composition root of local browser authentication: the PostgreSQL session service, IAM sign-in
+ * and IAM authorization share the process's database client. Adapter imports in this area are
+ * restricted to this file.
  */
 export function createAuthRuntime(
   config: AuthConfig,

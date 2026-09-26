@@ -1,10 +1,11 @@
 # IAM-R10 — Local password authentication
 
-**Status:** IN_REVIEW  
+**Status:** COMPLETE — PR #23 merged; audit-discovered recovery gap is handled by the follow-up fix run  
 **Master Plan stage:** Owner-directed IAM-R10 amendment  
 **Risk tier:** A — Critical  
 **Branch:** `codex/local-auth`  
 **Pull request:** [#23](https://github.com/HussienALfajer/vertex-media-os/pull/23)  
+**Merged baseline:** `b4031af9492831ac7f9cef366fa966c1a25b4ec7`  
 **Baseline commit:** `a5c8e633512afb1f16e06881adb0fb55bf5cc3fb`
 
 ## 1. Objective

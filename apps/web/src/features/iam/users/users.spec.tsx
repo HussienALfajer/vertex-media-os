@@ -359,6 +359,43 @@ describe('the user directory', () => {
     expect(await screen.findByText('تعذّر تحميل المستخدمين', {}, { timeout: 8_000 })).toBeTruthy();
     expect(screen.getByRole('button', { name: /إعادة المحاولة/ })).toBeTruthy();
   }, 10_000);
+
+  it('labels cached user rows after a failed refresh and clears the warning on retry', async () => {
+    let offline = false;
+    fakeApi({
+      'GET /api/iam/users': () =>
+        offline ? problem(503, 'SERVICE_UNAVAILABLE') : json(200, page([summary()])),
+    });
+    const { client } = renderAt('/users');
+    await screen.findByRole('link', { name: 'سارة' });
+    offline = true;
+    await client.invalidateQueries({ queryKey: ['iam', 'users', 'list'] });
+    expect(
+      await screen.findByText('تعذّر تحديث البيانات؛ قد تكون النتائج المعروضة قديمة.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'سارة' })).toBeTruthy();
+    offline = false;
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText('تعذّر تحديث البيانات؛ قد تكون النتائج المعروضة قديمة.'),
+      ).toBeNull(),
+    );
+  }, 10_000);
+
+  it('does not retain protected user rows after a refused refresh', async () => {
+    let denied = false;
+    fakeApi({
+      'GET /api/iam/users': () =>
+        denied ? problem(403, 'AUTHORIZATION_DENIED') : json(200, page([summary()])),
+    });
+    const { client } = renderAt('/users');
+    await screen.findByRole('link', { name: 'سارة' });
+    denied = true;
+    await client.invalidateQueries({ queryKey: ['iam', 'users', 'list'] });
+    expect(await screen.findByText('لا تملك صلاحية الوصول إلى هذه الصفحة')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'سارة' })).toBeNull();
+  });
 });
 
 describe('creating a user', () => {
